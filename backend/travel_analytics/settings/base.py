@@ -3,10 +3,6 @@ Base settings for Travel Analytics project.
 """
 import os
 from pathlib import Path
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
 
 # Build paths inside the project
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -67,6 +63,9 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'travel_analytics.wsgi.application'
+
+# Custom User Model
+AUTH_USER_MODEL = 'users.User'
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
