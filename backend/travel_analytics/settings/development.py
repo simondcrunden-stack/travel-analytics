@@ -10,8 +10,14 @@ ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 # Database - Using SQLite for now (easy setup)
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'travel_analytics_dev',  # ← TRAVEL ANALYTICS REFRESH DATABASE
+        'USER': 'simoncrunden',      # Find with: whoami (bash)
+        'PASSWORD': '',                   # Empty for local dev
+        'HOST': 'localhost',
+        'PORT': '5432',
+        'ATOMIC_REQUESTS': True,
+        'CONN_MAX_AGE': 600,
     }
 }
 
