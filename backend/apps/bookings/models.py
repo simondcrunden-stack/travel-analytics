@@ -157,7 +157,17 @@ class Booking(models.Model):
         ]
     
     def __str__(self):
-        return f"{self.agent_booking_reference} - {self.traveller}"
+        # Show booking reference and travel agent organization
+        if self.organization.travel_agent:
+            # If this is a customer org, show their travel agent
+            agent_org = self.organization.travel_agent.name
+        elif self.organization.org_type == 'AGENT':
+            # If this IS the travel agent org
+            agent_org = self.organization.name
+        else:
+            agent_org = "No Agent"
+        
+        return f"{self.agent_booking_reference} - {agent_org}"
 
 
 # ============================================================================
