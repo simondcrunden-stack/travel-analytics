@@ -1,8 +1,8 @@
 from django.db import models
-from django.core.validators import MinValueValidator
-from decimal import Decimal
+from apps.users.models import User
+from apps.organizations.models import Organization
+from apps.bookings.models import Booking, Traveller
 import uuid
-from math import radians, sin, cos, sqrt, atan2
 
 
 class ComplianceRule(models.Model):
@@ -26,8 +26,11 @@ class ComplianceRule(models.Model):
     ]
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    organization = models.ForeignKey('organizations.Organization', on_delete=models.CASCADE, 
-                                     related_name='compliance_rules')
+    organization = models.ForeignKey(
+        Organization,
+        on_delete=models.CASCADE,
+        related_name='compliance_rules'
+    )
     
     # Rule definition
     rule_type = models.CharField(max_length=30, choices=RULE_TYPES)
@@ -55,8 +58,12 @@ class ComplianceRule(models.Model):
     # Metadata
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    created_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True,
-                                   related_name='compliance_rules_created')
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='compliance_rules_created'
+    )
     
     class Meta:
         db_table = 'compliance_rules'
@@ -82,12 +89,20 @@ class ComplianceViolation(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     
     # Relationships
-    booking = models.ForeignKey('bookings.Booking', on_delete=models.CASCADE, related_name='violations')
-    compliance_rule = models.ForeignKey(ComplianceRule, on_delete=models.CASCADE, 
-                                        related_name='violations', null=True, blank=True)
-    organization = models.ForeignKey('organizations.Organization', on_delete=models.CASCADE,
-                                     related_name='compliance_violations')
-    traveller = models.ForeignKey('bookings.Traveller', on_delete=models.CASCADE, related_name='violations')
+    booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name='violations')
+    compliance_rule = models.ForeignKey(
+        ComplianceRule,
+        on_delete=models.CASCADE,
+        related_name='violations',
+        null=True,
+        blank=True
+    )
+    organization = models.ForeignKey(
+        Organization,
+        on_delete=models.CASCADE,
+        related_name='compliance_violations'
+    )
+    traveller = models.ForeignKey(Traveller, on_delete=models.CASCADE, related_name='violations')
     
     # Violation details
     violation_type = models.CharField(max_length=30)  # Matches ComplianceRule.RULE_TYPES
@@ -106,8 +121,13 @@ class ComplianceViolation(models.Model):
     
     # Resolution
     is_waived = models.BooleanField(default=False)
-    waived_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True, blank=True,
-                                  related_name='violations_waived')
+    waived_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='violations_waived'
+    )
     waived_at = models.DateTimeField(null=True, blank=True)
     waiver_reason = models.TextField(blank=True)
     
@@ -144,8 +164,13 @@ class ComplianceProcessingLog(models.Model):
     ]
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    organization = models.ForeignKey('organizations.Organization', on_delete=models.CASCADE,
-                                     related_name='compliance_logs', null=True, blank=True)
+    organization = models.ForeignKey(
+        Organization,
+        on_delete=models.CASCADE,
+        related_name='compliance_logs',
+        null=True,
+        blank=True
+    )
     
     # Processing details
     processing_type = models.CharField(max_length=20, choices=PROCESSING_TYPES)
@@ -169,8 +194,13 @@ class ComplianceProcessingLog(models.Model):
     error_message = models.TextField(blank=True)
     
     # User tracking
-    initiated_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True, blank=True,
-                                     related_name='compliance_runs_initiated')
+    initiated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='compliance_runs_initiated'
+    )
     
     class Meta:
         db_table = 'compliance_processing_logs'
@@ -202,8 +232,11 @@ class HighRiskDestination(models.Model):
     ]
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    organization = models.ForeignKey('organizations.Organization', on_delete=models.CASCADE, 
-                                     related_name='high_risk_destinations')
+    organization = models.ForeignKey(
+        Organization,
+        on_delete=models.CASCADE,
+        related_name='high_risk_destinations'
+    )
     
     # Destination identification
     destination_type = models.CharField(max_length=20, choices=DESTINATION_TYPES)
@@ -234,8 +267,11 @@ class HighRiskDestination(models.Model):
     
     # Notification settings
     notify_immediately = models.BooleanField(default=True)
-    notification_recipients = models.ManyToManyField('users.User', related_name='risk_notifications', 
-                                                     blank=True)
+    notification_recipients = models.ManyToManyField(
+        User,
+        related_name='risk_notifications',
+        blank=True
+    )
     
     # Status
     is_active = models.BooleanField(default=True)
@@ -245,8 +281,12 @@ class HighRiskDestination(models.Model):
     # Metadata
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    created_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True,
-                                   related_name='risk_destinations_created')
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='risk_destinations_created'
+    )
     
     class Meta:
         db_table = 'high_risk_destinations'
@@ -272,6 +312,8 @@ class HighRiskDestination(models.Model):
             self.center_latitude, self.center_longitude, self.radius_km
         ]):
             return False
+        
+        from math import radians, sin, cos, sqrt, atan2
         
         # Haversine formula to calculate distance
         R = 6371  # Earth's radius in km
@@ -304,12 +346,18 @@ class TravelRiskAlert(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     
     # Relationships
-    booking = models.ForeignKey('bookings.Booking', on_delete=models.CASCADE, related_name='risk_alerts')
-    high_risk_destination = models.ForeignKey(HighRiskDestination, on_delete=models.CASCADE,
-                                              related_name='travel_alerts')
-    organization = models.ForeignKey('organizations.Organization', on_delete=models.CASCADE,
-                                     related_name='travel_risk_alerts')
-    traveller = models.ForeignKey('bookings.Traveller', on_delete=models.CASCADE, related_name='risk_alerts')
+    booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name='risk_alerts')
+    high_risk_destination = models.ForeignKey(
+        HighRiskDestination,
+        on_delete=models.CASCADE,
+        related_name='travel_alerts'
+    )
+    organization = models.ForeignKey(
+        Organization,
+        on_delete=models.CASCADE,
+        related_name='travel_risk_alerts'
+    )
+    traveller = models.ForeignKey(Traveller, on_delete=models.CASCADE, related_name='risk_alerts')
     
     # Alert details
     alert_status = models.CharField(max_length=20, choices=ALERT_STATUS, default='PENDING')
@@ -317,15 +365,24 @@ class TravelRiskAlert(models.Model):
     
     # Matched location details
     matched_location = models.CharField(max_length=200)  # City/region that triggered alert
-    distance_from_center_km = models.DecimalField(max_digits=8, decimal_places=2, 
-                                                   null=True, blank=True)
+    distance_from_center_km = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        null=True,
+        blank=True
+    )
     
     # Approval workflow
     approval_requested_at = models.DateTimeField(auto_now_add=True)
     approval_notes = models.TextField(blank=True)
     
-    approved_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True, blank=True,
-                                    related_name='risk_approvals_given')
+    approved_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='risk_approvals_given'
+    )
     approval_decision_at = models.DateTimeField(null=True, blank=True)
     approval_comments = models.TextField(blank=True)
     

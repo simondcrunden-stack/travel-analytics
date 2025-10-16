@@ -1,4 +1,5 @@
 from django.db import models
+from apps.organizations.models import Organization
 import uuid
 
 
@@ -13,8 +14,11 @@ class ImportBatch(models.Model):
     ]
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    organization = models.ForeignKey('organizations.Organization', on_delete=models.CASCADE, 
-                                     related_name='import_batches')
+    organization = models.ForeignKey(
+        Organization,
+        on_delete=models.CASCADE,
+        related_name='import_batches'
+    )
     
     # Import details
     import_date = models.DateField()  # The date this import was run

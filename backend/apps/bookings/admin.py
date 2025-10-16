@@ -13,7 +13,7 @@ from .models import (
 
 @admin.register(Traveller)
 class TravellerAdmin(admin.ModelAdmin):
-    list_display = ['first_name', 'last_name', 'email', 'organization', 'employee_id', 'cost_center', 'is_active']
+    list_display = ['first_name', 'last_name', 'email', 'organization', 'employee_id', 'cost_center', 'has_user_account', 'is_active']
     list_filter = ['is_active', 'organization', 'department']
     search_fields = ['first_name', 'last_name', 'email', 'employee_id']
     
@@ -27,26 +27,48 @@ class TravellerAdmin(admin.ModelAdmin):
         ('Department & Cost Center', {
             'fields': ('department', 'cost_center')
         }),
+        ('User Account', {
+            'fields': ('user',),
+            'description': 'Link this traveller to a user account if they need to log in to the platform'
+        }),
         ('Status', {
             'fields': ('is_active',)
         }),
     )
+    
+    def has_user_account(self, obj):
+        return obj.user is not None
+    has_user_account.boolean = True
+    has_user_account.short_description = 'Has Login'
 
 
 @admin.register(Booking)
 class BookingAdmin(admin.ModelAdmin):
-    list_display = ['booking_reference', 'traveller', 'organization', 'booking_type', 
+    list_display = ['agent_booking_reference', 'supplier_reference', 'traveller', 
+                    'travel_consultant', 'organization', 'booking_type', 
                     'travel_date', 'total_amount', 'currency', 'status']
-    list_filter = ['booking_type', 'status', 'organization', 'booking_date', 'travel_date']
-    search_fields = ['booking_reference', 'traveller__first_name', 'traveller__last_name']
+    list_filter = ['booking_type', 'status', 'organization', 'booking_date', 'travel_date', 
+                   'travel_consultant', 'travel_arranger']
+    search_fields = ['agent_booking_reference', 'supplier_reference', 'traveller__first_name', 
+                    'traveller__last_name', 'travel_consultant__first_name', 
+                    'travel_consultant__last_name', 'travel_arranger__first_name', 
+                    'travel_arranger__last_name', 'travel_consultant_text', 'travel_arranger_text']
     date_hierarchy = 'travel_date'
     
     fieldsets = (
-        ('Booking Information', {
-            'fields': ('booking_reference', 'booking_type', 'status')
+        ('References', {
+            'fields': ('agent_booking_reference', 'supplier_reference')
         }),
-        ('Traveller & Organization', {
-            'fields': ('organization', 'traveller')
+        ('Booking Details', {
+            'fields': ('organization', 'traveller', 'booking_type', 'status')
+        }),
+        ('Booking Workflow', {
+            'fields': (
+                ('travel_arranger', 'travel_arranger_text'),
+                ('travel_consultant', 'travel_consultant_text')
+            ),
+            'classes': ('collapse',),
+            'description': 'Track who arranged and processed this booking. Text fields are fallbacks when users cannot be matched.'
         }),
         ('Dates', {
             'fields': ('booking_date', 'travel_date', 'return_date')
@@ -62,7 +84,7 @@ class AirBookingAdmin(admin.ModelAdmin):
     list_display = ['booking', 'trip_type', 'travel_class', 'origin_airport_iata_code', 
                     'destination_airport_iata_code', 'ticket_number']
     list_filter = ['trip_type', 'travel_class', 'primary_airline_iata_code']
-    search_fields = ['booking__booking_reference', 'ticket_number', 
+    search_fields = ['booking__agent_booking_reference', 'ticket_number', 
                     'origin_airport_iata_code', 'destination_airport_iata_code']
     
     fieldsets = (
@@ -98,7 +120,7 @@ class AirSegmentAdmin(admin.ModelAdmin):
     list_display = ['air_booking', 'segment_number', 'airline_iata_code', 'flight_number',
                     'origin_airport_iata_code', 'destination_airport_iata_code', 'departure_date']
     list_filter = ['airline_iata_code', 'departure_date']
-    search_fields = ['air_booking__booking__booking_reference', 'flight_number', 
+    search_fields = ['air_booking__booking__agent_booking_reference', 'flight_number', 
                     'origin_airport_iata_code', 'destination_airport_iata_code']
     
     fieldsets = (
@@ -123,11 +145,10 @@ class AirSegmentAdmin(admin.ModelAdmin):
 
 @admin.register(AccommodationBooking)
 class AccommodationBookingAdmin(admin.ModelAdmin):
-    list_display = ['booking', 'hotel_name', 'hotel_chain_ref', 'city', 'check_in_date', 
+    list_display = ['booking', 'hotel_name', 'hotel_chain', 'city', 'check_in_date', 
                     'check_out_date', 'number_of_nights', 'nightly_rate']
-    list_filter = ['hotel_chain_ref', 'city', 'country', 'check_in_date']  # Updated to use ref
-    search_fields = ['booking__booking_reference', 'hotel_name', 'city', 'hotel_chain',
-                    'hotel_chain_ref__name']  # Added ref search
+    list_filter = ['hotel_chain', 'city', 'country', 'check_in_date']
+    search_fields = ['booking__agent_booking_reference', 'hotel_name', 'city', 'hotel_chain']
     date_hierarchy = 'check_in_date'
     
     fieldsets = (
@@ -135,7 +156,7 @@ class AccommodationBookingAdmin(admin.ModelAdmin):
             'fields': ('booking',)
         }),
         ('Hotel Details', {
-            'fields': ('hotel_name', 'hotel_chain', 'hotel_chain_ref')  # Added hotel_chain_ref
+            'fields': ('hotel_name', 'hotel_chain')
         }),
         ('Location', {
             'fields': ('city', 'country', 'address')
@@ -148,19 +169,17 @@ class AccommodationBookingAdmin(admin.ModelAdmin):
         }),
     )
     
-    # Make it easy to filter by preferred suppliers
     def get_queryset(self, request):
         qs = super().get_queryset(request)
-        return qs.select_related('booking', 'hotel_chain_ref')
+        return qs.select_related('booking')
 
 
 @admin.register(CarHireBooking)
 class CarHireBookingAdmin(admin.ModelAdmin):
-    list_display = ['booking', 'rental_company_ref', 'vehicle_type', 'pickup_city',
+    list_display = ['booking', 'rental_company', 'vehicle_type', 'pickup_city',
                     'pickup_date', 'number_of_days', 'daily_rate']
-    list_filter = ['rental_company_ref', 'pickup_city', 'pickup_date']  # Updated to use ref
-    search_fields = ['booking__booking_reference', 'rental_company', 'vehicle_type', 'pickup_city',
-                    'rental_company_ref__name']  # Added ref search
+    list_filter = ['rental_company', 'pickup_city', 'pickup_date']
+    search_fields = ['booking__agent_booking_reference', 'rental_company', 'vehicle_type', 'pickup_city']
     date_hierarchy = 'pickup_date'
     
     fieldsets = (
@@ -168,7 +187,7 @@ class CarHireBookingAdmin(admin.ModelAdmin):
             'fields': ('booking',)
         }),
         ('Rental Company', {
-            'fields': ('rental_company', 'rental_company_ref')  # Added rental_company_ref
+            'fields': ('rental_company',)
         }),
         ('Vehicle', {
             'fields': ('vehicle_type', 'vehicle_class')
@@ -184,10 +203,9 @@ class CarHireBookingAdmin(admin.ModelAdmin):
         }),
     )
     
-    # Make it easy to filter by preferred suppliers
     def get_queryset(self, request):
         qs = super().get_queryset(request)
-        return qs.select_related('booking', 'rental_company_ref')
+        return qs.select_related('booking')
 
 
 @admin.register(Invoice)
@@ -195,7 +213,7 @@ class InvoiceAdmin(admin.ModelAdmin):
     list_display = ['invoice_number', 'organization', 'booking', 'invoice_date',
                     'invoice_amount', 'currency', 'payment_status']
     list_filter = ['payment_status', 'currency', 'organization', 'invoice_date']
-    search_fields = ['invoice_number', 'organization__name', 'booking__booking_reference']
+    search_fields = ['invoice_number', 'organization__name', 'booking__agent_booking_reference']
     date_hierarchy = 'invoice_date'
     
     fieldsets = (
@@ -227,7 +245,7 @@ class ServiceFeeAdmin(admin.ModelAdmin):
                     'amount', 'currency']
     list_filter = ['fee_type', 'currency', 'organization', 'fee_date']
     search_fields = ['organization__name', 'traveller__first_name', 'traveller__last_name',
-                    'description', 'booking__booking_reference']
+                    'description', 'booking__agent_booking_reference']
     date_hierarchy = 'fee_date'
     
     fieldsets = (

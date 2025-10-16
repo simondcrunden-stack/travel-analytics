@@ -1,3 +1,4 @@
+from apps.users.models import User
 from django.db import models
 from django.core.validators import MinValueValidator
 from decimal import Decimal
@@ -17,6 +18,17 @@ class Traveller(models.Model):
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)
     email = models.EmailField(blank=True)
+    
+    # Link to user account (if traveller has login access)
+    user = models.OneToOneField(
+        User, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True,
+        related_name='traveller_profile',
+        verbose_name="User Account",
+        help_text="Link this traveller to a user account if they need platform access"
+    )
     employee_id = models.CharField(max_length=100, blank=True)
     
     # Department/cost center for reporting
@@ -71,9 +83,43 @@ class Booking(models.Model):
         on_delete=models.CASCADE,
         related_name='bookings'
     )
+
+    # Booking workflow tracking
+    travel_arranger = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='bookings_arranged',
+        verbose_name="Travel Arranger",
+        help_text="Person within the organization who arranged this booking"
+    )
+    travel_arranger_text = models.CharField(
+        max_length=200,
+        blank=True,
+        verbose_name="Travel Arranger (Text)",
+        help_text="Fallback when arranger cannot be matched to a user account"
+    )
+
+    travel_consultant = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='bookings_consulted',
+        verbose_name="Travel Agent Consultant",
+        help_text="Travel agent staff member who processed this booking"
+    )
+    travel_consultant_text = models.CharField(
+        max_length=200,
+        blank=True,
+        verbose_name="Travel Consultant (Text)",
+        help_text="Fallback when consultant cannot be matched to a user account"
+    )
     
     # Booking reference
-    booking_reference = models.CharField(max_length=100)
+    agent_booking_reference = models.CharField(max_length=100, verbose_name="Agent Booking Reference")
+    supplier_reference = models.CharField(max_length=100, blank=True, verbose_name="Supplier Reference")
     booking_type = models.CharField(max_length=20, choices=BOOKING_TYPES)
     
     # Dates
@@ -105,12 +151,13 @@ class Booking(models.Model):
             models.Index(fields=['organization', 'booking_date']),
             models.Index(fields=['organization', 'travel_date']),
             models.Index(fields=['traveller', 'travel_date']),
-            models.Index(fields=['booking_reference']),
+            models.Index(fields=['agent_booking_reference']),
+            models.Index(fields=['supplier_reference']),
             models.Index(fields=['booking_type', 'status']),
         ]
     
     def __str__(self):
-        return f"{self.booking_reference} - {self.traveller}"
+        return f"{self.agent_booking_reference} - {self.traveller}"
 
 
 # ============================================================================
@@ -168,7 +215,7 @@ class AirBooking(models.Model):
         ]
     
     def __str__(self):
-        return f"{self.booking.booking_reference} - {self.origin_airport_iata_code} to {self.destination_airport_iata_code}"
+        return f"{self.booking.agent_booking_reference} - {self.origin_airport_iata_code} to {self.destination_airport_iata_code}"
 
 
 class AirSegment(models.Model):
@@ -226,14 +273,6 @@ class AccommodationBooking(models.Model):
     # Hotel details - HYBRID APPROACH
     hotel_name = models.CharField(max_length=200)
     hotel_chain = models.CharField(max_length=100, blank=True)  # Text fallback
-    hotel_chain_ref = models.ForeignKey(  # NEW: Reference to HotelChain model
-        'reference_data.HotelChain',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='bookings',
-        verbose_name='Hotel Chain Reference'
-    )
     
     # Location
     city = models.CharField(max_length=100)
@@ -259,11 +298,10 @@ class AccommodationBooking(models.Model):
         indexes = [
             models.Index(fields=['city', 'check_in_date']),
             models.Index(fields=['hotel_chain']),
-            models.Index(fields=['hotel_chain_ref']),  # NEW INDEX
         ]
     
     def __str__(self):
-        return f"{self.booking.booking_reference} - {self.hotel_name}"
+        return f"{self.booking.agent_booking_reference} - {self.hotel_name}"
 
 
 # ============================================================================
@@ -277,14 +315,6 @@ class CarHireBooking(models.Model):
     
     # Rental company - HYBRID APPROACH
     rental_company = models.CharField(max_length=100)  # Text fallback
-    rental_company_ref = models.ForeignKey(  # NEW: Reference to CarRentalCompany model
-        'reference_data.CarRentalCompany',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='bookings',
-        verbose_name='Rental Company Reference'
-    )
     
     # Vehicle
     vehicle_type = models.CharField(max_length=100, blank=True)  # Compact, SUV, etc.
@@ -315,11 +345,10 @@ class CarHireBooking(models.Model):
         indexes = [
             models.Index(fields=['pickup_city', 'pickup_date']),
             models.Index(fields=['rental_company']),
-            models.Index(fields=['rental_company_ref']),  # NEW INDEX
         ]
     
     def __str__(self):
-        return f"{self.booking.booking_reference} - {self.rental_company}"
+        return f"{self.booking.agent_booking_reference} - {self.rental_company}"
 
 
 # ============================================================================

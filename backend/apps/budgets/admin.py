@@ -4,7 +4,7 @@ from .models import FiscalYear, Budget, BudgetAlert
 
 @admin.register(FiscalYear)
 class FiscalYearAdmin(admin.ModelAdmin):
-    list_display = ['year_label', 'organization', 'fiscal_year_type', 'start_date', 
+    list_display = ['year_label', 'organization', 'fiscal_year_type', 'start_date',
                     'end_date', 'is_current', 'is_active']
     list_filter = ['fiscal_year_type', 'is_current', 'is_active', 'organization']
     search_fields = ['year_label', 'organization__name']
@@ -15,37 +15,47 @@ class FiscalYearAdmin(admin.ModelAdmin):
             'fields': ('organization',)
         }),
         ('Fiscal Year Definition', {
-            'fields': ('fiscal_year_type', 'year_label', 'start_date', 'end_date')
+            'fields': ('fiscal_year_type', 'year_label')
+        }),
+        ('Period', {
+            'fields': ('start_date', 'end_date')
         }),
         ('Status', {
             'fields': ('is_active', 'is_current')
         }),
     )
+    
+    readonly_fields = ['created_at', 'updated_at']
 
 
 @admin.register(Budget)
 class BudgetAdmin(admin.ModelAdmin):
-    list_display = ['cost_center', 'cost_center_name', 'organization', 'fiscal_year', 
+    list_display = ['organization', 'fiscal_year', 'cost_center', 'cost_center_name',
                     'total_budget', 'currency', 'is_active']
-    list_filter = ['is_active', 'currency', 'organization', 'fiscal_year']
+    list_filter = ['organization', 'fiscal_year', 'is_active', 'currency']
     search_fields = ['cost_center', 'cost_center_name', 'organization__name']
     
     fieldsets = (
-        ('Organization & Period', {
-            'fields': ('organization', 'fiscal_year')
+        ('Budget Details', {
+            'fields': ('organization', 'fiscal_year', 'cost_center', 'cost_center_name')
         }),
-        ('Cost Center', {
-            'fields': ('cost_center', 'cost_center_name')
-        }),
-        ('Budget Allocation', {
-            'fields': ('total_budget', 'air_budget', 'accommodation_budget', 
+        ('Budget Allocations', {
+            'fields': ('total_budget', 'air_budget', 'accommodation_budget',
                       'car_hire_budget', 'other_budget', 'currency')
         }),
         ('Alert Thresholds', {
-            'fields': ('warning_threshold', 'critical_threshold')
+            'fields': ('warning_threshold', 'critical_threshold'),
+            'description': 'Percentage thresholds for budget alerts'
         }),
-        ('Additional Info', {
-            'fields': ('is_active', 'notes', 'created_by'),
+        ('Status', {
+            'fields': ('is_active',)
+        }),
+        ('Notes', {
+            'fields': ('notes',),
+            'classes': ('collapse',)
+        }),
+        ('Metadata', {
+            'fields': ('created_by',),
             'classes': ('collapse',)
         }),
     )
@@ -55,11 +65,13 @@ class BudgetAdmin(admin.ModelAdmin):
 
 @admin.register(BudgetAlert)
 class BudgetAlertAdmin(admin.ModelAdmin):
-    list_display = ['budget', 'alert_type', 'percentage_used', 'amount_spent', 
-                    'is_acknowledged', 'created_at']
-    list_filter = ['alert_type', 'is_acknowledged', 'created_at']
-    search_fields = ['budget__cost_center', 'budget__organization__name']
+    list_display = ['budget', 'alert_type', 'percentage_used', 'amount_spent',
+                    'is_acknowledged', 'acknowledged_by', 'created_at']
+    list_filter = ['alert_type', 'is_acknowledged', 'budget__organization']
+    search_fields = ['budget__cost_center', 'budget__cost_center_name',
+                    'budget__organization__name']
     date_hierarchy = 'created_at'
+    filter_horizontal = ['notified_users']
     
     fieldsets = (
         ('Alert Details', {
@@ -74,4 +86,7 @@ class BudgetAlertAdmin(admin.ModelAdmin):
     )
     
     readonly_fields = ['created_at']
-    filter_horizontal = ['notified_users']
+    
+    def has_add_permission(self, request):
+        # Budget alerts are typically created automatically by the system
+        return False

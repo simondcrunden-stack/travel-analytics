@@ -1,6 +1,8 @@
 from django.db import models
 from django.core.validators import MinValueValidator
 from decimal import Decimal
+from apps.organizations.models import Organization
+from apps.users.models import User
 import uuid
 
 
@@ -9,15 +11,13 @@ class FiscalYear(models.Model):
     FISCAL_YEAR_TYPES = [
         ('AUS', 'Australia (1 Jul - 30 Jun)'),
         ('UK', 'United Kingdom (1 Apr - 31 Mar)'),
-        ('EU', 'Europe (1 Jan - 31 Dec)'),
         ('USA', 'United States (1 Jan - 31 Dec)'),
         ('CALENDAR', 'Calendar Year (1 Jan - 31 Dec)'),
         ('CUSTOM', 'Custom Period'),
     ]
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    organization = models.ForeignKey('organizations.Organization', on_delete=models.CASCADE, 
-                                     related_name='fiscal_years')
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name='fiscal_years')
     
     # Fiscal year definition
     fiscal_year_type = models.CharField(max_length=20, choices=FISCAL_YEAR_TYPES)
@@ -51,8 +51,7 @@ class FiscalYear(models.Model):
 class Budget(models.Model):
     """Annual budget allocations by cost center"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    organization = models.ForeignKey('organizations.Organization', on_delete=models.CASCADE, 
-                                     related_name='budgets')
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name='budgets')
     fiscal_year = models.ForeignKey(FiscalYear, on_delete=models.CASCADE, related_name='budgets')
     
     # Cost center
@@ -60,16 +59,35 @@ class Budget(models.Model):
     cost_center_name = models.CharField(max_length=200)
     
     # Budget allocation by category
-    total_budget = models.DecimalField(max_digits=12, decimal_places=2, 
-                                      validators=[MinValueValidator(Decimal('0.00'))])
-    air_budget = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'),
-                                     validators=[MinValueValidator(Decimal('0.00'))])
-    accommodation_budget = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'),
-                                               validators=[MinValueValidator(Decimal('0.00'))])
-    car_hire_budget = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'),
-                                          validators=[MinValueValidator(Decimal('0.00'))])
-    other_budget = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'),
-                                       validators=[MinValueValidator(Decimal('0.00'))])
+    total_budget = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('0.00'))]
+    )
+    air_budget = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        validators=[MinValueValidator(Decimal('0.00'))]
+    )
+    accommodation_budget = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        validators=[MinValueValidator(Decimal('0.00'))]
+    )
+    car_hire_budget = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        validators=[MinValueValidator(Decimal('0.00'))]
+    )
+    other_budget = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        validators=[MinValueValidator(Decimal('0.00'))]
+    )
     
     # Currency
     currency = models.CharField(max_length=3, default='AUD')
@@ -87,8 +105,12 @@ class Budget(models.Model):
     # Metadata
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    created_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True, 
-                                   related_name='budgets_created')
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='budgets_created'
+    )
     
     class Meta:
         db_table = 'budgets'
@@ -180,13 +202,18 @@ class BudgetAlert(models.Model):
     amount_spent = models.DecimalField(max_digits=12, decimal_places=2)
     
     # Notification
-    notified_users = models.ManyToManyField('users.User', related_name='budget_alerts_received')
+    notified_users = models.ManyToManyField(User, related_name='budget_alerts_received')
     notification_sent_at = models.DateTimeField(null=True, blank=True)
     
     # Status
     is_acknowledged = models.BooleanField(default=False)
-    acknowledged_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True, blank=True,
-                                       related_name='budget_alerts_acknowledged')
+    acknowledged_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='budget_alerts_acknowledged'
+    )
     acknowledged_at = models.DateTimeField(null=True, blank=True)
     
     # Metadata
