@@ -17,6 +17,8 @@ class User(AbstractUser):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user_type = models.CharField(max_length=20, choices=USER_TYPES)
     phone = models.CharField(max_length=20, blank=True)
+    organization = models.ForeignKey('organizations.Organization', on_delete=models.CASCADE, 
+                                     null=True, blank=True, related_name='users')
     
     class Meta:
         db_table = 'users'

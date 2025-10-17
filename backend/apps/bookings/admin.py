@@ -101,8 +101,7 @@ class AirBookingAdmin(admin.ModelAdmin):
             'fields': ('primary_airline_iata_code', 'primary_airline_name')
         }),
         ('Compliance', {
-            'fields': ('lowest_fare_available', 'lowest_fare_currency', 'potential_savings'),
-            'classes': ('collapse',)
+            'fields': ('lowest_fare_available', 'lowest_fare_currency', 'potential_savings')
         }),
     )
 
@@ -112,13 +111,14 @@ class AirSegmentInline(admin.TabularInline):
     extra = 0
     fields = ['segment_number', 'airline_iata_code', 'flight_number', 
               'origin_airport_iata_code', 'destination_airport_iata_code', 
-              'departure_date', 'departure_time']
+              'departure_date', 'departure_time', 'distance_km', 'carbon_emissions_kg']
+    readonly_fields = ['distance_km', 'carbon_emissions_kg']  # Make them read-only since auto-calculated
 
 
 @admin.register(AirSegment)
 class AirSegmentAdmin(admin.ModelAdmin):
     list_display = ['air_booking', 'segment_number', 'airline_iata_code', 'flight_number',
-                    'origin_airport_iata_code', 'destination_airport_iata_code', 'departure_date']
+                    'origin_airport_iata_code', 'destination_airport_iata_code', 'departure_date', 'distance_km', 'carbon_emissions_kg']
     list_filter = ['airline_iata_code', 'departure_date']
     search_fields = ['air_booking__booking__agent_booking_reference', 'flight_number', 
                     'origin_airport_iata_code', 'destination_airport_iata_code']
@@ -137,8 +137,10 @@ class AirSegmentAdmin(admin.ModelAdmin):
             'fields': ('departure_date', 'departure_time', 'arrival_date', 'arrival_time')
         }),
         ('Fare Details', {
-            'fields': ('booking_class', 'fare_basis', 'distance_km'),
-            'classes': ('collapse',)
+            'fields': ('booking_class', 'fare_basis')
+        }),
+        ('Carbon Emissions', {
+            'fields': ('distance_km', 'carbon_emissions_kg')
         }),
     )
 

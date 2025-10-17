@@ -17,8 +17,7 @@ class AirportAdmin(admin.ModelAdmin):
             'fields': ('city', 'country', 'timezone')
         }),
         ('Coordinates', {
-            'fields': ('latitude', 'longitude'),
-            'classes': ('collapse',)
+            'fields': ('latitude', 'longitude')
         }),
     )
 

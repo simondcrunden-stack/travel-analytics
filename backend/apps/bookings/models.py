@@ -141,6 +141,16 @@ class Booking(models.Model):
     taxes = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     fees = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     
+    # Converted amounts in organization's base currency
+    total_amount_base = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    base_fare_base = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    taxes_base = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    fees_base = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    
+    # Exchange rate used for conversion
+    exchange_rate = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    exchange_rate_date = models.DateField(null=True, blank=True)
+    
     # Metadata
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -229,21 +239,20 @@ class AirBooking(models.Model):
 
 
 class AirSegment(models.Model):
-    """Individual flight segments"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     air_booking = models.ForeignKey(AirBooking, on_delete=models.CASCADE, related_name='segments')
     
     # Segment order
-    segment_number = models.IntegerField()  # 1, 2, 3, etc.
+    segment_number = models.IntegerField()
     
     # Flight details
-    airline_iata_code = models.CharField(max_length=3)  # QF, VA, etc.
+    airline_iata_code = models.CharField(max_length=3)
     airline_name = models.CharField(max_length=100)
     flight_number = models.CharField(max_length=10)
     
     # Route
-    origin_airport_iata_code = models.CharField(max_length=3)  # Airport IATA code
-    destination_airport_iata_code = models.CharField(max_length=3)  # Airport IATA code
+    origin_airport_iata_code = models.CharField(max_length=3)
+    destination_airport_iata_code = models.CharField(max_length=3)
     
     # Times
     departure_date = models.DateField()
@@ -252,11 +261,18 @@ class AirSegment(models.Model):
     arrival_time = models.TimeField()
     
     # Class & fare
-    booking_class = models.CharField(max_length=10)  # Y, J, etc.
+    booking_class = models.CharField(max_length=10)
     fare_basis = models.CharField(max_length=20, blank=True)
     
-    # Distance
+    # Distance & Carbon
     distance_km = models.IntegerField(null=True, blank=True)
+    carbon_emissions_kg = models.DecimalField(
+        max_digits=8, 
+        decimal_places=2, 
+        null=True, 
+        blank=True,
+        help_text="CO2 emissions in kilograms for this segment (ICAO standards)"
+    )
     
     class Meta:
         db_table = 'air_segments'
@@ -267,8 +283,108 @@ class AirSegment(models.Model):
         ]
         ordering = ['segment_number']
     
-    def __str__(self):
-        return f"Segment {self.segment_number}: {self.airline_iata_code}{self.flight_number} {self.origin_airport_iata_code}-{self.destination_airport_iata_code}"
+    def calculate_distance(self):
+        """
+        Calculate great circle distance between origin and destination airports.
+        Returns distance in kilometers.
+        """
+        try:
+            from math import radians, sin, cos, sqrt, atan2
+            from apps.reference_data.models import Airport
+            
+            origin_airport = Airport.objects.get(iata_code=self.origin_airport_iata_code)
+            dest_airport = Airport.objects.get(iata_code=self.destination_airport_iata_code)
+            
+            if not all([origin_airport.latitude, origin_airport.longitude,
+                       dest_airport.latitude, dest_airport.longitude]):
+                print(f"Missing coordinates for {self.origin_airport_iata_code} or {self.destination_airport_iata_code}")
+                return None
+            
+            # Haversine formula
+            R = 6371  # Earth's radius in km
+            
+            lat1 = radians(float(origin_airport.latitude))
+            lon1 = radians(float(origin_airport.longitude))
+            lat2 = radians(float(dest_airport.latitude))
+            lon2 = radians(float(dest_airport.longitude))
+            
+            dlat = lat2 - lat1
+            dlon = lon2 - lon1
+            
+            a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+            c = 2 * atan2(sqrt(a), sqrt(1-a))
+            distance = R * c
+            
+            return round(distance)
+        except Exception as e:
+            print(f"Error calculating distance: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+    
+    def calculate_carbon_emissions(self):
+        """
+        Calculate CO2 emissions based on ICAO standards.
+        
+        ICAO Carbon Emissions Calculator methodology:
+        - Short-haul (<1000km): ~0.158 kg CO2/km
+        - Medium-haul (1000-3000km): ~0.113 kg CO2/km  
+        - Long-haul (>3000km): ~0.103 kg CO2/km
+        
+        Class multipliers (per passenger):
+        - Economy: 1.0x
+        - Premium Economy: 1.5x
+        - Business: 2.0x
+        - First: 2.5x
+        """
+        if not self.distance_km:
+            distance = self.calculate_distance()
+            if distance:
+                self.distance_km = distance
+            else:
+                return None
+        
+        # Determine emission factor based on distance
+        if self.distance_km < 1000:
+            base_emission_factor = 0.158  # kg CO2 per km
+        elif self.distance_km < 3000:
+            base_emission_factor = 0.113
+        else:
+            base_emission_factor = 0.103
+        
+        # Get class multiplier from booking class
+        class_multiplier = 1.0  # Default to economy
+        try:
+            air_booking = self.air_booking
+            if air_booking.travel_class in ['BUSINESS', 'PREMIUM_BUSINESS']:
+                class_multiplier = 2.0
+            elif air_booking.travel_class == 'FIRST':
+                class_multiplier = 2.5
+            elif air_booking.travel_class == 'PREMIUM_ECONOMY':
+                class_multiplier = 1.5
+        except Exception:
+            pass
+        
+        # Calculate total emissions
+        emissions = self.distance_km * base_emission_factor * class_multiplier
+        
+        return round(emissions, 2)
+    
+    def save(self, *args, **kwargs):
+        """Auto-calculate distance and emissions on save if not provided"""
+        # Calculate distance if missing
+        if not self.distance_km:
+            calculated_distance = self.calculate_distance()
+            if calculated_distance:
+                self.distance_km = calculated_distance
+        
+        # Calculate carbon if we have distance
+        if self.distance_km and not self.carbon_emissions_kg:
+            calculated_carbon = self.calculate_carbon_emissions()
+            if calculated_carbon:
+                self.carbon_emissions_kg = calculated_carbon
+        
+        super().save(*args, **kwargs)
 
 
 # ============================================================================
