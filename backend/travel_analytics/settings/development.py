@@ -7,13 +7,13 @@ DEBUG = True
 
 ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 
-# Database - Using SQLite for now (easy setup)
+# Database - Using PostgreSQL
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'travel_analytics_dev',  # ← TRAVEL ANALYTICS REFRESH DATABASE
-        'USER': 'simoncrunden',      # Find with: whoami (bash)
-        'PASSWORD': '',                   # Empty for local dev
+        'NAME': 'travel_analytics_dev',
+        'USER': 'simoncrunden',
+        'PASSWORD': '',
         'HOST': 'localhost',
         'PORT': '5432',
         'ATOMIC_REQUESTS': True,
@@ -21,10 +21,10 @@ DATABASES = {
     }
 }
 
-# CORS - Allow frontend in development
+# CORS - Allow frontend in development (Vite runs on 5173)
 CORS_ALLOWED_ORIGINS = [
-    'http://localhost:8080',
-    'http://localhost:3000',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
 ]
 
 CORS_ALLOW_CREDENTIALS = True
