@@ -27,6 +27,12 @@ const router = createRouter({
         },
       ],
     },
+    {
+      path: '/compliance',
+      name: 'Compliance',
+      component: () => import('@/views/DashboardView.vue'), // Temporary - use dashboard
+      meta: { requiresAuth: true },
+    },
   ],
 })
 
