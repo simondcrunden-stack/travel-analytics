@@ -21,17 +21,23 @@ const router = createRouter({
           component: () => import('@/views/DashboardView.vue'),
         },
         {
+          path: '/compliance',
+          name: 'Compliance',
+          component: () => import('@/views/ComplianceView.vue'),
+          meta: { requiresAuth: true },
+        },
+        {
+          path: '/budgets',
+          name: 'Budgets',
+          component: () => import('@/views/BudgetView.vue'),
+          meta: { requiresAuth: true },
+        },
+        {
           path: 'bookings',
           name: 'bookings',
           component: () => import('@/views/BookingsView.vue'),
         },
       ],
-    },
-    {
-      path: '/compliance',
-      name: 'Compliance',
-      component: () => import('@/views/DashboardView.vue'), // Temporary - use dashboard
-      meta: { requiresAuth: true },
     },
   ],
 })

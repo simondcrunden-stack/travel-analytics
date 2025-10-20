@@ -165,6 +165,7 @@ const destinationCoordinates = {
   'London': { lat: 51.5074, lng: -0.1278, country: 'United Kingdom', region: 'Europe' },
   'Bangkok': { lat: 13.7563, lng: 100.5018, country: 'Thailand', region: 'Asia' },
   'Dubai': { lat: 25.2048, lng: 55.2708, country: 'United Arab Emirates', region: 'Middle East' },
+  'Rio de Janiero': { lat: -22.9068, lng: -43.1729, country: 'Brazil', region: 'South America' },
 }
 
 // Initialize map
@@ -313,6 +314,7 @@ const loadDestinations = async () => {
       { city: 'Los Angeles', trips: 6, country: 'United States', region: 'North America' },
       { city: 'Dubai', trips: 5, country: 'United Arab Emirates', region: 'Middle East' },
       { city: 'Perth', trips: 4, country: 'Australia', region: 'Oceania' },
+      { city: 'Rio de Janiero', trips: 4, country: 'Brazil', region: 'South America' },
     ]
 
     // Calculate totals
