@@ -1,68 +1,108 @@
 <template>
-  <div class="min-h-screen bg-gray-50">
-    <!-- Top Navigation -->
-    <nav class="bg-white shadow-sm border-b border-gray-200">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="flex justify-between h-16">
-          <!-- Logo & Nav -->
-          <div class="flex">
-            <div class="flex-shrink-0 flex items-center">
-              <h1 class="text-xl font-bold text-primary-600">Travel Analytics</h1>
-            </div>
-            <div class="hidden sm:ml-6 sm:flex sm:space-x-8">
-              <router-link
-                to="/"
-                class="border-transparent text-gray-500 hover:border-primary-500 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
-                active-class="border-primary-500 text-gray-900"
-              >
-                Dashboard
-              </router-link>
-              <router-link
-                to="/bookings"
-                class="border-transparent text-gray-500 hover:border-primary-500 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
-                active-class="border-primary-500 text-gray-900"
-              >
-                Bookings
-              </router-link>
-            </div>
-          </div>
+  <div class="main-layout" :class="{ 'main-layout--sidebar-collapsed': isSidebarCollapsed }">
+    <!-- Sidebar Navigation -->
+    <SideBar @sidebar-toggle="handleSidebarToggle" />
 
-          <!-- User Menu -->
-          <div class="flex items-center">
-            <div class="flex-shrink-0">
-              <span class="text-sm text-gray-700 mr-4">
-                {{ authStore.userName }}
-              </span>
-              <button
-                @click="handleLogout"
-                class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700"
-              >
-                Logout
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </nav>
+    <!-- Main Content Area -->
+    <div class="main-layout__content">
+      <!-- Top Bar -->
+      <TopBar />
 
-    <!-- Main Content -->
-    <main>
-      <div class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+      <!-- Page Content -->
+      <main class="main-layout__main">
         <router-view />
-      </div>
-    </main>
+      </main>
+
+      <!-- Footer (Optional) -->
+      <footer class="main-layout__footer">
+        <p>&copy; {{ currentYear }} Travel Analytics. All rights reserved.</p>
+      </footer>
+    </div>
   </div>
 </template>
 
-<script setup>
-import { useRouter } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
+<script>
+import SideBar from './SideBar.vue'
+import TopBar from './TopBar.vue'
 
-const router = useRouter()
-const authStore = useAuthStore()
+export default {
+  name: 'MainLayout',
+  
+  components: {
+    SideBar,
+    TopBar
+  },
 
-const handleLogout = () => {
-  authStore.logout()
-  router.push({ name: 'login' })
+  data() {
+    return {
+      isSidebarCollapsed: false
+    }
+  },
+
+  computed: {
+    currentYear() {
+      return new Date().getFullYear()
+    }
+  },
+
+  methods: {
+    handleSidebarToggle(collapsed) {
+      this.isSidebarCollapsed = collapsed
+    }
+  }
 }
 </script>
+
+<style scoped>
+.main-layout {
+  display: flex;
+  min-height: 100vh;
+  background-color: #f9fafb;
+}
+
+.main-layout__content {
+  flex: 1;
+  margin-left: 260px;
+  display: flex;
+  flex-direction: column;
+  transition: margin-left 0.3s ease;
+}
+
+.main-layout--sidebar-collapsed .main-layout__content {
+  margin-left: 70px;
+}
+
+.main-layout__main {
+  flex: 1;
+  padding: 2rem;
+  overflow-y: auto;
+}
+
+.main-layout__footer {
+  padding: 1.5rem 2rem;
+  background-color: #ffffff;
+  border-top: 1px solid #e5e7eb;
+  text-align: center;
+}
+
+.main-layout__footer p {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .main-layout__content {
+    margin-left: 0;
+  }
+
+  .main-layout__main {
+    padding: 1rem;
+  }
+
+  .main-layout__footer {
+    padding: 1rem;
+  }
+}
+</style>
