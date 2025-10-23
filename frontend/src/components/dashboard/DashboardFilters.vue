@@ -216,13 +216,22 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  travelType: {
+    type: String,
+    default: ''
+  },
   organizations: {
-    type: Array,
+    type: [Array, Object],
     default: () => [],
   },
 })
 
-const emit = defineEmits(['update:filters'])
+const emit = defineEmits([
+  'update:dateRange',
+  'update:organization',
+  'update:originCountry',
+  'update:travelType'
+])
 
 // Local state
 const showFilters = ref(false)

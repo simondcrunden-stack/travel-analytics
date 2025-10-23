@@ -211,6 +211,8 @@ const filters = ref({
   destinationCountry: '',
 })
 
+const travelType = ref('')
+
 // Computed
 const airBookingsCount = computed(() => {
   if (!spendBreakdown.value || !spendBreakdown.value.bookings_count) {

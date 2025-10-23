@@ -1,56 +1,54 @@
 <template>
-  <div class="main-layout" :class="{ 'main-layout--sidebar-collapsed': isSidebarCollapsed }">
-    <!-- Sidebar Navigation -->
-    <SideBar @sidebar-toggle="handleSidebarToggle" />
+  <div class="flex h-screen bg-gray-100">
+    <!-- Sidebar -->
+    <SideBar />
 
     <!-- Main Content Area -->
-    <div class="main-layout__content">
+    <div class="flex-1 flex flex-col overflow-hidden">
       <!-- Top Bar -->
-      <TopBar />
-
-      <!-- Page Content -->
-      <main class="main-layout__main">
+      <TopBar @toggle-sidebar="navigationStore.toggleSidebar" />
+      
+      <!-- Main Content -->
+      <main class="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-6">
         <router-view />
       </main>
-
-      <!-- Footer (Optional) -->
-      <footer class="main-layout__footer">
-        <p>&copy; {{ currentYear }} Travel Analytics. All rights reserved.</p>
-      </footer>
     </div>
+
+    <!-- Mobile Overlay -->
+    <div
+      v-if="!navigationStore.isDesktop && !navigationStore.isSidebarCollapsed"
+      class="fixed inset-0 bg-black bg-opacity-50 z-30 lg:hidden"
+      @click="navigationStore.toggleSidebar"
+    ></div>
   </div>
 </template>
 
-<script>
+<script setup>
+import { onMounted, onUnmounted } from 'vue'
 import SideBar from './SideBar.vue'
 import TopBar from './TopBar.vue'
+import { useNavigationStore } from '@/stores/navigation'
+import { useKeyboardShortcuts } from '@/composables/useKeyboardShortcuts'
+useKeyboardShortcuts() // Add this line
 
-export default {
-  name: 'MainLayout',
-  
-  components: {
-    SideBar,
-    TopBar
-  },
+const navigationStore = useNavigationStore()
 
-  data() {
-    return {
-      isSidebarCollapsed: false
-    }
-  },
-
-  computed: {
-    currentYear() {
-      return new Date().getFullYear()
-    }
-  },
-
-  methods: {
-    handleSidebarToggle(collapsed) {
-      this.isSidebarCollapsed = collapsed
-    }
-  }
+// Handle window resize for responsive behavior
+const handleResize = () => {
+  navigationStore.checkScreenSize()
 }
+
+onMounted(() => {
+  // Initialize screen size
+  navigationStore.checkScreenSize()
+  
+  // Add resize listener
+  window.addEventListener('resize', handleResize)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', handleResize)
+})
 </script>
 
 <style scoped>
