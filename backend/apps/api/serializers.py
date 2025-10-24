@@ -146,9 +146,14 @@ class CarHireBookingSerializer(serializers.ModelSerializer):
 
 
 class BookingListSerializer(serializers.ModelSerializer):
-    """For list views - lightweight"""
+    """For list views - now includes nested details for charts"""
     traveller_name = serializers.CharField(source='traveller.__str__', read_only=True)
     organization_name = serializers.CharField(source='organization.name', read_only=True)
+    
+    # Add nested details for frontend charts
+    air_details = AirBookingSerializer(read_only=True)
+    accommodation_details = AccommodationBookingSerializer(read_only=True)
+    car_hire_details = CarHireBookingSerializer(read_only=True)
     
     class Meta:
         model = Booking
@@ -156,7 +161,8 @@ class BookingListSerializer(serializers.ModelSerializer):
             'id', 'agent_booking_reference', 'supplier_reference',
             'booking_type', 'booking_date', 'travel_date', 'return_date',
             'status', 'traveller_name', 'organization_name',
-            'currency', 'total_amount'
+            'currency', 'total_amount',
+            'air_details', 'accommodation_details', 'car_hire_details'
         ]
 
 
@@ -332,4 +338,27 @@ class CommissionSerializer(serializers.ModelSerializer):
         """Calculate commission rate as percentage"""
         if obj.booking_amount and obj.booking_amount > 0:
             return round((obj.commission_amount / obj.booking_amount) * 100, 2)
+        return None
+
+class ServiceFeeSerializer(serializers.ModelSerializer):
+    """Serializer for service fees"""
+    traveller_name = serializers.SerializerMethodField()
+    booking_reference = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = ServiceFee
+        fields = [
+            'id', 'booking', 'booking_reference', 'traveller', 'traveller_name',
+            'organization', 'fee_type', 'fee_date', 'currency', 'amount',
+            'gst_amount', 'description', 'created_at',
+        ]
+    
+    def get_traveller_name(self, obj):
+        if obj.traveller:
+            return f"{obj.traveller.first_name} {obj.traveller.last_name}"
+        return None
+    
+    def get_booking_reference(self, obj):
+        if obj.booking:
+            return obj.booking.agent_booking_reference
         return None

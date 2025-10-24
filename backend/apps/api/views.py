@@ -25,7 +25,7 @@ from .serializers import (
     FiscalYearSerializer, BudgetSerializer, BudgetAlertSerializer,
     ComplianceViolationSerializer, TravelRiskAlertSerializer,
     AirportSerializer, AirlineSerializer, CurrencyExchangeRateSerializer,
-    CommissionSerializer
+    CommissionSerializer, ServiceFeeSerializer
 )
 
 
@@ -333,7 +333,7 @@ class AirlineViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 # ============================================================================
-# COMMISSION VIEWSETS
+# COMMISSION VIEWSET
 # ============================================================================
 
 class CommissionViewSet(viewsets.ReadOnlyModelViewSet):
@@ -359,3 +359,32 @@ class CommissionViewSet(viewsets.ReadOnlyModelViewSet):
             ).select_related('booking', 'organization', 'traveller')
         
         return Commission.objects.none()
+
+# ============================================================================
+# SERVICE FEE VIEWSET
+# ============================================================================
+
+class ServiceFeeViewSet(viewsets.ReadOnlyModelViewSet):
+    """ViewSet for service fees"""
+    serializer_class = ServiceFeeSerializer
+    filterset_fields = ['organization', 'fee_type', 'traveller']
+    search_fields = ['description']
+    ordering_fields = ['fee_date', 'amount']
+    ordering = ['-fee_date']
+    
+    def get_queryset(self):
+        user = self.request.user
+        
+        if user.user_type == 'ADMIN':
+            return ServiceFee.objects.all()
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            if user.organization:
+                return ServiceFee.objects.filter(
+                    Q(organization=user.organization) |
+                    Q(organization__travel_agent=user.organization)
+                )
+        elif user.user_type in ['CUSTOMER_ADMIN', 'CUSTOMER_RISK', 'CUSTOMER']:
+            if user.organization:
+                return ServiceFee.objects.filter(organization=user.organization)
+        
+        return ServiceFee.objects.none()

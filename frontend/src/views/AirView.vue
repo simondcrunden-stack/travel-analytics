@@ -1,376 +1,202 @@
 <template>
-  <div class="min-h-screen bg-gray-50 p-6">
+  <div class="space-y-6">
     <!-- Header -->
-    <div class="mb-6">
-      <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Airline Spend Analysis</h1>
+      <p class="mt-1 text-sm text-gray-500">
+        Detailed breakdown of air travel expenses
+      </p>
+    </div>
+
+    <!-- Filters -->
+    <div class="bg-white p-4 rounded-lg shadow">
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div>
-          <h1 class="text-3xl font-bold text-gray-900">Air Travel Dashboard</h1>
-          <p class="text-gray-600 mt-1">Airline spend and flight booking analysis</p>
+          <label class="block text-sm font-medium text-gray-700 mb-1">
+            Start Date
+          </label>
+          <input
+            v-model="filters.start_date"
+            type="date"
+            class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+            @change="loadData"
+          />
         </div>
-        
-        <!-- Export Button -->
-        <button
-          @click="exportReport"
-          class="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <svg class="w-5 h-5" :d="mdiDownload" />
-          <span>Export Report</span>
-        </button>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">
+            End Date
+          </label>
+          <input
+            v-model="filters.end_date"
+            type="date"
+            class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+            @change="loadData"
+          />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">
+            Travel Class
+          </label>
+          <select
+            v-model="filters.travel_class"
+            class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+            @change="loadData"
+          >
+            <option value="">All Classes</option>
+            <option value="ECONOMY">Economy</option>
+            <option value="PREMIUM_ECONOMY">Premium Economy</option>
+            <option value="BUSINESS">Business</option>
+            <option value="FIRST">First Class</option>
+          </select>
+        </div>
+        <div class="flex items-end">
+          <button
+            @click="resetFilters"
+            class="w-full px-4 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
+          >
+            Reset Filters
+          </button>
+        </div>
       </div>
     </div>
 
     <!-- Loading State -->
-    <div v-if="loading" class="text-center py-12">
-      <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      <p class="mt-4 text-gray-600">Loading air travel data...</p>
+    <div v-if="loading" class="flex justify-center items-center py-12">
+      <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
     </div>
 
     <!-- Error State -->
     <div v-else-if="error" class="bg-red-50 border border-red-200 rounded-lg p-4">
       <p class="text-red-800">{{ error }}</p>
+      <button 
+        @click="loadData" 
+        class="mt-2 text-sm text-red-600 hover:text-red-800 underline"
+      >
+        Try Again
+      </button>
     </div>
 
-    <!-- Main Content -->
+    <!-- Content -->
     <div v-else>
       <!-- Summary Cards -->
-      <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-        <div class="bg-white rounded-2xl shadow-sm p-6">
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-gray-600 text-sm">Total Air Spend</p>
-              <p class="text-3xl font-bold text-gray-900 mt-1">
-                {{ formatCurrency(stats.totalSpend) }}
-              </p>
-            </div>
-            <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
-              <svg class="w-6 h-6 text-blue-600" :d="mdiAirplane" />
-            </div>
-          </div>
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6 mt-6">
+        <div class="bg-white rounded-lg shadow p-6">
+          <p class="text-sm font-medium text-gray-600">Total Air Spend</p>
+          <p class="text-2xl font-bold text-gray-900 mt-2">
+            {{ formatCurrency(totalSpend) }}
+          </p>
+          <p class="text-xs text-gray-500 mt-1">
+            {{ airBookings.length }} flights
+          </p>
         </div>
 
-        <div class="bg-white rounded-2xl shadow-sm p-6">
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-gray-600 text-sm">Total Bookings</p>
-              <p class="text-3xl font-bold text-gray-900 mt-1">{{ stats.totalBookings }}</p>
-            </div>
-            <div class="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
-              <svg class="w-6 h-6 text-purple-600" :d="mdiTicket" />
-            </div>
-          </div>
+        <div class="bg-white rounded-lg shadow p-6">
+          <p class="text-sm font-medium text-gray-600">Average Fare</p>
+          <p class="text-2xl font-bold text-gray-900 mt-2">
+            {{ formatCurrency(averageFare) }}
+          </p>
+          <p class="text-xs text-gray-500 mt-1">
+            Per booking
+          </p>
         </div>
 
-        <div class="bg-white rounded-2xl shadow-sm p-6">
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-gray-600 text-sm">Avg. Fare</p>
-              <p class="text-3xl font-bold text-gray-900 mt-1">
-                {{ formatCurrency(stats.avgFare) }}
-              </p>
-            </div>
-            <div class="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
-              <svg class="w-6 h-6 text-green-600" :d="mdiCurrencyUsd" />
-            </div>
-          </div>
+        <div class="bg-white rounded-lg shadow p-6">
+          <p class="text-sm font-medium text-gray-600">Total Carbon</p>
+          <p class="text-2xl font-bold text-gray-900 mt-2">
+            {{ formatNumber(totalCarbon) }} kg
+          </p>
+          <p class="text-xs text-gray-500 mt-1">
+            CO2 emissions
+          </p>
         </div>
 
-        <div class="bg-white rounded-2xl shadow-sm p-6">
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-gray-600 text-sm">CO₂ Emissions</p>
-              <p class="text-3xl font-bold text-gray-900 mt-1">
-                {{ formatNumber(stats.totalEmissions) }}
-                <span class="text-sm text-gray-600">kg</span>
-              </p>
-            </div>
-            <div class="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center">
-              <svg class="w-6 h-6 text-orange-600" :d="mdiLeaf" />
-            </div>
-          </div>
+        <div class="bg-white rounded-lg shadow p-6">
+          <p class="text-sm font-medium text-gray-600">Compliance Rate</p>
+          <p class="text-2xl font-bold text-gray-900 mt-2">
+            {{ complianceRate }}%
+          </p>
+          <p class="text-xs text-gray-500 mt-1">
+            {{ compliantBookings }} compliant
+          </p>
         </div>
       </div>
 
-      <!-- Filters -->
-      <div class="bg-white rounded-2xl shadow-sm mb-6 overflow-hidden">
-        <!-- Filter Header -->
-        <div class="px-6 py-4 flex items-center justify-between border-b border-gray-200">
-          <div class="flex items-center gap-3">
-            <svg class="w-5 h-5 text-gray-600" :d="mdiFilter" />
-            <h2 class="text-lg font-semibold text-gray-900">Filters</h2>
-            <span v-if="activeFilterCount > 0" class="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
-              {{ activeFilterCount }} active
-            </span>
-          </div>
-          <button
-            @click="filtersOpen = !filtersOpen"
-            class="flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
-          >
-            <svg class="w-4 h-4" :d="filtersOpen ? mdiEyeOff : mdiPencil" />
-            <span>{{ filtersOpen ? 'Hide Filters' : 'Edit Filters' }}</span>
-          </button>
-        </div>
-
-        <!-- Filter Content -->
-        <div v-show="filtersOpen" class="p-6">
-          <div class="flex items-center justify-between mb-4">
-            <p class="text-sm text-gray-600">Refine your air travel data</p>
-            <button
-              @click="clearFilters"
-              class="text-sm text-blue-600 hover:text-blue-700 font-medium"
-            >
-              Clear All
-            </button>
-          </div>
-
-          <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
-            <!-- Trip Type -->
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-2">Trip Type</label>
-              <select
-                v-model="filters.tripType"
-                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="">All Types</option>
-                <option value="domestic">Domestic</option>
-                <option value="international">International</option>
-              </select>
-            </div>
-
-            <!-- Travel Class -->
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-2">Travel Class</label>
-              <select
-                v-model="filters.travelClass"
-                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="">All Classes</option>
-                <option value="ECONOMY">Economy</option>
-                <option value="PREMIUM_ECONOMY">Premium Economy</option>
-                <option value="BUSINESS">Business</option>
-                <option value="FIRST">First Class</option>
-              </select>
-            </div>
-
-            <!-- Airline -->
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-2">Airline</label>
-              <select
-                v-model="filters.airline"
-                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="">All Airlines</option>
-                <option value="Qantas">Qantas</option>
-                <option value="Virgin Australia">Virgin Australia</option>
-                <option value="Singapore Airlines">Singapore Airlines</option>
-                <option value="Air New Zealand">Air New Zealand</option>
-                <option value="Emirates">Emirates</option>
-                <option value="Jetstar">Jetstar</option>
-                <option value="United Airlines">United Airlines</option>
-              </select>
-            </div>
-
-            <!-- Date From -->
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-2">From Date</label>
-              <input
-                type="date"
-                v-model="filters.dateFrom"
-                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-
-            <!-- Date To -->
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-2">To Date</label>
-              <input
-                type="date"
-                v-model="filters.dateTo"
-                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Two Column Layout -->
+      <!-- Charts -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <!-- Airline Spend Chart -->
-        <div class="bg-white rounded-2xl shadow-sm p-6">
-          <h2 class="text-lg font-semibold text-gray-900 mb-4">Spend by Airline</h2>
-          <canvas ref="airlineChartCanvas"></canvas>
-        </div>
-
-        <!-- Class of Travel Chart -->
-        <div class="bg-white rounded-2xl shadow-sm p-6">
-          <h2 class="text-lg font-semibold text-gray-900 mb-4">Bookings by Travel Class</h2>
-          <canvas ref="classChartCanvas"></canvas>
-        </div>
+        <AirlineSpendChart :filters="filters" />
+        <TravelClassChart :filters="filters" />
       </div>
 
-      <!-- Advance Purchase Analysis -->
-      <div class="bg-white rounded-2xl shadow-sm p-6 mb-6">
-        <div class="flex items-center justify-between mb-4">
-          <div>
-            <h2 class="text-lg font-semibold text-gray-900">Average Fare by Advance Purchase Period</h2>
-            <p class="text-sm text-gray-600 mt-1">Book earlier to save more</p>
-          </div>
-          <div class="text-right">
-            <p class="text-sm text-gray-600">Potential Savings</p>
-            <p class="text-2xl font-bold text-green-600">{{ formatCurrency(advancePurchaseSavings) }}</p>
-          </div>
-        </div>
-        <canvas ref="advancePurchaseChartCanvas"></canvas>
-      </div>
+      <AdvancePurchaseChart :filters="filters" class="mb-6" />
 
-      <!-- Top Routes Table -->
-      <div class="bg-white rounded-2xl shadow-sm overflow-hidden mb-6">
+      <!-- Bookings Table -->
+      <div class="bg-white rounded-lg shadow mt-6">
         <div class="p-6 border-b border-gray-200">
-          <h2 class="text-lg font-semibold text-gray-900">Top 10 Routes</h2>
-          <p class="text-sm text-gray-600 mt-1">Most frequently traveled routes</p>
+          <h2 class="text-lg font-semibold text-gray-900">All Air Bookings</h2>
         </div>
-
         <div class="overflow-x-auto">
-          <table class="w-full">
+          <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50">
               <tr>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Rank
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                  Reference
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Route
-                </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Type
-                </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Bookings
-                </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Total Spend
-                </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Avg. Fare
-                </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  CO₂ Emissions
-                </th>
-              </tr>
-            </thead>
-            <tbody class="bg-white divide-y divide-gray-200">
-              <tr
-                v-for="(route, index) in topRoutes"
-                :key="index"
-                class="hover:bg-gray-50 transition-colors"
-              >
-                <td class="px-6 py-4 whitespace-nowrap">
-                  <span
-                    :class="getRankBadgeClass(index + 1)"
-                    class="inline-flex items-center justify-center w-8 h-8 rounded-full font-semibold"
-                  >
-                    {{ index + 1 }}
-                  </span>
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap">
-                  <div class="flex items-center gap-2">
-                    <span class="font-medium text-gray-900">{{ route.origin }}</span>
-                    <svg class="w-4 h-4 text-gray-400" :d="mdiArrowRight" />
-                    <span class="font-medium text-gray-900">{{ route.destination }}</span>
-                  </div>
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap">
-                  <span
-                    :class="route.type === 'Domestic' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'"
-                    class="px-2 py-1 text-xs font-medium rounded-full"
-                  >
-                    {{ route.type }}
-                  </span>
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {{ route.bookings }}
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                  {{ formatCurrency(route.totalSpend) }}
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {{ formatCurrency(route.avgFare) }}
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                  {{ formatNumber(route.emissions) }} kg
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- Recent Bookings -->
-      <div class="bg-white rounded-2xl shadow-sm overflow-hidden">
-        <div class="p-6 border-b border-gray-200">
-          <h2 class="text-lg font-semibold text-gray-900">Recent Air Bookings</h2>
-          <p class="text-sm text-gray-600 mt-1">Latest flight bookings</p>
-        </div>
-
-        <div class="overflow-x-auto">
-          <table class="w-full">
-            <thead class="bg-gray-50">
-              <tr>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Date
-                </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                   Traveller
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                   Route
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                   Airline
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                   Class
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Fare
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                  Travel Date
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Booking Ref
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                  Amount
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                  Carbon (kg)
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                  Status
                 </th>
               </tr>
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
-              <tr
-                v-for="booking in recentBookings"
-                :key="booking.id"
-                class="hover:bg-gray-50 transition-colors cursor-pointer"
-                @click="viewBooking(booking)"
-              >
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {{ formatDate(booking.date) }}
+              <tr v-for="booking in airBookings" :key="booking.id" class="hover:bg-gray-50">
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  {{ booking.agent_booking_reference }}
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap">
-                  <div class="text-sm font-medium text-gray-900">{{ booking.traveller }}</div>
-                  <div class="text-sm text-gray-500">{{ booking.organization }}</div>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {{ booking.traveller_name }}
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap">
-                  <div class="flex items-center gap-2">
-                    <span class="text-sm font-medium text-gray-900">{{ booking.origin }}</span>
-                    <svg class="w-4 h-4 text-gray-400" :d="mdiArrowRight" />
-                    <span class="text-sm font-medium text-gray-900">{{ booking.destination }}</span>
-                  </div>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {{ getRoute(booking) }}
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {{ booking.airline }}
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {{ getAirline(booking) }}
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap">
-                  <span :class="getClassBadgeClass(booking.class)">
-                    {{ booking.class }}
-                  </span>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {{ getTravelClass(booking) }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {{ formatDate(booking.travel_date) }}
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                  {{ formatCurrency(booking.fare) }}
+                  {{ formatCurrency(booking.total_amount) }}
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                  {{ booking.reference }}
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {{ getCarbon(booking) }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <span :class="getStatusClass(booking.status)">
+                    {{ booking.status }}
+                  </span>
                 </td>
               </tr>
             </tbody>
@@ -382,406 +208,259 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick, onBeforeUnmount } from 'vue'
-import { useRouter } from 'vue-router'
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  BarController,
-  ArcElement,
-  DoughnutController,
-  Title,
-  Tooltip,
-  Legend
-} from 'chart.js'
-import {
-  mdiAirplane,
-  mdiTicket,
-  mdiCurrencyUsd,
-  mdiLeaf,
-  mdiDownload,
-  mdiArrowRight,
-  mdiFilter,
-  mdiChevronDown,
-} from '@mdi/js'
-
-// Register Chart.js components
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  BarController,
-  ArcElement,
-  DoughnutController,
-  Title,
-  Tooltip,
-  Legend
-)
-
-const router = useRouter()
+import AirlineSpendChart from '@/components/air/AirlineSpendChart.vue'
+import TravelClassChart from '@/components/air/TravelClassChart.vue'
+import AdvancePurchaseChart from '@/components/air/AdvancePurchaseChart.vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
+import bookingService from '@/services/bookingService'
 
 // State
 const loading = ref(true)
 const error = ref(null)
-const airlineChartCanvas = ref(null)
-const classChartCanvas = ref(null)
-const advancePurchaseChartCanvas = ref(null)
-let airlineChart = null
-let classChart = null
-let advancePurchaseChart = null
+const airBookings = ref([])
 
 // Filters
 const filters = ref({
-  tripType: '',
-  travelClass: '',
-  airline: '',
-  dateFrom: '',
-  dateTo: '',
-})
-const filtersOpen = ref(false)
-
-// Stats
-const stats = ref({
-  totalSpend: 0,
-  totalBookings: 0,
-  avgFare: 0,
-  totalEmissions: 0,
+  start_date: '',
+  end_date: '',
+  travel_class: ''
 })
 
-// Data
-const airlineData = ref([])
-const classData = ref([])
-const advancePurchaseData = ref([])
-const topRoutes = ref([])
-const recentBookings = ref([])
+// Charts
+const airlineChart = ref(null)
+const routeChart = ref(null)
+let airlineChartInstance = null
+let routeChartInstance = null
 
-// Fetch data
-const fetchAirData = async () => {
+// Computed
+const totalSpend = computed(() => {
+  return airBookings.value.reduce((sum, b) => sum + parseFloat(b.total_amount || 0), 0)
+})
+
+const averageFare = computed(() => {
+  return airBookings.value.length > 0 ? totalSpend.value / airBookings.value.length : 0
+})
+
+const totalCarbon = computed(() => {
+  return airBookings.value.reduce((sum, b) => {
+    const carbon = b.air_details?.segments?.reduce((s, seg) => 
+      s + parseFloat(seg.carbon_emissions_kg || 0), 0) || 0
+    return sum + carbon
+  }, 0)
+})
+
+const compliantBookings = computed(() => {
+  return airBookings.value.filter(b => 
+    b.violations?.length === 0 || !b.violations
+  ).length
+})
+
+const complianceRate = computed(() => {
+  return airBookings.value.length > 0 
+    ? Math.round((compliantBookings.value / airBookings.value.length) * 100)
+    : 0
+})
+
+// Methods
+const loadData = async () => {
   try {
     loading.value = true
     error.value = null
 
-    // Generate sample data
-    generateSampleData()
-    
-    console.log('Airline Data:', airlineData.value)
-    console.log('Class Data:', classData.value)
+    const params = {
+      booking_type: 'AIR'
+    }
+
+    if (filters.value.start_date) {
+      params.travel_date_after = filters.value.start_date
+    }
+    if (filters.value.end_date) {
+      params.travel_date_before = filters.value.end_date
+    }
+
+    const response = await bookingService.getAirlineSpend(params)
+    airBookings.value = response.results || response
+
+    // Filter by travel class if selected
+    if (filters.value.travel_class) {
+      airBookings.value = airBookings.value.filter(b => 
+        b.air_details?.travel_class === filters.value.travel_class
+      )
+    }
+
+    await nextTick()
+    renderCharts()
+
   } catch (err) {
-    error.value = 'Failed to load air travel data'
-    console.error('Error:', err)
+    console.error('Error loading airline data:', err)
+    error.value = 'Failed to load airline spend data. Please try again.'
   } finally {
     loading.value = false
   }
 }
 
-// Generate sample data
-const generateSampleData = () => {
-  // Stats
-  stats.value = {
-    totalSpend: 458750,
-    totalBookings: 156,
-    avgFare: 2940,
-    totalEmissions: 12450,
-  }
-
-  // Airline data
-  airlineData.value = [
-    { airline: 'Qantas', spend: 185000, bookings: 68 },
-    { airline: 'Virgin Australia', spend: 98000, bookings: 42 },
-    { airline: 'Singapore Airlines', spend: 75000, bookings: 18 },
-    { airline: 'Air New Zealand', spend: 52000, bookings: 15 },
-    { airline: 'Emirates', spend: 48750, bookings: 13 },
-  ]
-
-  // Class data
-  classData.value = [
-    { class: 'Economy', bookings: 132, percentage: 85 },
-    { class: 'Premium Economy', bookings: 15, percentage: 10 },
-    { class: 'Business', bookings: 8, percentage: 5 },
-    { class: 'First', bookings: 1, percentage: 0.6 },
-  ]
-
-  // Advance purchase data
-  advancePurchaseData.value = [
-    { period: '0-2 days', avgFare: 613.65, bookings: 12, color: '#EF4444' },
-    { period: '3-7 days', avgFare: 624.69, bookings: 18, color: '#F59E0B' },
-    { period: '8-15 days', avgFare: 575.58, bookings: 25, color: '#F59E0B' },
-    { period: '16-21 days', avgFare: 491.90, bookings: 32, color: '#10B981' },
-    { period: '22-30 days', avgFare: 590.73, bookings: 38, color: '#10B981' },
-    { period: '31+ days', avgFare: 530.93, bookings: 31, color: '#10B981' },
-  ]
-
-  // Top routes
-  topRoutes.value = [
-    { origin: 'SYD', destination: 'MEL', type: 'Domestic', bookings: 45, totalSpend: 98500, avgFare: 2189, emissions: 31500 },
-    { origin: 'MEL', destination: 'BNE', type: 'Domestic', bookings: 28, totalSpend: 52800, avgFare: 1886, emissions: 19600 },
-    { origin: 'SYD', destination: 'SIN', type: 'International', bookings: 18, totalSpend: 75000, avgFare: 4167, emissions: 36000 },
-    { origin: 'BNE', destination: 'AKL', type: 'International', bookings: 15, totalSpend: 52000, avgFare: 3467, emissions: 22500 },
-    { origin: 'SYD', destination: 'PER', type: 'Domestic', bookings: 12, totalSpend: 42000, avgFare: 3500, emissions: 48000 },
-    { origin: 'MEL', destination: 'SYD', type: 'Domestic', bookings: 10, totalSpend: 22000, avgFare: 2200, emissions: 7050 },
-    { origin: 'SYD', destination: 'LAX', type: 'International', bookings: 8, totalSpend: 65000, avgFare: 8125, emissions: 80000 },
-    { origin: 'SYD', destination: 'NRT', type: 'International', bookings: 6, totalSpend: 45000, avgFare: 7500, emissions: 54000 },
-    { origin: 'BNE', destination: 'SYD', type: 'Domestic', bookings: 5, totalSpend: 9500, avgFare: 1900, emissions: 3525 },
-    { origin: 'MEL', destination: 'PER', type: 'Domestic', bookings: 5, totalSpend: 18500, avgFare: 3700, emissions: 17500 },
-  ]
-
-  // Recent bookings
-  recentBookings.value = [
-    { id: 1, date: '2025-10-18', traveller: 'Jennifer Wilson', organization: 'TechCorp Australia', origin: 'SYD', destination: 'MEL', airline: 'Qantas', class: 'Economy', fare: 485, reference: 'QF4356' },
-    { id: 2, date: '2025-10-17', traveller: 'David Anderson', organization: 'TechCorp Australia', origin: 'MEL', destination: 'BNE', airline: 'Virgin Australia', class: 'Economy', fare: 420, reference: 'VA823' },
-    { id: 3, date: '2025-10-15', traveller: 'Sophie Martinez', organization: 'TechCorp Australia', origin: 'SYD', destination: 'SIN', airline: 'Singapore Airlines', class: 'Economy', fare: 1850, reference: 'SQ231' },
-    { id: 4, date: '2025-10-14', traveller: 'Robert Thompson', organization: 'TechCorp Australia', origin: 'SYD', destination: 'NRT', airline: 'Qantas', class: 'Business', fare: 5680, reference: 'QF25' },
-    { id: 5, date: '2025-10-12', traveller: 'Emily White', organization: 'Retail Solutions Group', origin: 'BNE', destination: 'AKL', airline: 'Air New Zealand', class: 'Economy', fare: 1240, reference: 'NZ145' },
-  ]
-}
-
-// Create charts
-const createCharts = () => {
-  console.log('createCharts() called')
-  
-  // Destroy existing charts
-  if (airlineChart) {
-    airlineChart.destroy()
-    airlineChart = null
-  }
-  if (classChart) {
-    classChart.destroy()
-    classChart = null
-  }
-  if (advancePurchaseChart) {
-    advancePurchaseChart.destroy()
-    advancePurchaseChart = null
-  }
+const renderCharts = () => {
+  // Group by airline
+  const airlineGroups = {}
+  airBookings.value.forEach(booking => {
+    const airline = booking.air_details?.primary_airline_name || 'Unknown'
+    if (!airlineGroups[airline]) {
+      airlineGroups[airline] = 0
+    }
+    airlineGroups[airline] += parseFloat(booking.total_amount || 0)
+  })
 
   // Airline Chart
-  if (airlineChartCanvas.value) {
-    const ctx = airlineChartCanvas.value.getContext('2d')
-    airlineChart = new ChartJS(ctx, {
+  if (airlineChartInstance) airlineChartInstance.destroy()
+  if (airlineChart.value) {
+    const ctx = airlineChart.value.getContext('2d')
+    airlineChartInstance = new Chart(ctx, {
       type: 'bar',
       data: {
-        labels: airlineData.value.map(d => d.airline),
+        labels: Object.keys(airlineGroups),
         datasets: [{
-          label: 'Spend',
-          data: airlineData.value.map(d => d.spend),
-          backgroundColor: '#3B82F6',
-          borderRadius: 8,
+          label: 'Spend (AUD)',
+          data: Object.values(airlineGroups),
+          backgroundColor: '#0ea5e9'
         }]
       },
       options: {
         responsive: true,
-        maintainAspectRatio: true,
+        maintainAspectRatio: false,
         plugins: {
-          legend: { display: false },
-          tooltip: {
-            callbacks: {
-              label: (context) => `Spend: ${formatCurrency(context.parsed.y)}`
-            }
-          }
+          legend: { display: false }
         },
         scales: {
           y: {
             beginAtZero: true,
             ticks: {
-              callback: (value) => `$${value / 1000}k`
+              callback: (value) => formatCurrency(value)
             }
           }
         }
       }
     })
-    console.log('Airline chart created')
   }
 
-  // Class Chart
-  if (classChartCanvas.value) {
-    const ctx = classChartCanvas.value.getContext('2d')
-    classChart = new ChartJS(ctx, {
-      type: 'doughnut',
-      data: {
-        labels: classData.value.map(d => d.class),
-        datasets: [{
-          data: classData.value.map(d => d.bookings),
-          backgroundColor: ['#3B82F6', '#8B5CF6', '#F59E0B', '#EF4444'],
-          borderWidth: 2,
-          borderColor: '#fff',
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: true,
-        plugins: {
-          legend: {
-            position: 'bottom',
-            labels: {
-              padding: 15,
-              font: { size: 12 }
-            }
-          },
-          tooltip: {
-            callbacks: {
-              label: (context) => {
-                const label = context.label
-                const value = context.parsed
-                const total = context.dataset.data.reduce((a, b) => a + b, 0)
-                const percentage = Math.round((value / total) * 100)
-                return `${label}: ${value} (${percentage}%)`
-              }
-            }
-          }
-        }
-      }
-    })
-    console.log('Class chart created')
-  }
+  // Route Chart
+  const routeGroups = {}
+  airBookings.value.forEach(booking => {
+    const route = getRoute(booking)
+    if (!routeGroups[route]) {
+      routeGroups[route] = 0
+    }
+    routeGroups[route] += parseFloat(booking.total_amount || 0)
+  })
 
-  // Advance Purchase Chart
-  console.log('Creating advance purchase chart...')
-  if (advancePurchaseChartCanvas.value) {
-    const ctx = advancePurchaseChartCanvas.value.getContext('2d')
-    advancePurchaseChart = new ChartJS(ctx, {
+  // Get top 10 routes
+  const topRoutes = Object.entries(routeGroups)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+
+  if (routeChartInstance) routeChartInstance.destroy()
+  if (routeChart.value) {
+    const ctx = routeChart.value.getContext('2d')
+    routeChartInstance = new Chart(ctx, {
       type: 'bar',
       data: {
-        labels: advancePurchaseData.value.map(d => d.period),
+        labels: topRoutes.map(r => r[0]),
         datasets: [{
-          label: 'Avg. Fare',
-          data: advancePurchaseData.value.map(d => d.avgFare),
-          backgroundColor: advancePurchaseData.value.map(d => d.color),
-          borderRadius: 8,
+          label: 'Spend (AUD)',
+          data: topRoutes.map(r => r[1]),
+          backgroundColor: '#a855f7'
         }]
       },
       options: {
-        indexAxis: 'y', // Horizontal bars
         responsive: true,
-        maintainAspectRatio: true,
+        maintainAspectRatio: false,
+        indexAxis: 'y',
         plugins: {
-          legend: { display: false },
-          tooltip: {
-            callbacks: {
-              label: (context) => {
-                const fare = formatCurrency(context.parsed.x)
-                const bookings = advancePurchaseData.value[context.dataIndex].bookings
-                return [`Avg. Fare: ${fare}`, `Bookings: ${bookings}`]
-              }
-            }
-          }
+          legend: { display: false }
         },
         scales: {
           x: {
             beginAtZero: true,
             ticks: {
-              callback: (value) => `$${value}`
+              callback: (value) => formatCurrency(value)
             }
           }
         }
       }
     })
-    console.log('Advance purchase chart created!')
-  } else {
-    console.error('Advance purchase canvas not found!')
   }
 }
 
-// Computed: Active filter count
-const activeFilterCount = computed(() => {
-  let count = 0
-  if (filters.value.tripType) count++
-  if (filters.value.travelClass) count++
-  if (filters.value.airline) count++
-  if (filters.value.dateFrom) count++
-  if (filters.value.dateTo) count++
-  return count
-})
+const resetFilters = () => {
+  filters.value = {
+    start_date: '',
+    end_date: '',
+    travel_class: ''
+  }
+  loadData()
+}
 
-// Computed: Advance purchase savings
-const advancePurchaseSavings = computed(() => {
-  if (advancePurchaseData.value.length === 0) return 0
-  const maxFare = Math.max(...advancePurchaseData.value.map(d => d.avgFare))
-  const minFare = Math.min(...advancePurchaseData.value.map(d => d.avgFare))
-  return maxFare - minFare
-})
-const formatCurrency = (value) => {
+const getRoute = (booking) => {
+  const origin = booking.air_details?.origin || 'N/A'
+  const destination = booking.air_details?.destination || 'N/A'
+  return `${origin} → ${destination}`
+}
+
+const getAirline = (booking) => {
+  return booking.air_details?.primary_airline_name || 'Unknown'
+}
+
+const getTravelClass = (booking) => {
+  const classMap = {
+    'ECONOMY': 'Economy',
+    'PREMIUM_ECONOMY': 'Premium Economy',
+    'BUSINESS': 'Business',
+    'FIRST': 'First Class'
+  }
+  return classMap[booking.air_details?.travel_class] || 'N/A'
+}
+
+const getCarbon = (booking) => {
+  const carbon = booking.air_details?.segments?.reduce((sum, seg) => 
+    sum + parseFloat(seg.carbon_emissions_kg || 0), 0) || 0
+  return carbon > 0 ? formatNumber(carbon) : 'N/A'
+}
+
+const formatCurrency = (amount) => {
   return new Intl.NumberFormat('en-AU', {
     style: 'currency',
     currency: 'AUD',
     minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(value)
+    maximumFractionDigits: 0
+  }).format(amount || 0)
 }
 
-const formatNumber = (value) => {
-  return new Intl.NumberFormat('en-AU').format(value)
+const formatNumber = (num) => {
+  return new Intl.NumberFormat('en-AU', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2
+  }).format(num || 0)
 }
 
 const formatDate = (dateString) => {
   return new Date(dateString).toLocaleDateString('en-AU', {
-    day: '2-digit',
-    month: 'short',
     year: 'numeric',
+    month: 'short',
+    day: 'numeric'
   })
 }
 
-const getRankBadgeClass = (rank) => {
-  if (rank === 1) return 'bg-yellow-100 text-yellow-800'
-  if (rank === 2) return 'bg-gray-200 text-gray-800'
-  if (rank === 3) return 'bg-orange-100 text-orange-800'
-  return 'bg-gray-100 text-gray-700'
-}
-
-const getClassBadgeClass = (travelClass) => {
+const getStatusClass = (status) => {
   const classes = {
-    Economy: 'px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800',
-    'Premium Economy': 'px-2 py-1 text-xs font-medium rounded-full bg-purple-100 text-purple-800',
-    Business: 'px-2 py-1 text-xs font-medium rounded-full bg-orange-100 text-orange-800',
-    First: 'px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800',
+    'CONFIRMED': 'px-2 py-1 text-xs rounded-full bg-green-100 text-green-800',
+    'CANCELLED': 'px-2 py-1 text-xs rounded-full bg-red-100 text-red-800',
+    'PENDING': 'px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-800',
+    'REFUNDED': 'px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800'
   }
-  return classes[travelClass] || classes.Economy
-}
-
-const clearFilters = () => {
-  filters.value = {
-    tripType: '',
-    travelClass: '',
-    airline: '',
-    dateFrom: '',
-    dateTo: '',
-  }
-}
-
-const viewBooking = (booking) => {
-  console.log('View booking:', booking)
-  // router.push(`/bookings/${booking.id}`)
-}
-
-const exportReport = () => {
-  console.log('Exporting air travel report...')
+  return classes[status] || classes['PENDING']
 }
 
 // Lifecycle
-onMounted(async () => {
-  console.log('Component mounted')
-  await fetchAirData()
-  console.log('Data fetched')
-  
-  // Wait a bit longer for DOM to be ready
-  setTimeout(() => {
-    console.log('Timeout fired - checking canvas refs')
-    console.log('Timeout - Canvas refs:', {
-      airline: airlineChartCanvas.value,
-      class: classChartCanvas.value,
-      advancePurchase: advancePurchaseChartCanvas.value
-    })
-    console.log('Advance Purchase Data:', advancePurchaseData.value)
-    
-    console.log('Calling createCharts()...')
-    createCharts()
-    console.log('createCharts() finished')
-  }, 150)
-})
-
-onBeforeUnmount(() => {
-  if (airlineChart) airlineChart.destroy()
-  if (classChart) classChart.destroy()
-  if (advancePurchaseChart) advancePurchaseChart.destroy()
+onMounted(() => {
+  loadData()
 })
 </script>

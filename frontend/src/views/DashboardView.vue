@@ -1,280 +1,539 @@
 <template>
-  <div class="min-h-screen bg-gray-50 py-8">
-    <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-      <!-- Page Header -->
-      <div class="mb-6">
-        <h1 class="text-3xl font-bold text-gray-900">Dashboard</h1>
-        <p class="mt-2 text-sm text-gray-600">
-          Overview of your travel analytics and performance metrics
-        </p>
-      </div>
+  <div class="space-y-6">
+    <!-- Header -->
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Dashboard</h1>
+      <p class="mt-1 text-sm text-gray-500">
+        Overview of your travel analytics
+      </p>
+    </div>
 
-      <!-- Filters -->
-      <DashboardFilters
-        :date-range="filters.dateRange"
-        :organization="filters.organization"
-        :origin-country="filters.originCountry"
-        :destination-country="filters.destinationCountry"
-        :organizations="organizations"
-        @update:filters="handleFilterChange"
-      />
-
-      <!-- Loading State -->
-      <div v-if="loading" class="flex items-center justify-center py-12">
-        <div class="h-12 w-12 animate-spin rounded-full border-4 border-blue-600 border-t-transparent"></div>
-      </div>
-
-      <!-- Error State -->
-      <div
-        v-else-if="error"
-        class="rounded-lg bg-red-50 p-4 text-red-800"
-      >
-        {{ error }}
-      </div>
-
-      <!-- Dashboard Content -->
-      <div v-else>
-        <!-- Stat Cards Grid -->
-        <div class="mb-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          <!-- Total Spend -->
-          <StatCard
-            title="Total Travel Spend"
-            :value="spendBreakdown.total"
-            subtitle="All booking categories"
-            :icon="mdiCurrencyUsd"
-            type="primary"
-            format="currency"
-            :trend="5.2"
-          />
-
-          <!-- Air Travel -->
-          <StatCard
-            title="Air Travel"
-            :value="spendBreakdown.air"
-            :subtitle="`${airBookingsCount || 0} flights booked`"
-            :icon="mdiAirplane"
-            type="info"
-            format="currency"
-            :trend="3.8"
-          />
-
-          <!-- Accommodation -->
-          <StatCard
-            title="Accommodation"
-            :value="spendBreakdown.accommodation"
-            :subtitle="`${transactionSummary.hotel_nights || 0} hotel nights`"
-            :icon="mdiBed"
-            type="success"
-            format="currency"
-            :trend="-1.2"
-          />
-
-          <!-- Rental Cars -->
-          <StatCard
-            title="Rental Cars"
-            :value="spendBreakdown.car"
-            :subtitle="`${transactionSummary.car_hire_days || 0} rental days`"
-            :icon="mdiCarSide"
-            type="warning"
-            format="currency"
-            :trend="2.1"
-          />
-
-          <!-- Service Fees -->
-          <StatCard
-            title="Service Fees"
-            :value="spendBreakdown.service_fees"
-            :subtitle="`${transactionSummary.service_fees || 0} fees charged`"
-            :icon="mdiRoomServiceOutline"
-            type="default"
-            format="currency"
-          />
-
-          <!-- Other Expenses -->
-          <StatCard
-            title="Other Expenses"
-            :value="spendBreakdown.other"
-            subtitle="Miscellaneous costs"
-            :icon="mdiWalletTravel"
-            type="default"
-            format="currency"
+    <!-- Date Range Filter -->
+    <div class="bg-white p-4 rounded-lg shadow">
+      <div class="flex flex-wrap gap-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">
+            Start Date
+          </label>
+          <input
+            v-model="filters.start_date"
+            type="date"
+            class="border border-gray-300 rounded-md px-3 py-2 text-sm"
+            @change="loadData"
           />
         </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">
+            End Date
+          </label>
+          <input
+            v-model="filters.end_date"
+            type="date"
+            class="border border-gray-300 rounded-md px-3 py-2 text-sm"
+            @change="loadData"
+          />
+        </div>
+        <div class="flex items-end">
+          <button
+            @click="resetFilters"
+            class="px-4 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
+          >
+            Reset
+          </button>
+        </div>
+      </div>
+    </div>
 
-        <!-- Transaction Summary Card -->
-        <div class="mb-8 rounded-2xl bg-white p-6 shadow-sm">
-          <h3 class="mb-4 text-lg font-semibold text-gray-900">Transaction Summary</h3>
-          <div class="grid grid-cols-2 gap-6 sm:grid-cols-4">
+    <!-- Loading State -->
+    <div v-if="loading" class="flex justify-center items-center py-12">
+      <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+    </div>
+
+    <!-- Error State -->
+    <div v-else-if="error" class="bg-red-50 border border-red-200 rounded-lg p-4">
+      <p class="text-red-800">{{ error }}</p>
+      <button 
+        @click="loadData" 
+        class="mt-2 text-sm text-red-600 hover:text-red-800 underline"
+      >
+        Try Again
+      </button>
+    </div>
+
+    <!-- Dashboard Content -->
+    <div v-else>
+      <!-- Stats Cards -->
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <!-- Total Spend -->
+        <div class="bg-white rounded-lg shadow p-6">
+          <div class="flex items-center justify-between">
             <div>
-              <p class="text-sm font-medium text-gray-600">Total Bookings</p>
-              <p class="mt-2 text-2xl font-bold text-gray-900">
-                {{ spendBreakdown.bookings_count || 0 }}
+              <p class="text-sm font-medium text-gray-600">Total Spend</p>
+              <p class="text-2xl font-bold text-gray-900 mt-2">
+                {{ formatCurrency(summary.total_spend) }}
               </p>
             </div>
+            <div class="bg-blue-100 p-3 rounded-full">
+              <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+          </div>
+          <p class="text-xs text-gray-500 mt-2">
+            {{ summary.total_bookings }} bookings
+          </p>
+        </div>
+
+        <!-- Air Travel -->
+        <div class="bg-white rounded-lg shadow p-6">
+          <div class="flex items-center justify-between">
             <div>
-              <p class="text-sm font-medium text-gray-600">Hotel Nights</p>
-              <p class="mt-2 text-2xl font-bold text-gray-900">
-                {{ transactionSummary.hotel_nights || 0 }}
+              <p class="text-sm font-medium text-gray-600">Air Travel</p>
+              <p class="text-2xl font-bold text-gray-900 mt-2">
+                {{ formatCurrency(summary.air_spend) }}
               </p>
             </div>
+            <div class="bg-sky-100 p-3 rounded-full">
+              <svg class="w-6 h-6 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+              </svg>
+            </div>
+          </div>
+          <p class="text-xs text-gray-500 mt-2">
+            {{ summary.air_bookings }} flights
+          </p>
+        </div>
+
+        <!-- Accommodation -->
+        <div class="bg-white rounded-lg shadow p-6">
+          <div class="flex items-center justify-between">
             <div>
-              <p class="text-sm font-medium text-gray-600">Car Hire Days</p>
-              <p class="mt-2 text-2xl font-bold text-gray-900">
-                {{ transactionSummary.car_hire_days || 0 }}
+              <p class="text-sm font-medium text-gray-600">Accommodation</p>
+              <p class="text-2xl font-bold text-gray-900 mt-2">
+                {{ formatCurrency(summary.hotel_spend) }}
               </p>
             </div>
+            <div class="bg-purple-100 p-3 rounded-full">
+              <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+              </svg>
+            </div>
+          </div>
+          <p class="text-xs text-gray-500 mt-2">
+            {{ summary.hotel_bookings }} stays
+          </p>
+        </div>
+
+        <!-- Car Hire -->
+        <div class="bg-white rounded-lg shadow p-6">
+          <div class="flex items-center justify-between">
             <div>
-              <p class="text-sm font-medium text-gray-600">Service Fees</p>
-              <p class="mt-2 text-2xl font-bold text-gray-900">
-                {{ transactionSummary.service_fees || 0 }}
+              <p class="text-sm font-medium text-gray-600">Car Hire</p>
+              <p class="text-2xl font-bold text-gray-900 mt-2">
+                {{ formatCurrency(summary.car_spend) }}
               </p>
             </div>
+            <div class="bg-green-100 p-3 rounded-full">
+              <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+              </svg>
+            </div>
+          </div>
+          <p class="text-xs text-gray-500 mt-2">
+            {{ summary.car_bookings }} rentals
+          </p>
+        </div>
+      </div>
+
+      <!-- Charts Row -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+        <!-- Spend by Category Chart -->
+        <div class="bg-white rounded-lg shadow p-6">
+          <h2 class="text-lg font-semibold text-gray-900 mb-4">
+            Spend by Category
+          </h2>
+          <div class="h-64">
+            <canvas ref="categoryChart"></canvas>
           </div>
         </div>
 
-        <!-- Compliance Summary Card (NEW) -->
-        <ComplianceSummary 
-          ref="complianceSummaryRef"
-          :filters="filters" 
-          class="mb-8" 
-        />
-
-        <!-- Charts Grid (REPLACE PLACEHOLDER) -->
-        <div class="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <MonthlySpendChart :filters="filters" />
-          <ComplianceDonutChart :filters="filters" />
+        <!-- Monthly Trend Chart -->
+        <div class="bg-white rounded-lg shadow p-6">
+          <h2 class="text-lg font-semibold text-gray-900 mb-4">
+            Monthly Spend Trend
+          </h2>
+          <div class="h-64">
+            <canvas ref="trendChart"></canvas>
+          </div>
         </div>
+      </div>
 
-        <!-- Top Travellers Table -->
-        <TopTravellersTable :filters="filters" class="mb-8" />
-
-        <!-- World Map Placeholder (Phase 4) -->
-        <DestinationMap :filters="filters" />
+      <!-- Recent Bookings -->
+      <div class="bg-white rounded-lg shadow mt-6">
+        <div class="p-6 border-b border-gray-200">
+          <h2 class="text-lg font-semibold text-gray-900">Recent Bookings</h2>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Reference
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Traveller
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Type
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Date
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Amount
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Status
+                </th>
+              </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+              <tr v-for="booking in recentBookings" :key="booking.id" class="hover:bg-gray-50">
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  {{ booking.agent_booking_reference }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {{ booking.traveller_name }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <span :class="getBookingTypeClass(booking.booking_type)">
+                    {{ booking.booking_type }}
+                  </span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {{ formatDate(booking.travel_date) }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  {{ formatCurrency(booking.total_amount) }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <span :class="getStatusClass(booking.status)">
+                    {{ booking.status }}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
-import StatCard from '@/components/dashboard/StatCard.vue'
-import DashboardFilters from '@/components/dashboard/DashboardFilters.vue'
-import ComplianceSummary from '@/components/dashboard/ComplianceSummary.vue'
-import dashboardService from '@/services/dashboardService'
+import { ref, onMounted, nextTick } from 'vue'
+import { Chart } from 'chart.js/auto'
 import bookingService from '@/services/bookingService'
-import {
-  mdiCurrencyUsd,
-  mdiAirplane,
-  mdiBed,
-  mdiCarSide,
-  mdiRoomServiceOutline,
-  mdiWalletTravel,
-  mdiEarth,
-} from '@mdi/js'
-import MonthlySpendChart from '@/components/dashboard/MonthlySpendChart.vue'
-import ComplianceDonutChart from '@/components/dashboard/ComplianceDonutChart.vue'
-import TopTravellersTable from '@/components/dashboard/TopTravellersTable.vue'
-import DestinationMap from '@/components/dashboard/DestinationMap.vue'
 
 // State
-const loading = ref(false)
+const loading = ref(true)
 const error = ref(null)
-const organizations = ref([])
-const spendBreakdown = ref({
-  total: 0,
-  air: 0,
-  accommodation: 0,
-  car: 0,
-  service_fees: 0,
-  other: 0,
-  bookings_count: 0,
-})
-const transactionSummary = ref({
+const summary = ref({
+  total_spend: 0,
   total_bookings: 0,
-  hotel_nights: 0,
-  car_hire_days: 0,
-  service_fees: 0,
+  air_spend: 0,
+  air_bookings: 0,
+  hotel_spend: 0,
+  hotel_bookings: 0,
+  car_spend: 0,
+  car_bookings: 0
 })
+const recentBookings = ref([])
+const monthlyData = ref([])
 
-// Default date range: Last 3 months
-const getDefaultDateRange = () => {
-  const endDate = new Date()
-  const startDate = new Date()
-  startDate.setMonth(startDate.getMonth() - 3)
-  return [startDate, endDate]
-}
-
+// Filters
 const filters = ref({
-  dateRange: getDefaultDateRange(),
-  organization: '',
-  originCountry: '',
-  destinationCountry: '',
+  start_date: '',
+  end_date: ''
 })
 
-const travelType = ref('')
-
-// Computed
-const airBookingsCount = computed(() => {
-  if (!spendBreakdown.value || !spendBreakdown.value.bookings_count) {
-    return 0
-  }
-  return Math.round(spendBreakdown.value.bookings_count * 0.5)
-})
-
-const complianceSummaryRef = ref(null)
+// Chart instances
+const categoryChart = ref(null)
+const trendChart = ref(null)
+let categoryChartInstance = null
+let trendChartInstance = null
 
 // Methods
-const handleFilterChange = (newFilters) => {
-  filters.value = { ...newFilters }
-  loadDashboardData()
-  // Refresh compliance data
-  if (complianceSummaryRef.value) {
-    complianceSummaryRef.value.refresh()
-  }
-}
-
-const loadDashboardData = async () => {
+const loadData = async () => {
   try {
     loading.value = true
     error.value = null
 
-    // Build API params
+    // Build filter params
     const params = {}
-    if (filters.value.dateRange && filters.value.dateRange.length === 2) {
-      params.start_date = filters.value.dateRange[0].toISOString().split('T')[0]
-      params.end_date = filters.value.dateRange[1].toISOString().split('T')[0]
+    if (filters.value.start_date) {
+      params.travel_date_after = filters.value.start_date
     }
-    if (filters.value.organization) {
-      params.organization = filters.value.organization
+    if (filters.value.end_date) {
+      params.travel_date_before = filters.value.end_date
     }
 
-    // Load spend breakdown
-    const breakdown = await dashboardService.getSpendBreakdown(params)
-    spendBreakdown.value = breakdown
+    // Load all data in parallel
+    const [summaryData, bookingsData, allBookingsData] = await Promise.all([
+      bookingService.getSummary(params),
+      bookingService.getBookings({ 
+        ...params,
+        ordering: '-travel_date',
+        page_size: 10  // Just for recent bookings table
+      }),
+      bookingService.getBookings({ 
+        ...params,
+        page_size: 250  // Get all bookings for trend chart
+      })
+    ])
 
-    // Load transaction summary
-    const summary = await dashboardService.getTransactionSummary(params)
-    transactionSummary.value = summary
+    console.log('Summary data:', summaryData) // Debug
+    console.log('All bookings count:', allBookingsData.results?.length || allBookingsData.length) // Debug
+
+    // Process summary data and transform by_type array
+    summary.value = {
+      total_spend: summaryData.total_spend || 0,
+      total_bookings: summaryData.total_bookings || 0,
+      air_spend: 0,
+      air_bookings: 0,
+      hotel_spend: 0,
+      hotel_bookings: 0,
+      car_spend: 0,
+      car_bookings: 0
+    }
+
+    // Transform by_type array into individual fields
+    if (summaryData.by_type) {
+      summaryData.by_type.forEach(item => {
+        if (item.booking_type === 'AIR') {
+          summary.value.air_spend = item.total || 0
+          summary.value.air_bookings = item.count || 0
+        } else if (item.booking_type === 'HOTEL') {
+          summary.value.hotel_spend = item.total || 0
+          summary.value.hotel_bookings = item.count || 0
+        } else if (item.booking_type === 'CAR') {
+          summary.value.car_spend = item.total || 0
+          summary.value.car_bookings = item.count || 0
+        }
+      })
+    }
+
+    // Process recent bookings
+    recentBookings.value = bookingsData.results || bookingsData
+
+    // Process monthly trend data using ALL bookings (not just recent 10)
+    processMonthlyData(allBookingsData.results || allBookingsData)
+
+    console.log('Monthly data points:', monthlyData.value.length) // Debug
+    console.log('Processed monthly data:', monthlyData.value) // Debug
+
   } catch (err) {
     console.error('Error loading dashboard data:', err)
     error.value = 'Failed to load dashboard data. Please try again.'
   } finally {
     loading.value = false
+    
+    // CRITICAL FIX: Wait for v-else content to render AFTER loading becomes false
+    // Use nextTick TWICE to ensure DOM is fully updated
+    await nextTick()
+    await nextTick()
+    
+    console.log('Rendering charts...') // Debug
+    renderCharts()
   }
 }
 
-const loadOrganizations = async () => {
-  try {
-    const orgs = await bookingService.getOrganizations()
-    organizations.value = orgs
-  } catch (err) {
-    console.error('Error loading organizations:', err)
+const processMonthlyData = (bookings) => {
+  // Group bookings by month
+  const monthGroups = {}
+  
+  bookings.forEach(booking => {
+    const date = new Date(booking.travel_date)
+    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+    
+    if (!monthGroups[monthKey]) {
+      monthGroups[monthKey] = {
+        month: monthKey,
+        total: 0,
+        count: 0
+      }
+    }
+    
+    monthGroups[monthKey].total += parseFloat(booking.total_amount || 0)
+    monthGroups[monthKey].count += 1
+  })
+  
+  // Convert to sorted array
+  monthlyData.value = Object.values(monthGroups).sort((a, b) => 
+    a.month.localeCompare(b.month)
+  )
+
+  console.log('Processed monthly data:', monthlyData.value) // Debug
+}
+
+const renderCharts = () => {
+  console.log('Rendering charts...') // Debug
+  
+  // Category Chart
+  if (categoryChartInstance) {
+    categoryChartInstance.destroy()
   }
+  
+  if (categoryChart.value) {
+    const ctx = categoryChart.value.getContext('2d')
+    
+    const categoryData = [
+      summary.value.air_spend,
+      summary.value.hotel_spend,
+      summary.value.car_spend
+    ]
+    
+    console.log('Category chart data:', categoryData) // Debug
+    
+    categoryChartInstance = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: ['Air Travel', 'Accommodation', 'Car Hire'],
+        datasets: [{
+          data: categoryData,
+          backgroundColor: [
+            '#0ea5e9', // sky-500
+            '#a855f7', // purple-500
+            '#22c55e'  // green-500
+          ]
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'bottom'
+          },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                const label = context.label || ''
+                const value = context.parsed || 0
+                return `${label}: ${formatCurrency(value)}`
+              }
+            }
+          }
+        }
+      }
+    })
+  }
+
+  // Trend Chart
+  if (trendChartInstance) {
+    trendChartInstance.destroy()
+  }
+  
+  if (trendChart.value && monthlyData.value.length > 0) {
+    const ctx = trendChart.value.getContext('2d')
+    
+    console.log('Trend chart labels:', monthlyData.value.map(d => d.month)) // Debug
+    console.log('Trend chart data:', monthlyData.value.map(d => d.total)) // Debug
+    
+    trendChartInstance = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: monthlyData.value.map(d => {
+          const [year, month] = d.month.split('-')
+          return new Date(year, month - 1).toLocaleDateString('en-AU', { 
+            month: 'short', 
+            year: 'numeric' 
+          })
+        }),
+        datasets: [{
+          label: 'Monthly Spend',
+          data: monthlyData.value.map(d => d.total),
+          borderColor: '#2563eb',
+          backgroundColor: 'rgba(37, 99, 235, 0.1)',
+          tension: 0.4,
+          fill: true
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: false
+          },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                return `Spend: ${formatCurrency(context.parsed.y)}`
+              }
+            }
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: {
+              callback: (value) => formatCurrency(value)
+            }
+          }
+        }
+      }
+    })
+  } else {
+    console.log('Skipping trend chart - no data available') // Debug
+  }
+}
+
+const resetFilters = () => {
+  filters.value.start_date = ''
+  filters.value.end_date = ''
+  loadData()
+}
+
+const formatCurrency = (amount) => {
+  return new Intl.NumberFormat('en-AU', {
+    style: 'currency',
+    currency: 'AUD',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  }).format(amount || 0)
+}
+
+const formatDate = (dateString) => {
+  return new Date(dateString).toLocaleDateString('en-AU', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric'
+  })
+}
+
+const getBookingTypeClass = (type) => {
+  const classes = {
+    'AIR': 'px-2 py-1 text-xs rounded-full bg-sky-100 text-sky-800',
+    'HOTEL': 'px-2 py-1 text-xs rounded-full bg-purple-100 text-purple-800',
+    'CAR': 'px-2 py-1 text-xs rounded-full bg-green-100 text-green-800',
+    'OTHER': 'px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-800'
+  }
+  return classes[type] || classes['OTHER']
+}
+
+const getStatusClass = (status) => {
+  const classes = {
+    'CONFIRMED': 'px-2 py-1 text-xs rounded-full bg-green-100 text-green-800',
+    'CANCELLED': 'px-2 py-1 text-xs rounded-full bg-red-100 text-red-800',
+    'PENDING': 'px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-800',
+    'REFUNDED': 'px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800'
+  }
+  return classes[status] || classes['PENDING']
 }
 
 // Lifecycle
-onMounted(async () => {
-  await loadOrganizations()
-  await loadDashboardData()
+onMounted(() => {
+  loadData()
 })
 </script>
