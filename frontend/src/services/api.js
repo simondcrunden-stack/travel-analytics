@@ -54,4 +54,107 @@ api.interceptors.response.use(
   }
 )
 
+// ============================================================================
+// BOOKING SERVICE
+// ============================================================================
+
+export const bookingService = {
+  async getBookings(params = {}) {
+    const response = await api.get('/bookings/', { params })
+    return response.data
+  },
+
+  async getBooking(id) {
+    const response = await api.get(`/bookings/${id}/`)
+    return response.data
+  },
+
+  async getSummary(params = {}) {
+    const response = await api.get('/bookings/summary/', { params })
+    return response.data
+  },
+
+  async getAirBookings(params = {}) {
+    const response = await api.get('/bookings/', {
+      params: { ...params, booking_type: 'AIR' },
+    })
+    return response.data
+  },
+
+  async getAccommodationBookings(params = {}) {
+    const response = await api.get('/bookings/', {
+      params: { ...params, booking_type: 'HOTEL' },
+    })
+    return response.data
+  },
+
+  async getCarHireBookings(params = {}) {
+    const response = await api.get('/bookings/', {
+      params: { ...params, booking_type: 'CAR' },
+    })
+    return response.data
+  },
+
+  async getServiceFees(params = {}) {
+    const response = await api.get('/service-fees/', { params })
+    return response.data
+  },
+
+  async getAvailableCountries() {
+    const response = await api.get('/bookings/available_countries/')
+    return response.data
+  },
+}
+
+// ============================================================================
+// USER SERVICE
+// ============================================================================
+
+export const userService = {
+  async getFilterPreferences() {
+    const response = await api.get('/users/filter_preferences/')
+    return response.data
+  },
+
+  async saveFilterPreferences(filters, homeCountry = 'AU') {
+    const response = await api.put('/users/filter_preferences/', {
+      default_filters: filters,
+      home_country: homeCountry,
+    })
+    return response.data
+  },
+
+  async getProfile() {
+    const response = await api.get('/users/me/')
+    return response.data
+  },
+}
+
+// ============================================================================
+// AUTH SERVICE
+// ============================================================================
+
+export const authService = {
+  async login(credentials) {
+    const response = await api.post('/auth/login/', credentials)
+    return response.data
+  },
+
+  async logout() {
+    const refreshToken = localStorage.getItem('refresh_token')
+    if (refreshToken) {
+      await api.post('/auth/logout/', { refresh: refreshToken })
+    }
+    localStorage.removeItem('access_token')
+    localStorage.removeItem('refresh_token')
+  },
+
+  async refresh() {
+    const refreshToken = localStorage.getItem('refresh_token')
+    const response = await api.post('/auth/refresh/', { refresh: refreshToken })
+    return response.data
+  },
+}
+
+// Export the base api instance as default
 export default api

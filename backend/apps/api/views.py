@@ -86,11 +86,33 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
             # Customer users see only their organization
             return User.objects.filter(organization=user.organization)
     
-    @action(detail=False, methods=['get'])
-    def me(self, request):
-        """Get current user profile"""
-        serializer = self.get_serializer(request.user)
-        return Response(serializer.data)
+    @action(detail=False, methods=['get', 'put'])
+    def filter_preferences(self, request):
+        """
+        Get or update user's default filter preferences.
+        GET /api/v1/users/filter_preferences/
+        PUT /api/v1/users/filter_preferences/
+        """
+        profile = request.user.profile
+        
+        if request.method == 'GET':
+            return Response({
+                'default_filters': profile.default_filters,
+                'home_country': profile.home_country
+            })
+        
+        elif request.method == 'PUT':
+            # Update preferences
+            if 'default_filters' in request.data:
+                profile.default_filters = request.data['default_filters']
+            if 'home_country' in request.data:
+                profile.home_country = request.data['home_country']
+            profile.save()
+            
+            return Response({
+                'default_filters': profile.default_filters,
+                'home_country': profile.home_country
+            })
 
 
 # ============================================================================
@@ -278,6 +300,52 @@ class BookingViewSet(viewsets.ModelViewSet):
         }
         
         return Response(report)
+
+    @action(detail=False, methods=['get'])
+    def available_countries(self, request):
+        """
+        Return list of countries that have actual booking data.
+        GET /api/v1/bookings/available_countries/
+        """
+        from apps.bookings.models import AirSegment, AccommodationBooking, CarHireBooking
+        from apps.reference_data.models import Country
+        
+        # Get user's organization
+        user_org = request.user.organization
+        
+        # Collect all country codes from bookings
+        country_codes = set()
+        
+        # From air segments
+        air_bookings = AirSegment.objects.filter(
+            booking__organization=user_org
+        ).values_list('origin_country', 'destination_country')
+        
+        for origin, dest in air_bookings:
+            if origin: country_codes.add(origin)
+            if dest: country_codes.add(dest)
+        
+        # From accommodation
+        hotel_countries = AccommodationBooking.objects.filter(
+            booking__organization=user_org
+        ).values_list('country', flat=True)
+        country_codes.update(filter(None, hotel_countries))
+        
+        # From car hire
+        car_bookings = CarHireBooking.objects.filter(
+            booking__organization=user_org
+        ).values_list('pickup_country', 'dropoff_country')
+        
+        for pickup, dropoff in car_bookings:
+            if pickup: country_codes.add(pickup)
+            if dropoff: country_codes.add(dropoff)
+        
+        # Get country names from reference data
+        countries = Country.objects.filter(
+            code__in=country_codes
+        ).values('code', 'name').order_by('name')
+        
+        return Response(list(countries))
 
 
 # ============================================================================

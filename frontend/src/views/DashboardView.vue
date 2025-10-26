@@ -8,8 +8,8 @@
       </p>
     </div>
 
-    <!-- Date Range Filter -->
-    <div class="bg-white p-4 rounded-lg shadow">
+    <!-- Simple Date Range Filter (Temporary until we add UniversalFilters) -->
+    <div class="bg-white rounded-2xl shadow-sm p-4">
       <div class="flex flex-wrap gap-4">
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">
@@ -251,54 +251,48 @@ const summary = ref({
 const recentBookings = ref([])
 const monthlyData = ref([])
 
-// Filters
+// Filter state
 const filters = ref({
   start_date: '',
   end_date: ''
 })
 
-// Chart instances
+// Chart refs
 const categoryChart = ref(null)
 const trendChart = ref(null)
 let categoryChartInstance = null
 let trendChartInstance = null
 
-// Methods
+// Load data
 const loadData = async () => {
+  loading.value = true
+  error.value = null
+  
   try {
-    loading.value = true
-    error.value = null
-
-    // Build filter params
+    console.log('Loading dashboard data...')
+    
+    // Build query params from filters
     const params = {}
     if (filters.value.start_date) {
-      params.travel_date_after = filters.value.start_date
+      params.travel_date__gte = filters.value.start_date
     }
     if (filters.value.end_date) {
-      params.travel_date_before = filters.value.end_date
+      params.travel_date__lte = filters.value.end_date
     }
+    
+    // Load ALL bookings (we'll calculate summary from this)
+    const allBookingsData = await bookingService.getBookings({
+      ...params,
+      limit: 1000
+    })
+    console.log('All bookings:', allBookingsData)
+    
+    const bookings = allBookingsData.results || allBookingsData
 
-    // Load all data in parallel
-    const [summaryData, bookingsData, allBookingsData] = await Promise.all([
-      bookingService.getSummary(params),
-      bookingService.getBookings({ 
-        ...params,
-        ordering: '-travel_date',
-        page_size: 10  // Just for recent bookings table
-      }),
-      bookingService.getBookings({ 
-        ...params,
-        page_size: 250  // Get all bookings for trend chart
-      })
-    ])
-
-    console.log('Summary data:', summaryData) // Debug
-    console.log('All bookings count:', allBookingsData.results?.length || allBookingsData.length) // Debug
-
-    // Process summary data and transform by_type array
+    // Calculate summary from bookings
     summary.value = {
-      total_spend: summaryData.total_spend || 0,
-      total_bookings: summaryData.total_bookings || 0,
+      total_spend: 0,
+      total_bookings: bookings.length,
       air_spend: 0,
       air_bookings: 0,
       hotel_spend: 0,
@@ -307,30 +301,33 @@ const loadData = async () => {
       car_bookings: 0
     }
 
-    // Transform by_type array into individual fields
-    if (summaryData.by_type) {
-      summaryData.by_type.forEach(item => {
-        if (item.booking_type === 'AIR') {
-          summary.value.air_spend = item.total || 0
-          summary.value.air_bookings = item.count || 0
-        } else if (item.booking_type === 'HOTEL') {
-          summary.value.hotel_spend = item.total || 0
-          summary.value.hotel_bookings = item.count || 0
-        } else if (item.booking_type === 'CAR') {
-          summary.value.car_spend = item.total || 0
-          summary.value.car_bookings = item.count || 0
-        }
-      })
-    }
+    bookings.forEach(booking => {
+      const amount = parseFloat(booking.total_amount) || 0
+      summary.value.total_spend += amount
 
-    // Process recent bookings
-    recentBookings.value = bookingsData.results || bookingsData
+      if (booking.booking_type === 'AIR') {
+        summary.value.air_spend += amount
+        summary.value.air_bookings++
+      } else if (booking.booking_type === 'HOTEL') {
+        summary.value.hotel_spend += amount
+        summary.value.hotel_bookings++
+      } else if (booking.booking_type === 'CAR') {
+        summary.value.car_spend += amount
+        summary.value.car_bookings++
+      }
+    })
 
-    // Process monthly trend data using ALL bookings (not just recent 10)
-    processMonthlyData(allBookingsData.results || allBookingsData)
+    // Get recent bookings (last 10)
+    recentBookings.value = bookings
+      .sort((a, b) => new Date(b.travel_date) - new Date(a.travel_date))
+      .slice(0, 10)
 
-    console.log('Monthly data points:', monthlyData.value.length) // Debug
-    console.log('Processed monthly data:', monthlyData.value) // Debug
+    // Process monthly trend data
+    processMonthlyData(bookings)
+
+    console.log('Summary calculated:', summary.value)
+    console.log('Monthly data points:', monthlyData.value.length)
+    console.log('Processed monthly data:', monthlyData.value)
 
   } catch (err) {
     console.error('Error loading dashboard data:', err)
@@ -338,12 +335,11 @@ const loadData = async () => {
   } finally {
     loading.value = false
     
-    // CRITICAL FIX: Wait for v-else content to render AFTER loading becomes false
-    // Use nextTick TWICE to ensure DOM is fully updated
+    // Wait for v-else content to render AFTER loading becomes false
     await nextTick()
     await nextTick()
     
-    console.log('Rendering charts...') // Debug
+    console.log('Rendering charts...')
     renderCharts()
   }
 }
@@ -373,11 +369,11 @@ const processMonthlyData = (bookings) => {
     a.month.localeCompare(b.month)
   )
 
-  console.log('Processed monthly data:', monthlyData.value) // Debug
+  console.log('Processed monthly data:', monthlyData.value)
 }
 
 const renderCharts = () => {
-  console.log('Rendering charts...') // Debug
+  console.log('Rendering charts...')
   
   // Category Chart
   if (categoryChartInstance) {
@@ -393,7 +389,7 @@ const renderCharts = () => {
       summary.value.car_spend
     ]
     
-    console.log('Category chart data:', categoryData) // Debug
+    console.log('Category chart data:', categoryData)
     
     categoryChartInstance = new Chart(ctx, {
       type: 'doughnut',
@@ -437,8 +433,8 @@ const renderCharts = () => {
   if (trendChart.value && monthlyData.value.length > 0) {
     const ctx = trendChart.value.getContext('2d')
     
-    console.log('Trend chart labels:', monthlyData.value.map(d => d.month)) // Debug
-    console.log('Trend chart data:', monthlyData.value.map(d => d.total)) // Debug
+    console.log('Trend chart labels:', monthlyData.value.map(d => d.month))
+    console.log('Trend chart data:', monthlyData.value.map(d => d.total))
     
     trendChartInstance = new Chart(ctx, {
       type: 'line',
@@ -485,7 +481,7 @@ const renderCharts = () => {
       }
     })
   } else {
-    console.log('Skipping trend chart - no data available') // Debug
+    console.log('Skipping trend chart - no data available')
   }
 }
 
