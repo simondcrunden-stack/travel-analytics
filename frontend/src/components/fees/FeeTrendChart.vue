@@ -65,7 +65,7 @@ const chartData = computed(() => {
   }
 
   return {
-    labels: trendData.value.map((item) => item.month),
+    labels: trendData.value.map((item) => item.month), // Already formatted as "Sep 2025"
     datasets: [
       {
         label: 'Total Fees',
@@ -155,8 +155,8 @@ const loadTrendData = async () => {
 
     const params = {}
 
-    if (props.filters.dateFrom) params.date__gte = props.filters.dateFrom
-    if (props.filters.dateTo) params.date__lte = props.filters.dateTo
+    if (props.filters.dateFrom) params.fee_date__gte = props.filters.dateFrom  // Changed from date__gte
+    if (props.filters.dateTo) params.fee_date__lte = props.filters.dateTo      // Changed from date__lte
 
     const response = await api.get('/service-fees/', { params })
     const fees = response.data.results || []
@@ -164,7 +164,7 @@ const loadTrendData = async () => {
     // Aggregate by month
     const monthMap = {}
     fees.forEach((fee) => {
-      const date = new Date(fee.date)
+      const date = new Date(fee.fee_date)
       const monthKey = date.toLocaleDateString('en-AU', { month: 'short', year: 'numeric' })
       const amount = parseFloat(fee.amount || 0)
 
@@ -189,6 +189,11 @@ const loadTrendData = async () => {
         total: item.total,
         count: item.count,
       }))
+  
+    console.log('Raw fees from API:', fees)
+    console.log('Month map:', monthMap)
+    console.log('Final trend data:', trendData.value)
+
   } catch (error) {
     console.error('Error loading trend data:', error)
   } finally {

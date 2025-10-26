@@ -270,4 +270,10 @@ class ServiceFeeAdmin(admin.ModelAdmin):
         }),
     )
     
+    # Add this line to make import_batch optional in the form
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        form.base_fields['import_batch'].required = False
+        return form
+    
     readonly_fields = ['created_at', 'updated_at']

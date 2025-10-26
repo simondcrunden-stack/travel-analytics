@@ -100,7 +100,7 @@ const authStore = useAuthStore()
 // Menu items configuration with MDI icons
 const menuItems = [
   {
-    name: 'Dashboard',
+    name: 'Summary',  // Changed from 'Dashboard'
     path: '/',
     icon: 'mdi-view-dashboard',
     badge: null
@@ -109,18 +109,6 @@ const menuItems = [
     name: 'Bookings',
     path: '/bookings',
     icon: 'mdi-wallet-travel',
-    badge: null
-  },
-  {
-    name: 'Compliance',
-    path: '/compliance',
-    icon: 'mdi-shield-check',
-    badge: '3' // Example: 3 violations
-  },
-  {
-    name: 'Budgets',
-    path: '/budgets',
-    icon: 'mdi-wallet',
     badge: null
   },
   {
@@ -145,6 +133,18 @@ const menuItems = [
     name: 'Service Fees',
     path: '/service-fees',
     icon: 'mdi-room-service-outline',
+    badge: null
+  },
+  {
+    name: 'Compliance',
+    path: '/compliance',
+    icon: 'mdi-shield-check',
+    badge: '3' // Example: 3 violations
+  },
+  {
+    name: 'Budgets',
+    path: '/budgets',
+    icon: 'mdi-wallet',
     badge: null
   }
 ]
