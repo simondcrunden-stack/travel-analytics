@@ -4,8 +4,8 @@ from .models import Organization
 
 @admin.register(Organization)
 class OrganizationAdmin(admin.ModelAdmin):
-    list_display = ['name', 'code', 'org_type', 'base_currency', 'is_active', 'subscription_status']
-    list_filter = ['org_type', 'is_active', 'subscription_status', 'base_currency']
+    list_display = ['name', 'code', 'org_type', 'base_currency', 'home_country', 'is_active', 'subscription_status']
+    list_filter = ['org_type', 'is_active', 'subscription_status', 'base_currency', 'home_country']
     search_fields = ['name', 'code', 'contact_email', 'contact_name']
     
     fieldsets = (
@@ -17,11 +17,10 @@ class OrganizationAdmin(admin.ModelAdmin):
         }),
         ('Accounts Payable Contact', {
             'fields': ('ap_contact_name', 'ap_contact_email', 'ap_contact_phone'),
-            'classes': ('collapse',),
             'description': 'Contact details for invoicing and payment processing'
         }),
         ('Financial Settings', {
-            'fields': ('base_currency',)
+            'fields': ('base_currency', 'home_country')
         }),
         ('Subscription', {
             'fields': ('is_active', 'subscription_status', 'subscription_start', 'subscription_end')

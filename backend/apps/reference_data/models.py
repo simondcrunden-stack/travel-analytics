@@ -108,6 +108,131 @@ class CurrencyExchangeRate(models.Model):
         return None
 
 # ============================================================================
+# COUNTRY MODELS
+# ============================================================================
+
+class Country(models.Model):
+    """ISO 3166-1 Country reference data for standardized country identification"""
+    
+    # ISO codes (using alpha_3 as primary key for consistency with HighRiskDestination)
+    alpha_2 = models.CharField(max_length=2, unique=True, help_text="ISO 3166-1 alpha-2 code (e.g., AU)")
+    alpha_3 = models.CharField(max_length=3, unique=True, primary_key=True, 
+                               help_text="ISO 3166-1 alpha-3 code (e.g., AUS)")
+    numeric_code = models.CharField(max_length=3, blank=True, help_text="ISO 3166-1 numeric code (e.g., 036)")
+    
+    # Names
+    name = models.CharField(max_length=100, help_text="Official country name")
+    common_name = models.CharField(max_length=100, blank=True, help_text="Commonly used name")
+    
+    # Regional classification (UN M49 standard)
+    region = models.CharField(max_length=50, blank=True, 
+                             help_text="UN region: Africa, Americas, Asia, Europe, Oceania")
+    subregion = models.CharField(max_length=50, blank=True,
+                                help_text="UN subregion: e.g., South-Eastern Asia, Western Europe")
+    
+    # Practical info
+    currency_code = models.CharField(max_length=3, blank=True, help_text="ISO 4217 currency code")
+    phone_prefix = models.CharField(max_length=10, blank=True, help_text="International dialing code")
+    
+    # Status
+    is_active = models.BooleanField(default=True)
+    
+    # Metadata
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'countries'
+        ordering = ['name']
+        verbose_name_plural = 'Countries'
+    
+    def __str__(self):
+        return f"{self.name} ({self.alpha_3})"
+    
+    def is_domestic_for_organization(self, organization):
+        """
+        Dynamically determine if this country is domestic for a given organization.
+        
+        Args:
+            organization: Organization model instance
+            
+        Returns:
+            bool: True if country matches organization's home_country
+        """
+        if not organization or not hasattr(organization, 'home_country'):
+            return False
+        return self.alpha_3 == organization.home_country
+    
+    @classmethod
+    def get_domestic_country(cls, organization):
+        """
+        Get the domestic country for an organization.
+        
+        Args:
+            organization: Organization model instance
+            
+        Returns:
+            Country instance or None
+        """
+        if not organization or not hasattr(organization, 'home_country'):
+            return None
+        try:
+            return cls.objects.get(alpha_3=organization.home_country)
+        except cls.DoesNotExist:
+            return None
+
+
+# ============================================================================
+# NOTES ON DOMESTIC VS INTERNATIONAL TRAVEL
+# ============================================================================
+"""
+Domestic vs International is determined by Organization.home_country, not stored in Country model.
+
+Example usage in queries:
+    
+    # Get domestic bookings for an organization
+    domestic_bookings = Booking.objects.filter(
+        organization=org,
+        # Assuming Organization has home_country field
+        air_booking__origin_country=org.home_country,
+        air_booking__destination_country=org.home_country
+    )
+    
+    # In API/views:
+    def is_domestic_travel(booking, organization):
+        '''Check if booking is domestic based on org's home country'''
+        home_country = organization.home_country  # e.g., 'AUS' or 'NZL'
+        
+        if hasattr(booking, 'air_details'):
+            # For air travel, both origin and destination must be in home country
+            return (booking.air_details.origin_country == home_country and 
+                    booking.air_details.destination_country == home_country)
+        
+        elif hasattr(booking, 'accommodation_details'):
+            # For accommodation, hotel must be in home country
+            return booking.accommodation_details.country == home_country
+        
+        elif hasattr(booking, 'car_hire_details'):
+            # For car hire, rental must be in home country
+            return booking.car_hire_details.country == home_country
+        
+        return False
+
+Future Enhancement: Add home_country to Organization model
+    
+    # In apps/organizations/models.py:
+    class Organization(models.Model):
+        ...
+        home_country = models.ForeignKey(
+            'reference_data.Country',
+            on_delete=models.PROTECT,
+            related_name='home_organizations',
+            to_field='alpha_3',
+            help_text="Organization's home country for domestic/international classification"
+        )
+"""
+
+# ============================================================================
 # SUPPLIER MODELS
 # ============================================================================
 

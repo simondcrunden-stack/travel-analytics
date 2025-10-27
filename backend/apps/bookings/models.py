@@ -1,3 +1,6 @@
+# apps/bookings/models.py
+# CORRECTED MODEL - Session 26
+
 from apps.users.models import User
 from django.db import models
 from django.core.validators import MinValueValidator
@@ -55,13 +58,15 @@ class Traveller(models.Model):
 
 
 class Booking(models.Model):
-    """Main booking/transaction record"""
-    BOOKING_TYPES = [
-        ('AIR', 'Air Travel'),
-        ('HOTEL', 'Accommodation'),
-        ('CAR', 'Car Hire'),
-        ('OTHER', 'Other Services'),
-    ]
+    """
+    Main booking/transaction record - represents a single travel agent booking
+    Can contain multiple air bookings, hotels, car rentals, etc.
+    
+    IMPORTANT CHANGE (Session 26):
+    - Removed 'booking_type' field - one booking can have multiple types
+    - Changed relationships to ForeignKey (one-to-many) instead of OneToOneField
+    - total_amount is now sum of ALL components
+    """
     
     STATUS_CHOICES = [
         ('CONFIRMED', 'Confirmed'),
@@ -117,39 +122,54 @@ class Booking(models.Model):
         help_text="Fallback when consultant cannot be matched to a user account"
     )
     
-    # Booking reference
-    agent_booking_reference = models.CharField(max_length=100, verbose_name="Agent Booking Reference")
-    supplier_reference = models.CharField(max_length=100, blank=True, verbose_name="Supplier Reference")
-    booking_type = models.CharField(max_length=20, choices=BOOKING_TYPES)
+    # Booking reference - MASTER REFERENCE
+    agent_booking_reference = models.CharField(
+        max_length=100, 
+        verbose_name="Agent Booking Reference",
+        help_text="Master booking reference (e.g., GPT001)"
+    )
+    supplier_reference = models.CharField(
+        max_length=100, 
+        blank=True, 
+        verbose_name="Supplier Reference",
+        help_text="Optional supplier confirmation number"
+    )
+    
+    # REMOVED: booking_type field (no longer needed)
+    # One booking can contain multiple air, hotel, car components
     
     # Dates
     booking_date = models.DateField()
-    travel_date = models.DateField()
-    return_date = models.DateField(null=True, blank=True)
+    travel_date = models.DateField(help_text="Start date of travel")
+    return_date = models.DateField(null=True, blank=True, help_text="End date of travel")
     
     # Status
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='CONFIRMED')
     
-    # Financial
+    # Financial - TOTAL AMOUNTS (sum of all components)
     currency = models.CharField(max_length=3, default='AUD')
     total_amount = models.DecimalField(
-        max_digits=10,
+        max_digits=10, 
         decimal_places=2,
-        validators=[MinValueValidator(Decimal('0.00'))]
+        help_text="Total amount in original currency (sum of all air, hotel, car, fees)"
     )
-    base_fare = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
-    taxes = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
-    fees = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    base_fare = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    taxes = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    fees = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     
-    # Converted amounts in organization's base currency
+    # Converted amounts (for multi-currency reporting)
     total_amount_base = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     base_fare_base = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     taxes_base = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     fees_base = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     
-    # Exchange rate used for conversion
-    exchange_rate = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    # Currency conversion tracking
+    exchange_rate = models.DecimalField(max_digits=10, decimal_places=4, null=True, blank=True)
     exchange_rate_date = models.DateField(null=True, blank=True)
+    
+    # Compliance
+    policy_compliant = models.BooleanField(default=True)
+    advance_booking_days = models.IntegerField(null=True, blank=True)
     
     # Metadata
     created_at = models.DateTimeField(auto_now_add=True)
@@ -162,90 +182,134 @@ class Booking(models.Model):
             models.Index(fields=['organization', 'travel_date']),
             models.Index(fields=['traveller', 'travel_date']),
             models.Index(fields=['agent_booking_reference']),
-            models.Index(fields=['supplier_reference']),
-            models.Index(fields=['booking_type', 'status']),
+            models.Index(fields=['status']),
         ]
     
     def __str__(self):
-        # Show booking reference and travel agent organization
-        if self.organization.travel_agent:
-            # If this is a customer org, show their travel agent
-            agent_org = self.organization.travel_agent.name
-        elif self.organization.org_type == 'AGENT':
-            # If this IS the travel agent org
-            agent_org = self.organization.name
-        else:
-            agent_org = "No Agent"
+        return f"{self.agent_booking_reference} - {self.traveller}"
+    
+    def calculate_total_amount(self):
+        """
+        Calculate total amount from all booking components
+        Returns: Decimal total amount
+        """
+        total = Decimal('0.00')
         
-        return f"{self.agent_booking_reference} - {agent_org}"
+        # Sum all air bookings
+        for air in self.air_bookings.all():
+            if air.total_fare:
+                total += air.total_fare
+        
+        # Sum all accommodation bookings
+        for hotel in self.accommodation_bookings.all():
+            if hotel.total_amount_base:
+                total += hotel.total_amount_base
+        
+        # Sum all car hire bookings
+        for car in self.car_hire_bookings.all():
+            if car.total_amount_base:
+                total += car.total_amount_base
+        
+        # Sum all service fees
+        for fee in self.service_fees.all():
+            if fee.fee_amount:
+                total += fee.fee_amount
+        
+        return total
 
 
 # ============================================================================
-# AIR TRAVEL SPECIFIC MODELS
+# AIR BOOKING MODELS
 # ============================================================================
 
 class AirBooking(models.Model):
-    """Extended details for air bookings"""
-    TRAVEL_CLASS = [
-        ('FIRST', 'First Class'),
-        ('BUSINESS', 'Business Class'),
-        ('PREMIUM_ECONOMY', 'Premium Economy'),
-        ('ECONOMY', 'Economy'),
-        ('RESTRICTED_ECONOMY', 'Restricted Economy'),
-    ]
+    """
+    Extended details for air bookings
     
-    TRIP_TYPE = [
+    IMPORTANT CHANGE (Session 26):
+    - Changed from OneToOneField to ForeignKey
+    - One Booking can have MULTIPLE AirBookings
+    - Each AirBooking represents a ticketed itinerary
+    """
+    
+    TRIP_TYPES = [
         ('ONE_WAY', 'One Way'),
         ('RETURN', 'Return'),
         ('MULTI_CITY', 'Multi-City'),
     ]
     
+    TRAVEL_CLASSES = [
+        ('ECONOMY', 'Economy'),
+        ('PREMIUM_ECONOMY', 'Premium Economy'),
+        ('BUSINESS', 'Business'),
+        ('FIRST', 'First Class'),
+    ]
+    
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    booking = models.OneToOneField(Booking, on_delete=models.CASCADE, related_name='air_details')
+    
+    # CHANGED: ForeignKey instead of OneToOneField
+    booking = models.ForeignKey(
+        Booking, 
+        on_delete=models.CASCADE, 
+        related_name='air_bookings',  # Changed from 'air_details'
+        help_text="Parent booking - one booking can have multiple air bookings"
+    )
     
     # Flight details
-    trip_type = models.CharField(max_length=20, choices=TRIP_TYPE)
-    travel_class = models.CharField(max_length=30, choices=TRAVEL_CLASS)
+    trip_type = models.CharField(max_length=20, choices=TRIP_TYPES)
+    travel_class = models.CharField(max_length=20, choices=TRAVEL_CLASSES)
     
-    # Ticket
+    # Route (from first segment)
+    origin_airport_iata_code = models.CharField(max_length=3)
+    destination_airport_iata_code = models.CharField(max_length=3)
+    
+    # Ticketing
     ticket_number = models.CharField(max_length=50, blank=True)
     
-    # Primary airline (for multi-segment bookings)
-    primary_airline_iata_code = models.CharField(max_length=3, blank=True)
-    primary_airline_name = models.CharField(max_length=100, blank=True)
+    # Primary airline (from first segment or most segments)
+    primary_airline_iata_code = models.CharField(max_length=3)
+    primary_airline_name = models.CharField(max_length=100)
     
-    # Route (summary)
-    origin_airport_iata_code = models.CharField(max_length=3)  # Airport IATA code
-    destination_airport_iata_code = models.CharField(max_length=3)  # Airport IATA code
-    
-    # Compliance
-    lowest_fare_available = models.DecimalField(max_digits=10, decimal_places=2, 
-                                                null=True, blank=True)
+    # Compliance tracking
+    lowest_fare_available = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     lowest_fare_currency = models.CharField(max_length=3, blank=True)
+    potential_savings = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     
-    # Savings/lost savings calculation
-    potential_savings = models.DecimalField(max_digits=10, decimal_places=2, 
-                                           null=True, blank=True)
+    # Financial (optional - can calculate from segments)
+    total_fare = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     
     class Meta:
         db_table = 'air_bookings'
         indexes = [
+            models.Index(fields=['booking']),
             models.Index(fields=['origin_airport_iata_code', 'destination_airport_iata_code']),
             models.Index(fields=['primary_airline_iata_code']),
         ]
     
     def __str__(self):
-        return f"{self.booking.agent_booking_reference} - {self.origin_airport_iata_code} to {self.destination_airport_iata_code}"
+        return f"{self.booking.agent_booking_reference} - {self.origin_airport_iata_code}→{self.destination_airport_iata_code}"
+    
+    def calculate_carbon_emissions(self):
+        """Sum carbon emissions from all segments"""
+        total_emissions = sum(
+            segment.carbon_emissions_kg or 0 
+            for segment in self.segments.all()
+        )
+        return total_emissions
 
 
 class AirSegment(models.Model):
+    """
+    Individual flight segments within an air booking
+    Relationship: Booking → AirBooking (many) → AirSegment (many)
+    """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     air_booking = models.ForeignKey(AirBooking, on_delete=models.CASCADE, related_name='segments')
     
-    # Segment order
+    # Segment number (for ordering)
     segment_number = models.IntegerField()
     
-    # Flight details
+    # Airline
     airline_iata_code = models.CharField(max_length=3)
     airline_name = models.CharField(max_length=100)
     flight_number = models.CharField(max_length=10)
@@ -261,18 +325,12 @@ class AirSegment(models.Model):
     arrival_time = models.TimeField()
     
     # Class & fare
-    booking_class = models.CharField(max_length=10)
+    booking_class = models.CharField(max_length=10)  # Y, J, etc.
     fare_basis = models.CharField(max_length=20, blank=True)
     
-    # Distance & Carbon
+    # Distance & carbon (auto-calculated)
     distance_km = models.IntegerField(null=True, blank=True)
-    carbon_emissions_kg = models.DecimalField(
-        max_digits=8, 
-        decimal_places=2, 
-        null=True, 
-        blank=True,
-        help_text="CO2 emissions in kilograms for this segment (ICAO standards)"
-    )
+    carbon_emissions_kg = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     
     class Meta:
         db_table = 'air_segments'
@@ -283,11 +341,21 @@ class AirSegment(models.Model):
         ]
         ordering = ['segment_number']
     
+    def __str__(self):
+        return f"Segment {self.segment_number}: {self.origin_airport_iata_code}→{self.destination_airport_iata_code}"
+    
+    def save(self, *args, **kwargs):
+        """Auto-calculate distance and carbon emissions on save"""
+        if not self.distance_km:
+            self.distance_km = self.calculate_distance()
+        
+        if self.distance_km and not self.carbon_emissions_kg:
+            self.carbon_emissions_kg = self.calculate_carbon_emissions()
+        
+        super().save(*args, **kwargs)
+    
     def calculate_distance(self):
-        """
-        Calculate great circle distance between origin and destination airports.
-        Returns distance in kilometers.
-        """
+        """Calculate distance between airports using Haversine formula"""
         try:
             from math import radians, sin, cos, sqrt, atan2
             from apps.reference_data.models import Airport
@@ -297,7 +365,6 @@ class AirSegment(models.Model):
             
             if not all([origin_airport.latitude, origin_airport.longitude,
                        dest_airport.latitude, dest_airport.longitude]):
-                print(f"Missing coordinates for {self.origin_airport_iata_code} or {self.destination_airport_iata_code}")
                 return None
             
             # Haversine formula
@@ -318,73 +385,40 @@ class AirSegment(models.Model):
             return round(distance)
         except Exception as e:
             print(f"Error calculating distance: {e}")
-            import traceback
-            traceback.print_exc()
             return None
     
     def calculate_carbon_emissions(self):
-        """
-        Calculate CO2 emissions based on ICAO standards.
-        
-        ICAO Carbon Emissions Calculator methodology:
-        - Short-haul (<1000km): ~0.158 kg CO2/km
-        - Medium-haul (1000-3000km): ~0.113 kg CO2/km  
-        - Long-haul (>3000km): ~0.103 kg CO2/km
-        
-        Class multipliers (per passenger):
-        - Economy: 1.0x
-        - Premium Economy: 1.5x
-        - Business: 2.0x
-        - First: 2.5x
-        """
+        """Calculate CO2 emissions based on ICAO standards"""
         if not self.distance_km:
-            distance = self.calculate_distance()
-            if distance:
-                self.distance_km = distance
-            else:
-                return None
+            return None
         
-        # Determine emission factor based on distance
-        if self.distance_km < 1000:
-            base_emission_factor = 0.158  # kg CO2 per km
-        elif self.distance_km < 3000:
-            base_emission_factor = 0.113
-        else:
-            base_emission_factor = 0.103
-        
-        # Get class multiplier from booking class
-        class_multiplier = 1.0  # Default to economy
         try:
-            air_booking = self.air_booking
-            if air_booking.travel_class in ['BUSINESS', 'PREMIUM_BUSINESS']:
-                class_multiplier = 2.0
-            elif air_booking.travel_class == 'FIRST':
-                class_multiplier = 2.5
-            elif air_booking.travel_class == 'PREMIUM_ECONOMY':
-                class_multiplier = 1.5
-        except Exception:
-            pass
-        
-        # Calculate total emissions
-        emissions = self.distance_km * base_emission_factor * class_multiplier
-        
-        return round(emissions, 2)
-    
-    def save(self, *args, **kwargs):
-        """Auto-calculate distance and emissions on save if not provided"""
-        # Calculate distance if missing
-        if not self.distance_km:
-            calculated_distance = self.calculate_distance()
-            if calculated_distance:
-                self.distance_km = calculated_distance
-        
-        # Calculate carbon if we have distance
-        if self.distance_km and not self.carbon_emissions_kg:
-            calculated_carbon = self.calculate_carbon_emissions()
-            if calculated_carbon:
-                self.carbon_emissions_kg = calculated_carbon
-        
-        super().save(*args, **kwargs)
+            # ICAO emission factors (kg CO2 per passenger per km)
+            if self.distance_km < 1000:
+                # Short haul
+                emission_factor = 0.254
+            elif self.distance_km < 3500:
+                # Medium haul
+                emission_factor = 0.195
+            else:
+                # Long haul
+                emission_factor = 0.152
+            
+            # Adjust for travel class
+            class_multipliers = {
+                'Y': 1.0,      # Economy baseline
+                'W': 1.5,      # Premium Economy
+                'J': 2.0,      # Business
+                'F': 3.0,      # First
+            }
+            
+            multiplier = class_multipliers.get(self.booking_class, 1.0)
+            emissions = self.distance_km * emission_factor * multiplier
+            
+            return round(emissions, 2)
+        except Exception as e:
+            print(f"Error calculating carbon emissions: {e}")
+            return None
 
 
 # ============================================================================
@@ -392,13 +426,27 @@ class AirSegment(models.Model):
 # ============================================================================
 
 class AccommodationBooking(models.Model):
-    """Extended details for hotel bookings"""
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    booking = models.OneToOneField(Booking, on_delete=models.CASCADE, related_name='accommodation_details')
+    """
+    Extended details for hotel bookings
     
-    # Hotel details - HYBRID APPROACH
+    IMPORTANT CHANGE (Session 26):
+    - Changed from OneToOneField to ForeignKey
+    - One Booking can have MULTIPLE AccommodationBookings
+    """
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # CHANGED: ForeignKey instead of OneToOneField
+    booking = models.ForeignKey(
+        Booking, 
+        on_delete=models.CASCADE, 
+        related_name='accommodation_bookings',  # Changed from 'accommodation_details'
+        help_text="Parent booking - one booking can have multiple hotel stays"
+    )
+    
+    # Hotel details
     hotel_name = models.CharField(max_length=200)
-    hotel_chain = models.CharField(max_length=100, blank=True)  # Text fallback
+    hotel_chain = models.CharField(max_length=100, blank=True)
     
     # Location
     city = models.CharField(max_length=100)
@@ -422,6 +470,7 @@ class AccommodationBooking(models.Model):
     class Meta:
         db_table = 'accommodation_bookings'
         indexes = [
+            models.Index(fields=['booking']),
             models.Index(fields=['city', 'check_in_date']),
             models.Index(fields=['hotel_chain']),
         ]
@@ -435,30 +484,49 @@ class AccommodationBooking(models.Model):
 # ============================================================================
 
 class CarHireBooking(models.Model):
-    """Extended details for car rental bookings"""
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    booking = models.OneToOneField(Booking, on_delete=models.CASCADE, related_name='car_hire_details')
+    """
+    Extended details for car rental bookings
     
-    # Rental company - HYBRID APPROACH
-    rental_company = models.CharField(max_length=100)  # Text fallback
+    IMPORTANT CHANGE (Session 26):
+    - Changed from OneToOneField to ForeignKey
+    - One Booking can have MULTIPLE CarHireBookings
+    """
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # CHANGED: ForeignKey instead of OneToOneField
+    booking = models.ForeignKey(
+        Booking, 
+        on_delete=models.CASCADE, 
+        related_name='car_hire_bookings',  # Changed from 'car_hire_details'
+        help_text="Parent booking - one booking can have multiple car rentals"
+    )
+    
+    # Rental company
+    rental_company = models.CharField(max_length=100)
     
     # Vehicle
     vehicle_type = models.CharField(max_length=100, blank=True)  # Compact, SUV, etc.
-    vehicle_class = models.CharField(max_length=50, blank=True)
+    vehicle_category = models.CharField(max_length=100, blank=True)  # Economy, Full-size, etc.
+    vehicle_make_model = models.CharField(max_length=100, blank=True)  # Toyota Corolla or similar
     
-    # Location
+    # Pickup
     pickup_location = models.CharField(max_length=200)
-    dropoff_location = models.CharField(max_length=200)
     pickup_city = models.CharField(max_length=100)
-    
-    # Rental period
     pickup_date = models.DateField()
     pickup_time = models.TimeField()
+    
+    # Dropoff
+    dropoff_location = models.CharField(max_length=200)
+    dropoff_city = models.CharField(max_length=100)
     dropoff_date = models.DateField()
     dropoff_time = models.TimeField()
-    number_of_days = models.IntegerField()
     
-    # Rate
+    # Country
+    country = models.CharField(max_length=100)
+    
+    # Duration & rate
+    number_of_days = models.IntegerField()
     daily_rate = models.DecimalField(max_digits=10, decimal_places=2)
     currency = models.CharField(max_length=3, default='AUD')
     
@@ -469,6 +537,7 @@ class CarHireBooking(models.Model):
     class Meta:
         db_table = 'car_hire_bookings'
         indexes = [
+            models.Index(fields=['booking']),
             models.Index(fields=['pickup_city', 'pickup_date']),
             models.Index(fields=['rental_company']),
         ]
@@ -482,40 +551,32 @@ class CarHireBooking(models.Model):
 # ============================================================================
 
 class Invoice(models.Model):
-    """Invoice records - when tickets/services are issued"""
+    """Invoices issued by travel agents to customer organizations"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     
     # Relationships
-    booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name='invoices')
     organization = models.ForeignKey('organizations.Organization', on_delete=models.CASCADE, 
                                      related_name='invoices')
+    booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name='invoices', 
+                                null=True, blank=True)
     
     # Invoice details
     invoice_number = models.CharField(max_length=100)
     invoice_date = models.DateField()
+    due_date = models.DateField()
     
     # Amounts
-    currency = models.CharField(max_length=3, default='AUD')  # Original invoice currency
-    invoice_amount = models.DecimalField(max_digits=10, decimal_places=2)
-    gst_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
-    
-    # Converted amounts in organization's base currency
-    invoice_amount_base = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    gst_amount_base = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    
-    # Exchange rate used for conversion
-    exchange_rate = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
-    exchange_rate_date = models.DateField(null=True, blank=True)
+    subtotal = models.DecimalField(max_digits=10, decimal_places=2)
+    gst_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    total_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    currency = models.CharField(max_length=3, default='AUD')
     
     # Payment
     payment_status = models.CharField(max_length=20, default='UNPAID')
     payment_date = models.DateField(null=True, blank=True)
     
-    # Import tracking
-    import_batch = models.ForeignKey('imports.ImportBatch', on_delete=models.SET_NULL, null=True,
-                                     related_name='invoices')
-    
     # Metadata
+    notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -557,30 +618,20 @@ class ServiceFee(models.Model):
                                   null=True, blank=True)
     
     # Fee details
-    fee_type = models.CharField(max_length=50, choices=FEE_TYPES)
+    fee_type = models.CharField(max_length=30, choices=FEE_TYPES)
     fee_date = models.DateField()
+    fee_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    currency = models.CharField(max_length=3, default='AUD')
     
-    # Amount
-    currency = models.CharField(max_length=3, default='AUD')  # Original fee currency
-    amount = models.DecimalField(max_digits=10, decimal_places=2)
-    gst_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
-    
-    # Converted amounts in organization's base currency
-    amount_base = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    gst_amount_base = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    
-    # Exchange rate used for conversion
-    exchange_rate = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
-    exchange_rate_date = models.DateField(null=True, blank=True)
-    
-    # Description
-    description = models.TextField(blank=True)
+    # Channel
+    booking_channel = models.CharField(max_length=20, blank=True)  # Online, Offline, Mobile
     
     # Import tracking
-    import_batch = models.ForeignKey('imports.ImportBatch', on_delete=models.SET_NULL, null=True,
-                                     related_name='service_fees')
+    import_batch = models.ForeignKey('imports.ImportBatch', on_delete=models.SET_NULL, 
+                                     null=True, blank=True, related_name='service_fees')
     
     # Metadata
+    description = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -588,8 +639,9 @@ class ServiceFee(models.Model):
         db_table = 'service_fees'
         indexes = [
             models.Index(fields=['organization', 'fee_date']),
-            models.Index(fields=['fee_type', 'fee_date']),
+            models.Index(fields=['booking']),
+            models.Index(fields=['fee_type']),
         ]
     
     def __str__(self):
-        return f"{self.fee_type} - {self.amount} {self.currency}"
+        return f"{self.get_fee_type_display()} - {self.organization.code} - ${self.fee_amount}"

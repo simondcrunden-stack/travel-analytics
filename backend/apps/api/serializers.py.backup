@@ -137,10 +137,10 @@ class CarHireBookingSerializer(serializers.ModelSerializer):
     class Meta:
         model = CarHireBooking
         fields = [
-            'id', 'rental_company', 'vehicle_type', 'vehicle_category', 'vehicle_make_model',  # ✅ Fixed
-            'pickup_location', 'pickup_city', 'pickup_date', 'pickup_time',
-            'dropoff_location', 'dropoff_city', 'dropoff_date', 'dropoff_time',
-            'country', 'number_of_days', 'daily_rate', 'currency',
+            'id', 'rental_company', 'vehicle_type', 'vehicle_class',
+            'pickup_location', 'dropoff_location', 'pickup_city',
+            'pickup_date', 'pickup_time', 'dropoff_date', 'dropoff_time',
+            'number_of_days', 'daily_rate', 'currency',
             'daily_rate_base', 'total_amount_base'
         ]
 
@@ -151,18 +151,18 @@ class BookingListSerializer(serializers.ModelSerializer):
     organization_name = serializers.CharField(source='organization.name', read_only=True)
     
     # Add nested details for frontend charts
-    air_bookings = AirBookingSerializer(many=True, read_only=True)
-    accommodation_bookings = AccommodationBookingSerializer(many=True, read_only=True)
-    car_hire_bookings = CarHireBookingSerializer(many=True, read_only=True)
+    air_details = AirBookingSerializer(read_only=True)
+    accommodation_details = AccommodationBookingSerializer(read_only=True)
+    car_hire_details = CarHireBookingSerializer(read_only=True)
     
     class Meta:
         model = Booking
         fields = [
             'id', 'agent_booking_reference', 'supplier_reference',
-            'booking_date', 'travel_date', 'return_date',
+            'booking_type', 'booking_date', 'travel_date', 'return_date',
             'status', 'traveller_name', 'organization_name',
             'currency', 'total_amount',
-            'air_bookings', 'accommodation_bookings', 'car_hire_bookings'
+            'air_details', 'accommodation_details', 'car_hire_details'
         ]
 
 
@@ -170,9 +170,9 @@ class BookingDetailSerializer(serializers.ModelSerializer):
     """For detail views - full data"""
     traveller = TravellerListSerializer(read_only=True)
     organization = OrganizationSerializer(read_only=True)
-    air_bookings = AirBookingSerializer(many=True, read_only=True)
-    accommodation_bookings = AccommodationBookingSerializer(many=True, read_only=True)
-    car_hire_bookings = CarHireBookingSerializer(many=True, read_only=True)
+    air_details = AirBookingSerializer(read_only=True)
+    accommodation_details = AccommodationBookingSerializer(read_only=True)
+    car_hire_details = CarHireBookingSerializer(read_only=True)
     travel_arranger_name = serializers.CharField(source='travel_arranger.__str__', read_only=True)
     travel_consultant_name = serializers.CharField(source='travel_consultant.__str__', read_only=True)
     
@@ -180,14 +180,14 @@ class BookingDetailSerializer(serializers.ModelSerializer):
         model = Booking
         fields = [
             'id', 'organization', 'traveller', 'agent_booking_reference',
-            'supplier_reference', 'booking_date',
+            'supplier_reference', 'booking_type', 'booking_date',
             'travel_date', 'return_date', 'status', 'currency',
             'total_amount', 'base_fare', 'taxes', 'fees',
             'total_amount_base', 'base_fare_base', 'taxes_base', 'fees_base',
             'exchange_rate', 'exchange_rate_date', 
             'travel_arranger', 'travel_arranger_name', 'travel_arranger_text',
             'travel_consultant', 'travel_consultant_name', 'travel_consultant_text',
-            'air_bookings', 'accommodation_bookings', 'car_hire_bookings',
+            'air_details', 'accommodation_details', 'car_hire_details',
             'created_at', 'updated_at'
         ]
 
@@ -326,7 +326,7 @@ class CommissionSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'booking', 'booking_reference', 
             'supplier_reference_booking', 'organization', 'organization_name',
-            'product_type', 'booking_date', 'supplier_name',
+            'product_type', 'booking_type', 'booking_date', 'supplier_name',
             'commission_amount', 'currency', 'commission_amount_base',
             'booking_amount', 'commission_rate_percentage', 'earned_date',
             'commission_period', 'notes', 'created_at', 'updated_at',

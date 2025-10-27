@@ -180,13 +180,14 @@ class BookingViewSet(viewsets.ModelViewSet):
     API endpoint for bookings with comprehensive filtering.
     
     Supports filtering by:
-    - organization, traveller, status
+    - organization, traveller, booking_type, status
     - Date ranges (booking_date, travel_date)
     - Search by reference numbers
     """
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = {
+        'booking_type': ['exact'],
         'status': ['exact'],
         'organization': ['exact'],
         'traveller': ['exact'],
@@ -251,9 +252,12 @@ class BookingViewSet(viewsets.ModelViewSet):
         summary = {
             'total_bookings': queryset.count(),
             'total_spend': queryset.aggregate(Sum('total_amount'))['total_amount__sum'] or 0,
-            'by_status': list(queryset.values('status').annotate(
+            'by_type': list(queryset.values('booking_type').annotate(
                 count=Count('id'),
                 total=Sum('total_amount')
+            )),
+            'by_status': list(queryset.values('status').annotate(
+                count=Count('id')
             )),
         }
         
@@ -264,7 +268,7 @@ class BookingViewSet(viewsets.ModelViewSet):
         """
         Get carbon emissions report for air bookings.
         """
-        queryset = self.get_queryset()
+        queryset = self.get_queryset().filter(booking_type='AIR')
         
         # Apply date filters
         start_date = request.query_params.get('start_date')
@@ -275,7 +279,7 @@ class BookingViewSet(viewsets.ModelViewSet):
         if end_date:
             queryset = queryset.filter(travel_date__lte=end_date)
         
-        # Get air bookings with segments - only bookings that have air components
+        # Get air bookings with segments
         air_bookings = AirBooking.objects.filter(
             booking__in=queryset
         ).prefetch_related('segments')

@@ -1,3 +1,5 @@
+# backend/apps/organizations/models.py
+
 from django.db import models
 import uuid
 
@@ -37,6 +39,15 @@ class Organization(models.Model):
     # Currency settings
     base_currency = models.CharField(max_length=3, default='AUD')
     
+    # ============================================================================
+    # NEW FIELD: home_country for domestic/international determination
+    # ============================================================================
+    home_country = models.CharField(
+        max_length=3,
+        default='AUS',
+        help_text="ISO 3166-1 alpha-3 code for organization's home country (e.g., AUS, NZL, SGP)"
+    )
+    
     # Subscription Status
     is_active = models.BooleanField(default=True)
     subscription_status = models.CharField(
@@ -65,7 +76,50 @@ class Organization(models.Model):
         indexes = [
             models.Index(fields=['code']),
             models.Index(fields=['org_type', 'is_active']),
+            models.Index(fields=['home_country']),  # Index for domestic/international queries
         ]
     
     def __str__(self):
         return f"{self.name} ({self.code})"
+    
+    # ============================================================================
+    # NEW HELPER METHODS for domestic/international determination
+    # ============================================================================
+    
+    def is_domestic_travel(self, country_code):
+        """
+        Determine if travel to a country is domestic for this organization.
+        
+        Args:
+            country_code: ISO 3166-1 alpha-3 code (e.g., 'AUS', 'NZL')
+            
+        Returns:
+            bool: True if travel is domestic
+            
+        Example:
+            >>> org = Organization.objects.get(name='TechCorp', home_country='AUS')
+            >>> org.is_domestic_travel('AUS')
+            True
+            >>> org.is_domestic_travel('NZL')
+            False
+        """
+        return self.home_country == country_code
+    
+    def get_home_country_display(self):
+        """
+        Get the full country name for the home country.
+        
+        Returns:
+            str: Country common name or alpha_3 code if country not found
+            
+        Example:
+            >>> org = Organization.objects.get(name='TechCorp', home_country='AUS')
+            >>> org.get_home_country_display()
+            'Australia'
+        """
+        try:
+            from apps.reference_data.models import Country
+            country = Country.objects.get(alpha_3=self.home_country)
+            return country.common_name
+        except:
+            return self.home_country

@@ -1,6 +1,6 @@
 from django.contrib import admin
-from .models import Airport, Airline, CurrencyExchangeRate
-from .models import Airport, Airline, CurrencyExchangeRate, HotelChain, CarRentalCompany
+from .models import Airport, Airline, CurrencyExchangeRate, Country
+from .models import Airport, Airline, CurrencyExchangeRate, Country, HotelChain, CarRentalCompany
 
 
 @admin.register(Airport)
@@ -121,6 +121,33 @@ class CarRentalCompanyAdmin(admin.ModelAdmin):
         ('Notes', {
             'fields': ('notes',),
             'classes': ('collapse',)
+        }),
+    )
+    
+    readonly_fields = ['created_at', 'updated_at']
+
+@admin.register(Country)
+class CountryAdmin(admin.ModelAdmin):
+    list_display = ['alpha_3', 'name', 'alpha_2', 'region', 'subregion', 
+                    'currency_code', 'is_active']
+    list_filter = ['region', 'subregion', 'is_active']
+    search_fields = ['name', 'common_name', 'alpha_2', 'alpha_3']
+    
+    fieldsets = (
+        ('ISO Codes', {
+            'fields': ('alpha_3', 'alpha_2', 'numeric_code')
+        }),
+        ('Names', {
+            'fields': ('name', 'common_name')
+        }),
+        ('Regional Classification', {
+            'fields': ('region', 'subregion')
+        }),
+        ('Travel Details', {
+            'fields': ('currency_code', 'phone_prefix')
+        }),
+        ('Status', {
+            'fields': ('is_active',)
         }),
     )
     
