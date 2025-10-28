@@ -101,6 +101,18 @@ export default {
     return response.data
   },
 
+  // Get available countries (countries that have booking data)
+  async getAvailableCountries(params = {}) {
+    const response = await api.get('/countries/available/', { params })
+    return response.data
+  },
+
+  // Get all countries
+  async getCountries(params = {}) {
+    const response = await api.get('/countries/', { params })
+    return response.data
+  },
+
   // Helper: Calculate totals from bookings
   calculateTotals(bookings) {
     return bookings.reduce((acc, booking) => {

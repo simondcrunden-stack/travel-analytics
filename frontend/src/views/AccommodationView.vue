@@ -1,232 +1,760 @@
+<script setup>
+import { ref, computed, onMounted, nextTick } from 'vue'
+import bookingService from '@/services/bookingService'
+import { Chart, registerables } from 'chart.js'
+
+// Register Chart.js components
+Chart.register(...registerables)
+
+// State
+const loading = ref(true)
+const error = ref(null)
+const bookings = ref([])
+
+// Chart refs
+const cityChartRef = ref(null)
+const hotelChainChartRef = ref(null)
+let cityChart = null
+let hotelChainChart = null
+
+// Filters
+const filters = ref({
+  startDate: '',
+  endDate: '',
+  city: '',
+  hotelChain: '',
+})
+
+// Computed
+const accommodationBookings = computed(() => {
+  return bookings.value.filter(b => {
+    // A booking has accommodation if it has accommodation_bookings array with items
+    if (!b.accommodation_bookings || b.accommodation_bookings.length === 0) return false
+    
+    // Apply filters
+    if (filters.value.startDate && b.travel_date < filters.value.startDate) return false
+    if (filters.value.endDate && b.travel_date > filters.value.endDate) return false
+    
+    // Filter on any of the accommodation_bookings
+    if (filters.value.city) {
+      const hasCity = b.accommodation_bookings.some(hotel => 
+        hotel.city?.toLowerCase().includes(filters.value.city.toLowerCase())
+      )
+      if (!hasCity) return false
+    }
+    
+    if (filters.value.hotelChain) {
+      const hasChain = b.accommodation_bookings.some(hotel => 
+        hotel.hotel_chain?.toLowerCase().includes(filters.value.hotelChain.toLowerCase())
+      )
+      if (!hasChain) return false
+    }
+    
+    return true
+  })
+})
+
+const summaryStats = computed(() => {
+  const total = accommodationBookings.value.length
+  const totalSpend = accommodationBookings.value.reduce((sum, b) => sum + parseFloat(b.total_amount || 0), 0)
+  const avgSpend = total > 0 ? totalSpend / total : 0
+  
+  // Sum nights from ALL accommodation_bookings in each booking
+  const totalNights = accommodationBookings.value.reduce((sum, b) => {
+    const bookingNights = b.accommodation_bookings.reduce((nightSum, hotel) => 
+      nightSum + (hotel.number_of_nights || 0), 0)
+    return sum + bookingNights
+  }, 0)
+  
+  const avgNightlyRate = totalNights > 0 ? totalSpend / totalNights : 0
+
+  return {
+    total_bookings: total,
+    total_spend: totalSpend,
+    avg_spend: avgSpend,
+    total_nights: totalNights,
+    avg_nightly_rate: avgNightlyRate,
+  }
+})
+
+// Get unique cities from all accommodation_bookings
+const availableCities = computed(() => {
+  const cities = new Set()
+  accommodationBookings.value.forEach(b => {
+    b.accommodation_bookings.forEach(hotel => {
+      if (hotel.city) {
+        cities.add(hotel.city)
+      }
+    })
+  })
+  return Array.from(cities).sort()
+})
+
+// Get unique hotel chains from all accommodation_bookings
+const availableHotelChains = computed(() => {
+  const chains = new Set()
+  accommodationBookings.value.forEach(b => {
+    b.accommodation_bookings.forEach(hotel => {
+      if (hotel.hotel_chain) {
+        chains.add(hotel.hotel_chain)
+      }
+    })
+  })
+  return Array.from(chains).sort()
+})
+
+// Methods
+const loadData = async () => {
+  try {
+    loading.value = true
+    error.value = null
+
+    const params = {}
+    
+    if (filters.value.startDate) {
+      params.travel_date_after = filters.value.startDate
+    }
+    if (filters.value.endDate) {
+      params.travel_date_before = filters.value.endDate
+    }
+
+    const response = await bookingService.getBookings(params)
+    bookings.value = response.results || response
+
+  } catch (err) {
+    console.error('Error loading booking data:', err)
+    error.value = 'Failed to load booking data. Please try again.'
+  } finally {
+    loading.value = false
+    await nextTick()
+    await nextTick()
+    renderCharts()
+  }
+}
+
+const renderCharts = () => {
+  // Destroy existing charts
+  if (cityChart) cityChart.destroy()
+  if (hotelChainChart) hotelChainChart.destroy()
+
+  // City Chart Data
+  const cityChartData = {}
+  accommodationBookings.value.forEach(booking => {
+    booking.accommodation_bookings.forEach(hotel => {
+      const city = hotel.city || 'Unknown'
+      if (!cityChartData[city]) {
+        cityChartData[city] = 0
+      }
+      const amount = parseFloat(booking.total_amount || 0) / booking.accommodation_bookings.length
+      cityChartData[city] += amount
+    })
+  })
+
+  const topCities = Object.entries(cityChartData)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+
+  if (cityChartRef.value) {
+    const ctx = cityChartRef.value.getContext('2d')
+    cityChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: topCities.map(c => c[0]),
+        datasets: [{
+          label: 'Spend (AUD)',
+          data: topCities.map(c => c[1]),
+          backgroundColor: '#10b981'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (context) => formatCurrency(context.parsed.y)
+            }
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: {
+              callback: (value) => formatCurrency(value)
+            }
+          }
+        }
+      }
+    })
+  }
+
+  // Hotel Chain Chart Data
+  const hotelChainChartData = {}
+  accommodationBookings.value.forEach(booking => {
+    booking.accommodation_bookings.forEach(hotel => {
+      const chain = hotel.hotel_chain || 'Independent'
+      if (!hotelChainChartData[chain]) {
+        hotelChainChartData[chain] = 0
+      }
+      const amount = parseFloat(booking.total_amount || 0) / booking.accommodation_bookings.length
+      hotelChainChartData[chain] += amount
+    })
+  })
+
+  if (hotelChainChartRef.value) {
+    const ctx = hotelChainChartRef.value.getContext('2d')
+    hotelChainChart = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: Object.keys(hotelChainChartData),
+        datasets: [{
+          data: Object.values(hotelChainChartData),
+          backgroundColor: [
+            '#10b981',
+            '#3b82f6',
+            '#8b5cf6',
+            '#f59e0b',
+            '#ef4444'
+          ]
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'right'
+          },
+          tooltip: {
+            callbacks: {
+              label: (context) => {
+                const label = context.label || ''
+                const value = formatCurrency(context.parsed)
+                return `${label}: ${value}`
+              }
+            }
+          }
+        }
+      }
+    })
+  }
+}
+
+const clearFilters = () => {
+  filters.value = {
+    startDate: '',
+    endDate: '',
+    city: '',
+    hotelChain: '',
+  }
+  loadData()
+}
+
+const formatCurrency = (amount) => {
+  return new Intl.NumberFormat('en-AU', {
+    style: 'currency',
+    currency: 'AUD',
+  }).format(amount)
+}
+
+const formatDate = (dateString) => {
+  return new Date(dateString).toLocaleDateString('en-AU', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
+// Helper functions for table display
+const getHotelInfo = (booking) => {
+  if (!booking.accommodation_bookings || booking.accommodation_bookings.length === 0) {
+    return 'N/A'
+  }
+  
+  if (booking.accommodation_bookings.length === 1) {
+    return booking.accommodation_bookings[0].hotel_name || 'Unknown'
+  } else {
+    return `Multi-city (${booking.accommodation_bookings.length} hotels)`
+  }
+}
+
+const getCityInfo = (booking) => {
+  if (!booking.accommodation_bookings || booking.accommodation_bookings.length === 0) {
+    return 'N/A'
+  }
+  
+  const cities = booking.accommodation_bookings
+    .map(hotel => hotel.city)
+    .filter(city => city)
+  
+  if (cities.length === 0) return 'Unknown'
+  if (cities.length === 1) return cities[0]
+  
+  const uniqueCities = [...new Set(cities)]
+  if (uniqueCities.length === 1) return uniqueCities[0]
+  return `${uniqueCities[0]} +${uniqueCities.length - 1}`
+}
+
+const getTotalNights = (booking) => {
+  if (!booking.accommodation_bookings || booking.accommodation_bookings.length === 0) {
+    return 0
+  }
+  
+  return booking.accommodation_bookings.reduce((sum, hotel) => 
+    sum + (hotel.number_of_nights || 0), 0)
+}
+
+const getCheckInDate = (booking) => {
+  if (!booking.accommodation_bookings || booking.accommodation_bookings.length === 0) {
+    return 'N/A'
+  }
+  
+  // Get earliest check-in date
+  const dates = booking.accommodation_bookings
+    .map(hotel => hotel.check_in_date)
+    .filter(date => date)
+    .sort()
+  
+  return dates.length > 0 ? formatDate(dates[0]) : 'N/A'
+}
+
+// Lifecycle
+onMounted(async () => {
+  await loadData()
+})
+</script>
+
 <template>
-  <div class="min-h-screen bg-gray-50 p-8">
-    <div class="mx-auto max-w-7xl">
-      <!-- Header -->
-      <div class="mb-8">
-        <h1 class="text-3xl font-bold text-gray-900">Accommodation Analytics</h1>
-        <p class="mt-2 text-gray-600">Analyze hotel bookings, spending patterns, and rates</p>
-      </div>
+  <div class="accommodation-view">
+    <!-- Header -->
+    <div class="page-header">
+      <h1 class="text-3xl font-bold text-gray-800">Accommodation Analytics</h1>
+      <p class="text-gray-600 mt-2">Analyze hotel bookings, spending patterns, and lodging preferences</p>
+    </div>
 
-      <!-- Filters Section -->
-      <div class="mb-8 rounded-2xl bg-white p-6 shadow-sm">
-        <h3 class="mb-4 text-lg font-semibold text-gray-900">Filters</h3>
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <!-- City Filter -->
-          <div>
-            <label for="city" class="block text-sm font-medium text-gray-700">City</label>
-            <input
-              id="city"
-              v-model="filters.city"
-              type="text"
-              placeholder="Enter city name"
-              class="mt-1 block w-full rounded-lg border border-gray-300 px-4 py-2 focus:border-purple-500 focus:ring-purple-500"
-            />
-          </div>
+    <!-- Loading State -->
+    <div v-if="loading" class="loading-state">
+      <div class="spinner"></div>
+      <p>Loading accommodation data...</p>
+    </div>
 
-          <!-- Hotel Chain Filter -->
-          <div>
-            <label for="hotelChain" class="block text-sm font-medium text-gray-700">Hotel Chain</label>
-            <input
-              id="hotelChain"
-              v-model="filters.hotelChain"
-              type="text"
-              placeholder="Enter hotel chain"
-              class="mt-1 block w-full rounded-lg border border-gray-300 px-4 py-2 focus:border-purple-500 focus:ring-purple-500"
-            />
-          </div>
+    <!-- Error State -->
+    <div v-else-if="error" class="error-state">
+      <span class="mdi mdi-alert-circle text-red-500 text-4xl"></span>
+      <p class="text-red-600 mt-2">{{ error }}</p>
+      <button @click="loadData" class="retry-btn">Retry</button>
+    </div>
 
-          <!-- Date From Filter -->
-          <div>
-            <label for="dateFrom" class="block text-sm font-medium text-gray-700">Date From</label>
-            <input
-              id="dateFrom"
-              v-model="filters.dateFrom"
-              type="date"
-              class="mt-1 block w-full rounded-lg border border-gray-300 px-4 py-2 focus:border-purple-500 focus:ring-purple-500"
-            />
-          </div>
-
-          <!-- Date To Filter -->
-          <div>
-            <label for="dateTo" class="block text-sm font-medium text-gray-700">Date To</label>
-            <input
-              id="dateTo"
-              v-model="filters.dateTo"
-              type="date"
-              class="mt-1 block w-full rounded-lg border border-gray-300 px-4 py-2 focus:border-purple-500 focus:ring-purple-500"
-            />
-          </div>
-        </div>
-
-        <!-- Clear Filters Button -->
-        <div class="mt-4">
-          <button
-            @click="clearFilters"
-            class="rounded-lg bg-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-300"
-          >
-            Clear Filters
+    <!-- Content -->
+    <div v-else>
+      <!-- Filters -->
+      <div class="filters-card">
+        <div class="filters-header">
+          <h3 class="text-lg font-semibold text-gray-700">Filters</h3>
+          <button @click="clearFilters" class="clear-filters-btn">
+            <span class="mdi mdi-filter-off"></span>
+            Clear All
           </button>
         </div>
-      </div>
 
-      <!-- Stats Cards - Note the mb-6 class added -->
-      <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-        <!-- Total Spend -->
-        <div class="rounded-2xl bg-white p-6 shadow-sm">
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm font-medium text-gray-600">Total Spend</p>
-              <p class="mt-2 text-3xl font-bold text-gray-900">
-                ${{ formatNumber(stats.totalSpend) }}
-              </p>
-            </div>
-            <div class="rounded-full bg-purple-100 p-3">
-              <svg class="h-6 w-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-              </svg>
-            </div>
+        <div class="filters-grid">
+          <div class="filter-group">
+            <label class="filter-label">Start Date</label>
+            <input v-model="filters.startDate" @change="loadData" type="date" class="filter-input" />
           </div>
-        </div>
 
-        <!-- Total Bookings -->
-        <div class="rounded-2xl bg-white p-6 shadow-sm">
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm font-medium text-gray-600">Total Bookings</p>
-              <p class="mt-2 text-3xl font-bold text-gray-900">
-                {{ stats.totalBookings }}
-              </p>
-            </div>
-            <div class="rounded-full bg-blue-100 p-3">
-              <svg class="h-6 w-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-              </svg>
-            </div>
+          <div class="filter-group">
+            <label class="filter-label">End Date</label>
+            <input v-model="filters.endDate" @change="loadData" type="date" class="filter-input" />
           </div>
-        </div>
 
-        <!-- Total Nights -->
-        <div class="rounded-2xl bg-white p-6 shadow-sm">
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm font-medium text-gray-600">Total Nights</p>
-              <p class="mt-2 text-3xl font-bold text-gray-900">
-                {{ stats.totalNights }}
-              </p>
-            </div>
-            <div class="rounded-full bg-green-100 p-3">
-              <svg class="h-6 w-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
+          <div class="filter-group">
+            <label class="filter-label">City</label>
+            <select v-model="filters.city" class="filter-input">
+              <option value="">All Cities</option>
+              <option v-for="city in availableCities" :key="city" :value="city">
+                {{ city }}
+              </option>
+            </select>
           </div>
-        </div>
 
-        <!-- Average Nightly Rate -->
-        <div class="rounded-2xl bg-white p-6 shadow-sm">
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm font-medium text-gray-600">Avg Nightly Rate</p>
-              <p class="mt-2 text-3xl font-bold text-gray-900">
-                ${{ formatNumber(stats.avgRate) }}
-              </p>
-            </div>
-            <div class="rounded-full bg-amber-100 p-3">
-              <svg class="h-6 w-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
+          <div class="filter-group">
+            <label class="filter-label">Hotel Chain</label>
+            <select v-model="filters.hotelChain" class="filter-input">
+              <option value="">All Chains</option>
+              <option v-for="chain in availableHotelChains" :key="chain" :value="chain">
+                {{ chain }}
+              </option>
+            </select>
           </div>
         </div>
       </div>
 
-      <!-- Chart Components Grid -->
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <HotelChainSpendChart :filters="filters" />
-        <CityBookingsChart :filters="filters" />
+      <!-- Summary Cards -->
+      <div class="summary-cards">
+        <div class="summary-card">
+          <div class="summary-card__icon bg-blue-100">
+            <span class="mdi mdi-bed text-blue-600"></span>
+          </div>
+          <div class="summary-card__content">
+            <p class="summary-card__label">Total Bookings</p>
+            <p class="summary-card__value">{{ summaryStats.total_bookings }}</p>
+          </div>
+        </div>
+
+        <div class="summary-card">
+          <div class="summary-card__icon bg-green-100">
+            <span class="mdi mdi-currency-usd text-green-600"></span>
+          </div>
+          <div class="summary-card__content">
+            <p class="summary-card__label">Total Spend</p>
+            <p class="summary-card__value">{{ formatCurrency(summaryStats.total_spend) }}</p>
+          </div>
+        </div>
+
+        <div class="summary-card">
+          <div class="summary-card__icon bg-purple-100">
+            <span class="mdi mdi-calendar-range text-purple-600"></span>
+          </div>
+          <div class="summary-card__content">
+            <p class="summary-card__label">Total Nights</p>
+            <p class="summary-card__value">{{ summaryStats.total_nights }}</p>
+          </div>
+        </div>
+
+        <div class="summary-card">
+          <div class="summary-card__icon bg-orange-100">
+            <span class="mdi mdi-chart-line text-orange-600"></span>
+          </div>
+          <div class="summary-card__content">
+            <p class="summary-card__label">Avg Nightly Rate</p>
+            <p class="summary-card__value">{{ formatCurrency(summaryStats.avg_nightly_rate) }}</p>
+          </div>
+        </div>
       </div>
 
-      <NightlyRateChart :filters="filters" class="mb-6" />
+      <!-- Charts -->
+      <div class="charts-section">
+        <div class="chart-container">
+          <div class="chart-header">
+            <h3 class="chart-title">Top Cities by Spend</h3>
+          </div>
+          <div class="chart-content">
+            <canvas ref="cityChartRef"></canvas>
+          </div>
+        </div>
+
+        <div class="chart-container">
+          <div class="chart-header">
+            <h3 class="chart-title">Spend by Hotel Chain</h3>
+          </div>
+          <div class="chart-content">
+            <canvas ref="hotelChainChartRef"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bookings Table -->
+      <div class="table-section">
+        <div class="table-header">
+          <h3 class="text-xl font-semibold text-gray-800">Accommodation Bookings</h3>
+          <span class="text-sm text-gray-500">{{ accommodationBookings.length }} bookings</span>
+        </div>
+
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Reference</th>
+                <th>Traveller</th>
+                <th>Hotel</th>
+                <th>City</th>
+                <th>Check-in</th>
+                <th>Nights</th>
+                <th>Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="booking in accommodationBookings" :key="booking.id">
+                <td class="font-mono text-sm">{{ booking.agent_booking_reference }}</td>
+                <td>{{ booking.traveller_name }}</td>
+                <td>{{ getHotelInfo(booking) }}</td>
+                <td>{{ getCityInfo(booking) }}</td>
+                <td>{{ getCheckInDate(booking) }}</td>
+                <td class="text-center">{{ getTotalNights(booking) }}</td>
+                <td class="font-semibold">{{ formatCurrency(booking.total_amount) }}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div v-if="accommodationBookings.length === 0" class="empty-state">
+            <span class="mdi mdi-bed-empty text-gray-300 text-6xl"></span>
+            <p class="text-gray-500 mt-4">No accommodation bookings found</p>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
-<script setup>
-import { ref, reactive, onMounted, watch } from 'vue'
-import api from '@/services/api'  // This line is important!
-import HotelChainSpendChart from '@/components/accommodation/HotelChainSpendChart.vue'
-import CityBookingsChart from '@/components/accommodation/CityBookingsChart.vue'
-import NightlyRateChart from '@/components/accommodation/NightlyRateChart.vue'
-
-// Filters
-const filters = reactive({
-  city: '',
-  hotelChain: '',
-  dateFrom: '',
-  dateTo: '',
-})
-
-// Stats
-const stats = reactive({
-  totalSpend: 0,
-  totalBookings: 0,
-  totalNights: 0,
-  avgRate: 0,
-})
-
-// Format number helper
-const formatNumber = (num) => {
-  return new Intl.NumberFormat('en-AU').format(num || 0)
+<style scoped>
+.accommodation-view {
+  padding: 2rem;
+  max-width: 1400px;
+  margin: 0 auto;
 }
 
-// Clear filters
-const clearFilters = () => {
-  filters.city = ''
-  filters.hotelChain = ''
-  filters.dateFrom = ''
-  filters.dateTo = ''
+.page-header {
+  margin-bottom: 2rem;
 }
 
-// Load stats
-// Load stats
-const loadStats = async () => {
-  try {
-    const params = {
-      booking_type: 'HOTEL',
-    }
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem;
+}
 
-    if (filters.dateFrom) params.travel_date__gte = filters.dateFrom
-    if (filters.dateTo) params.travel_date__lte = filters.dateTo
-    if (filters.city) params.destination__icontains = filters.city
-    if (filters.hotelChain) params.vendor__icontains = filters.hotelChain
+.spinner {
+  width: 50px;
+  height: 50px;
+  border: 4px solid #f3f4f6;
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
 
-    const response = await api.get('/bookings/', { params })
-    
-    const bookings = response.data.results || []
-    
-    // Calculate stats from bookings with accommodation_details
-    stats.totalBookings = bookings.length
-    stats.totalSpend = bookings.reduce((sum, b) => sum + parseFloat(b.total_amount || 0), 0)
-    
-    // Sum nights from accommodation_details
-    stats.totalNights = bookings.reduce((sum, b) => {
-      return sum + (b.accommodation_details?.number_of_nights || 0)
-    }, 0)
-    
-    // Calculate average nightly rate
-    stats.avgRate = stats.totalNights > 0 ? Math.round(stats.totalSpend / stats.totalNights) : 0
-  } catch (error) {
-    console.error('Error loading accommodation stats:', error)
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem;
+}
+
+.retry-btn {
+  margin-top: 1rem;
+  padding: 0.5rem 1.5rem;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.retry-btn:hover {
+  background: #2563eb;
+}
+
+.filters-card {
+  background: white;
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  margin-bottom: 2rem;
+}
+
+.filters-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.clear-filters-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: #f3f4f6;
+  border: none;
+  border-radius: 6px;
+  color: #6b7280;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.clear-filters-btn:hover {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.filters-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.filter-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 0.5rem;
+}
+
+.filter-input {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.875rem;
+}
+
+.filter-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.summary-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.summary-card {
+  background: white;
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.summary-card__icon {
+  width: 60px;
+  height: 60px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  flex-shrink: 0;
+}
+
+.summary-card__content {
+  flex: 1;
+}
+
+.summary-card__label {
+  color: #6b7280;
+  font-size: 0.875rem;
+  margin-bottom: 0.25rem;
+}
+
+.summary-card__value {
+  color: #111827;
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.charts-section {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.chart-container {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+.chart-header {
+  padding: 1.5rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.chart-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.chart-content {
+  padding: 1.5rem;
+  height: 400px;
+}
+
+.table-section {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+.table-header {
+  padding: 1.5rem;
+  border-bottom: 1px solid #e5e7eb;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.table-container {
+  overflow-x: auto;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.data-table th {
+  text-align: left;
+  padding: 1rem 1.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #6b7280;
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.data-table td {
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid #e5e7eb;
+  font-size: 0.875rem;
+}
+
+.empty-state {
+  padding: 4rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-width: 768px) {
+  .accommodation-view {
+    padding: 1rem;
+  }
+
+  .summary-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .charts-section {
+    grid-template-columns: 1fr;
+  }
+
+  .filters-grid {
+    grid-template-columns: 1fr;
   }
 }
-
-// Watch filters
-watch(filters, () => {
-  loadStats()
-}, { deep: true })
-
-// Load data on mount
-onMounted(() => {
-  loadStats()
-})
-</script>
+</style>
