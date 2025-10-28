@@ -10,7 +10,7 @@ from apps.compliance.models import (
     ComplianceRule, ComplianceViolation,
     HighRiskDestination, TravelRiskAlert
 )
-from apps.reference_data.models import Airport, Airline, CurrencyExchangeRate
+from apps.reference_data.models import Airport, Airline, CurrencyExchangeRate, Country
 from apps.commissions.models import Commission
 
 
@@ -362,3 +362,44 @@ class ServiceFeeSerializer(serializers.ModelSerializer):
         if obj.booking:
             return obj.booking.agent_booking_reference
         return None
+
+# ============================================================================
+# COUNTRY SERIALIZERS
+# ============================================================================
+
+class CountrySerializer(serializers.ModelSerializer):
+    """
+    Serializer for Country reference data.
+    Returns is_domestic dynamically based on requesting user's organization.
+    """
+    is_domestic = serializers.SerializerMethodField()
+    display_name = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Country
+        fields = [
+            'alpha_3', 'alpha_2', 'numeric_code',
+            'name', 'common_name', 'display_name',
+            'region', 'subregion',
+            'currency_code', 'phone_prefix',
+            'is_active', 'is_domestic'
+        ]
+    
+    def get_is_domestic(self, obj):
+        """
+        Dynamically determine if country is domestic based on request user's organization.
+        Returns None if user or organization context is not available.
+        """
+        request = self.context.get('request')
+        if not request or not hasattr(request, 'user'):
+            return None
+        
+        user = request.user
+        if not hasattr(user, 'organization') or not user.organization:
+            return None
+        
+        return obj.is_domestic_for_organization(user.organization)
+    
+    def get_display_name(self, obj):
+        """Return common_name with alpha_3 code for UI display"""
+        return f"{obj.common_name} ({obj.alpha_3})"

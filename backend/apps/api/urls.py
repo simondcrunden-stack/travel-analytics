@@ -19,6 +19,7 @@ router.register(r'budgets', views.BudgetViewSet, basename='budget')
 # Reference data endpoints
 router.register(r'airports', views.AirportViewSet, basename='airport')
 router.register(r'airlines', views.AirlineViewSet, basename='airline')
+router.register(r'countries', views.CountryViewSet, basename='country')
 
 # Commission endpoints
 router.register(r'commissions', views.CommissionViewSet, basename='commission')

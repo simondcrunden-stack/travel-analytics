@@ -14,7 +14,7 @@ from apps.bookings.models import (
 )
 from apps.budgets.models import FiscalYear, Budget, BudgetAlert
 from apps.compliance.models import ComplianceViolation, TravelRiskAlert
-from apps.reference_data.models import Airport, Airline, CurrencyExchangeRate
+from apps.reference_data.models import Airport, Airline, CurrencyExchangeRate, Country
 from apps.commissions.models import Commission
 
 from .serializers import (
@@ -25,7 +25,7 @@ from .serializers import (
     FiscalYearSerializer, BudgetSerializer, BudgetAlertSerializer,
     ComplianceViolationSerializer, TravelRiskAlertSerializer,
     AirportSerializer, AirlineSerializer, CurrencyExchangeRateSerializer,
-    CommissionSerializer, ServiceFeeSerializer
+    CommissionSerializer, ServiceFeeSerializer, CountrySerializer
 )
 
 
@@ -458,3 +458,100 @@ class ServiceFeeViewSet(viewsets.ReadOnlyModelViewSet):
                 return ServiceFee.objects.filter(organization=user.organization)
         
         return ServiceFee.objects.none()
+
+# ============================================================================
+# COUNTRY VIEWSET
+# ============================================================================
+
+class CountryViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    API endpoint for countries - read-only.
+    
+    Endpoints:
+    - GET /api/v1/countries/ - List all active countries
+    - GET /api/v1/countries/{alpha_3}/ - Get specific country
+    - GET /api/v1/countries/available/ - Countries available for selection
+    - GET /api/v1/countries/domestic/ - Get user's domestic country
+    - GET /api/v1/countries/regions/ - List regions with counts
+    """
+    queryset = Country.objects.filter(is_active=True)
+    serializer_class = CountrySerializer
+    permission_classes = [IsAuthenticated]
+    lookup_field = 'alpha_3'
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['alpha_3', 'alpha_2', 'name', 'common_name']
+    ordering_fields = ['alpha_3', 'common_name', 'region']
+    ordering = ['common_name']
+    
+    @action(detail=False, methods=['get'])
+    def available(self, request):
+        """
+        Get list of countries available for selection.
+        Returns active countries with domestic flag based on user's organization.
+        
+        Query params:
+        - region: Filter by region (e.g., ?region=Oceania)
+        - subregion: Filter by subregion (e.g., ?subregion=Australia and New Zealand)
+        - search: Search in name or code
+        """
+        queryset = self.get_queryset()
+        
+        # Apply filters
+        region = request.query_params.get('region')
+        if region:
+            queryset = queryset.filter(region__iexact=region)
+        
+        subregion = request.query_params.get('subregion')
+        if subregion:
+            queryset = queryset.filter(subregion__iexact=subregion)
+        
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'])
+    def domestic(self, request):
+        """
+        Get the domestic country for the current user's organization.
+        
+        Returns:
+            Country details with is_domestic=True
+        """
+        if not hasattr(request.user, 'organization') or not request.user.organization:
+            return Response(
+                {'error': 'User organization not found'},
+                status=400
+            )
+        
+        try:
+            country = Country.objects.get(
+                alpha_3=request.user.organization.home_country,
+                is_active=True
+            )
+            serializer = self.get_serializer(country)
+            return Response(serializer.data)
+        except Country.DoesNotExist:
+            return Response(
+                {'error': 'Domestic country not found'},
+                status=404
+            )
+    
+    @action(detail=False, methods=['get'])
+    def regions(self, request):
+        """
+        Get list of unique regions with country counts.
+        
+        Returns:
+            [
+                {"region": "Oceania", "count": 3},
+                {"region": "Asia", "count": 10},
+                ...
+            ]
+        """
+        regions = (
+            Country.objects
+            .filter(is_active=True)
+            .values('region')
+            .annotate(count=Count('alpha_3'))
+            .order_by('region')
+        )
+        return Response(regions)
