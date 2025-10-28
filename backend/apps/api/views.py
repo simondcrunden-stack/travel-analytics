@@ -304,50 +304,112 @@ class BookingViewSet(viewsets.ModelViewSet):
         return Response(report)
 
     @action(detail=False, methods=['get'])
+    @action(detail=False, methods=['get'])
     def available_countries(self, request):
         """
-        Return list of countries that have actual booking data.
+        Get list of countries where the organization has bookings.
+        Used to populate country filter dropdowns.
+        
+        Returns countries that appear in:
+        - Air segments (via airport lookups)
+        - Accommodation bookings
+        - Car hire bookings
+        
         GET /api/v1/bookings/available_countries/
         """
         from apps.bookings.models import AirSegment, AccommodationBooking, CarHireBooking
-        from apps.reference_data.models import Country
+        from apps.reference_data.models import Country, Airport
+        from django.db.models import Q
         
         # Get user's organization
         user_org = request.user.organization
+        if not user_org:
+            return Response([])
         
         # Collect all country codes from bookings
         country_codes = set()
         
-        # From air segments
-        air_bookings = AirSegment.objects.filter(
-            booking__organization=user_org
-        ).values_list('origin_country', 'destination_country')
+        # ========================================================================
+        # From air segments - get airport codes, then look up countries
+        # ========================================================================
+        air_segments = AirSegment.objects.filter(
+            air_booking__booking__organization=user_org
+        ).values_list('origin_airport_iata_code', 'destination_airport_iata_code')
         
-        for origin, dest in air_bookings:
-            if origin: country_codes.add(origin)
-            if dest: country_codes.add(dest)
+        # Collect all airport codes
+        airport_codes = set()
+        for origin_code, dest_code in air_segments:
+            if origin_code:
+                airport_codes.add(origin_code)
+            if dest_code:
+                airport_codes.add(dest_code)
         
-        # From accommodation
+        # Look up countries from airports
+        # Note: Airport.country is a CharField (country name), not FK to Country
+        # We'll need to map country names to country codes
+        if airport_codes:
+            airports = Airport.objects.filter(iata_code__in=airport_codes)
+            country_names = set(a.country for a in airports if a.country)
+            
+            # Try to match country names to Country records
+            # This is a best-effort match since Airport.country is just a string
+            for country_name in country_names:
+                # Try exact match on name or common_name
+                try:
+                    country = Country.objects.filter(
+                        Q(name__iexact=country_name) | Q(common_name__iexact=country_name),
+                        is_active=True
+                    ).first()
+                    if country:
+                        country_codes.add(country.alpha_3)
+                except:
+                    pass
+        
+        # ========================================================================
+        # From accommodation bookings
+        # ========================================================================
+        # AccommodationBooking.country should be alpha_3 code
         hotel_countries = AccommodationBooking.objects.filter(
             booking__organization=user_org
         ).values_list('country', flat=True)
         country_codes.update(filter(None, hotel_countries))
         
-        # From car hire
-        car_bookings = CarHireBooking.objects.filter(
+        # ========================================================================
+        # From car hire bookings
+        # ========================================================================
+        # From car hire bookings
+        # ========================================================================
+        # CarHireBooking only has 'country' field (not pickup_country/dropoff_country)
+        car_countries = CarHireBooking.objects.filter(
             booking__organization=user_org
-        ).values_list('pickup_country', 'dropoff_country')
+        ).values_list('country', flat=True)
+        country_codes.update(filter(None, car_countries))
         
-        for pickup, dropoff in car_bookings:
-            if pickup: country_codes.add(pickup)
-            if dropoff: country_codes.add(dropoff)
+        # ========================================================================
+        # Get country details from reference data
+        # ========================================================================
+        if not country_codes:
+            # No bookings yet, return all active countries as fallback
+            countries = Country.objects.filter(
+                is_active=True
+            ).values('alpha_3', 'common_name', 'name').order_by('common_name')
+        else:
+            # Return only countries that have bookings
+            countries = Country.objects.filter(
+                alpha_3__in=country_codes,
+                is_active=True
+            ).values('alpha_3', 'common_name', 'name').order_by('common_name')
         
-        # Get country names from reference data
-        countries = Country.objects.filter(
-            code__in=country_codes
-        ).values('code', 'name').order_by('name')
+        # Format response
+        result = [
+            {
+                'code': c['alpha_3'],
+                'name': c['common_name'] or c['name']
+            }
+            for c in countries
+        ]
         
-        return Response(list(countries))
+        return Response(result)
 
 
 # ============================================================================
