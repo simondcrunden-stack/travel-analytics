@@ -162,7 +162,8 @@ class BookingListSerializer(serializers.ModelSerializer):
             'booking_date', 'travel_date', 'return_date',
             'status', 'traveller_name', 'organization_name',
             'currency', 'total_amount',
-            'air_bookings', 'accommodation_bookings', 'car_hire_bookings'
+            'policy_compliant', 'air_bookings', 'accommodation_bookings', 
+            'car_hire_bookings'
         ]
 
 
@@ -185,6 +186,7 @@ class BookingDetailSerializer(serializers.ModelSerializer):
             'total_amount', 'base_fare', 'taxes', 'fees',
             'total_amount_base', 'base_fare_base', 'taxes_base', 'fees_base',
             'exchange_rate', 'exchange_rate_date', 
+            'policy_compliant', 'advance_booking_days',
             'travel_arranger', 'travel_arranger_name', 'travel_arranger_text',
             'travel_consultant', 'travel_consultant_name', 'travel_consultant_text',
             'air_bookings', 'accommodation_bookings', 'car_hire_bookings',

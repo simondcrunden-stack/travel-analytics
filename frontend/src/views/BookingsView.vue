@@ -146,15 +146,6 @@
                 </span>
               </th>
               <th 
-                @click="sortBy('booking_type')"
-                class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-              >
-                Type
-                <span v-if="sortField === 'booking_type'">
-                  {{ sortDirection === 'asc' ? '↑' : '↓' }}
-                </span>
-              </th>
-              <th 
                 @click="sortBy('travel_date')"
                 class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
               >
@@ -181,59 +172,57 @@
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Carbon
               </th>
-              <th 
-                @click="sortBy('status')"
-                class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-              >
-                Status
-                <span v-if="sortField === 'status'">
-                  {{ sortDirection === 'asc' ? '↑' : '↓' }}
-                </span>
-              </th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Compliance
               </th>
             </tr>
           </thead>
           <tbody class="bg-white divide-y divide-gray-200">
-            <tr v-for="booking in paginatedBookings" :key="booking.id" class="hover:bg-gray-50">
-              <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                {{ booking.agent_booking_reference }}
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                {{ booking.traveller_name }}
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap">
-                <span :class="getBookingTypeClass(booking.booking_type)">
-                  {{ booking.booking_type }}
-                </span>
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                {{ formatDate(booking.travel_date) }}
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                {{ getDuration(booking) }}
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                {{ getDestinations(booking) }}
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                {{ formatCurrency(booking.total_amount) }}
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                {{ getCarbonEmissions(booking) }}
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap">
-                <span :class="getStatusClass(booking.status)">
-                  {{ booking.status }}
-                </span>
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap">
-                <span :class="getComplianceClass(booking.policy_compliant)">
-                  {{ booking.policy_compliant ? '✓ Compliant' : '✗ Non-compliant' }}
-                </span>
-              </td>
-            </tr>
+            <template v-for="booking in paginatedBookings" :key="booking.id">
+              <!-- Main booking row - clickable -->
+              <tr 
+                @click="toggleBooking(booking.id)" 
+                class="hover:bg-gray-50 cursor-pointer transition-colors"
+                :class="{ 'bg-blue-50': isExpanded(booking.id) }"
+              >
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  <div class="flex items-center">
+                    <span class="mdi mr-2 text-gray-400" :class="isExpanded(booking.id) ? 'mdi-chevron-down' : 'mdi-chevron-right'"></span>
+                    {{ booking.agent_booking_reference }}
+                  </div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  {{ booking.traveller_name }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {{ formatDate(booking.travel_date) }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {{ getDuration(booking) }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {{ getDestinations(booking) }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  {{ formatCurrency(booking.total_amount) }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {{ getCarbonEmissions(booking) }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <span :class="getComplianceClass(booking.policy_compliant)">
+                    {{ booking.policy_compliant !== undefined ? (booking.policy_compliant ? 'Compliant' : 'Non-Compliant') : 'N/A' }}
+                  </span>
+                </td>
+              </tr>
+              
+              <!-- Expanded detail row -->
+              <tr v-if="isExpanded(booking.id)" class="bg-gray-50">
+                <td colspan="8" class="px-6 py-4">
+                  <BookingDetails :booking="booking" />
+                </td>
+              </tr>
+            </template>
           </tbody>
         </table>
       </div>
@@ -241,19 +230,17 @@
       <!-- Pagination -->
       <div class="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
         <button
-          @click="currentPage--"
+          @click="currentPage > 1 && currentPage--"
           :disabled="currentPage === 1"
           class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Previous
         </button>
-        <div class="flex items-center space-x-2">
-          <span class="text-sm text-gray-700">
-            Page {{ currentPage }} of {{ totalPages }}
-          </span>
-        </div>
+        <span class="text-sm text-gray-700">
+          Page {{ currentPage }} of {{ totalPages }}
+        </span>
         <button
-          @click="currentPage++"
+          @click="currentPage < totalPages && currentPage++"
           :disabled="currentPage === totalPages"
           class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
         >
@@ -266,62 +253,41 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import UniversalFilters from '@/components/common/UniversalFilters.vue'
 import bookingService from '@/services/bookingService'
+import UniversalFilters from '@/components/common/UniversalFilters.vue'
+import BookingDetails from '@/components/common/BookingDetails.vue'
 
 // State
+const bookings = ref([])
 const loading = ref(true)
 const error = ref(null)
-const bookings = ref([])
-const currentFilters = ref({})
-
-// Pagination
 const currentPage = ref(1)
 const itemsPerPage = ref(25)
-
-// Sorting
 const sortField = ref('travel_date')
 const sortDirection = ref('desc')
+const currentFilters = ref({})
+const expandedBookings = ref(new Set())
 
 // Methods
 const loadBookings = async () => {
-  loading.value = true
-  error.value = null
-  
   try {
-    console.log('Loading bookings...')
+    loading.value = true
+    error.value = null
+    const data = await bookingService.getBookings()
+    // API returns { results: [...] } structure
+    bookings.value = data.results || []
     
-    // Build API params from filters
-    const params = {}
-    
-    // Date filters
-    if (currentFilters.value.dateFrom) {
-      params.travel_date__gte = currentFilters.value.dateFrom
+    // DEBUG: Log the data structure to understand what we're working with
+    console.log('='.repeat(80))
+    console.log('📊 BOOKINGS DATA LOADED')
+    console.log('='.repeat(80))
+    console.log('Total bookings loaded:', bookings.value.length)
+    if (bookings.value.length > 0) {
+      console.log('\n📋 First booking object:')
+      console.log(JSON.stringify(bookings.value[0], null, 2))
+      console.log('\n🔑 Available fields:', Object.keys(bookings.value[0]))
     }
-    if (currentFilters.value.dateTo) {
-      params.travel_date__lte = currentFilters.value.dateTo
-    }
-    
-    // Other filters
-    if (currentFilters.value.traveller) {
-      params.traveller = currentFilters.value.traveller
-    }
-    if (currentFilters.value.organization) {
-      params.organization = currentFilters.value.organization
-    }
-    if (currentFilters.value.status) {
-      params.status = currentFilters.value.status
-    }
-    
-    console.log('Fetching bookings with params:', params)
-    
-    // Load all bookings (we'll filter destinations client-side)
-    const response = await bookingService.getBookings({ ...params, limit: 1000 })
-    const allBookings = response.results || response
-    
-    console.log('Loaded bookings:', allBookings.length)
-    bookings.value = allBookings
-    
+    console.log('='.repeat(80))
   } catch (err) {
     console.error('Error loading bookings:', err)
     error.value = 'Failed to load bookings. Please try again.'
@@ -331,21 +297,54 @@ const loadBookings = async () => {
 }
 
 const handleFiltersChanged = (filters) => {
-  console.log('Filters changed:', filters)
   currentFilters.value = filters
-  currentPage.value = 1 // Reset to first page
-  loadBookings()
+  currentPage.value = 1
 }
 
-// Client-side destination filtering
+// Computed
 const filteredBookings = computed(() => {
   let filtered = [...bookings.value]
   
-  // Apply destination filters (client-side)
-  if (currentFilters.value.destinationPreset) {
+  // Apply traveller filter
+  if (currentFilters.value.traveller) {
+    const searchTerm = currentFilters.value.traveller.toLowerCase()
+    filtered = filtered.filter(booking => 
+      booking.traveller_name?.toLowerCase().includes(searchTerm)
+    )
+  }
+  
+  // Apply date range filter
+  if (currentFilters.value.startDate) {
+    filtered = filtered.filter(booking => 
+      new Date(booking.travel_date) >= new Date(currentFilters.value.startDate)
+    )
+  }
+  if (currentFilters.value.endDate) {
+    filtered = filtered.filter(booking => 
+      new Date(booking.travel_date) <= new Date(currentFilters.value.endDate)
+    )
+  }
+  
+  // Apply organization filter
+  if (currentFilters.value.organization) {
+    filtered = filtered.filter(booking => 
+      booking.organization_id === currentFilters.value.organization
+    )
+  }
+  
+  // Apply status filter
+  if (currentFilters.value.status) {
+    filtered = filtered.filter(booking => 
+      booking.status === currentFilters.value.status
+    )
+  }
+  
+  // Apply destination preset filter
+  if (currentFilters.value.destinationPreset && currentFilters.value.destinationPreset !== 'all') {
     filtered = applyDestinationPreset(filtered, currentFilters.value.destinationPreset)
   }
   
+  // Apply country filter
   if (currentFilters.value.country) {
     filtered = filtered.filter(booking => {
       if (booking.booking_type === 'AIR' && booking.air_details) {
@@ -426,7 +425,6 @@ const applyDestinationPreset = (bookings, preset) => {
   })
 }
 
-// Computed
 const totalSpend = computed(() => {
   return filteredBookings.value.reduce((sum, booking) => {
     return sum + (parseFloat(booking.total_amount) || 0)
@@ -435,8 +433,13 @@ const totalSpend = computed(() => {
 
 const totalEmissions = computed(() => {
   const total = filteredBookings.value.reduce((sum, booking) => {
-    if (booking.booking_type === 'AIR' && booking.air_details?.carbon_emissions_kg) {
-      return sum + parseFloat(booking.air_details.carbon_emissions_kg)
+    // Sum up carbon from all air bookings
+    if (booking.air_bookings && booking.air_bookings.length > 0) {
+      booking.air_bookings.forEach(airBooking => {
+        if (airBooking.total_carbon_kg) {
+          sum += parseFloat(airBooking.total_carbon_kg)
+        }
+      })
     }
     return sum
   }, 0)
@@ -475,6 +478,20 @@ const sortBy = (field) => {
   }
 }
 
+const toggleBooking = (bookingId) => {
+  if (expandedBookings.value.has(bookingId)) {
+    expandedBookings.value.delete(bookingId)
+  } else {
+    expandedBookings.value.add(bookingId)
+  }
+  // Force reactivity update
+  expandedBookings.value = new Set(expandedBookings.value)
+}
+
+const isExpanded = (bookingId) => {
+  return expandedBookings.value.has(bookingId)
+}
+
 const getDuration = (booking) => {
   if (!booking.return_date) return '-'
   const travel = new Date(booking.travel_date)
@@ -484,22 +501,58 @@ const getDuration = (booking) => {
 }
 
 const getDestinations = (booking) => {
-  if (booking.booking_type === 'AIR' && booking.air_details) {
-    return `${booking.air_details.origin_airport_code} → ${booking.air_details.destination_airport_code}`
+  // Check air bookings first
+  if (booking.air_bookings && booking.air_bookings.length > 0) {
+    const airBooking = booking.air_bookings[0]
+    const origin = airBooking.origin_airport_iata_code
+    const destination = airBooking.destination_airport_iata_code
+    
+    // If multiple air bookings, show "Multi-city"
+    if (booking.air_bookings.length > 1) {
+      return 'Multi-city'
+    }
+    
+    return `${origin} → ${destination}`
   }
-  if (booking.booking_type === 'HOTEL' && booking.accommodation_details) {
-    return booking.accommodation_details.city || '-'
+  
+  // Check accommodation bookings
+  if (booking.accommodation_bookings && booking.accommodation_bookings.length > 0) {
+    const cities = booking.accommodation_bookings.map(h => h.city).filter(c => c)
+    if (cities.length > 1) {
+      return cities.slice(0, 2).join(', ') + (cities.length > 2 ? '...' : '')
+    }
+    return cities[0] || '-'
   }
-  if (booking.booking_type === 'CAR' && booking.car_hire_details) {
-    return booking.car_hire_details.pickup_location || '-'
+  
+  // Check car hire bookings
+  if (booking.car_hire_bookings && booking.car_hire_bookings.length > 0) {
+    const car = booking.car_hire_bookings[0]
+    return car.pickup_city || '-'
   }
+  
   return '-'
 }
 
 const getCarbonEmissions = (booking) => {
-  if (booking.booking_type === 'AIR' && booking.air_details?.carbon_emissions_kg) {
-    return `${Math.round(booking.air_details.carbon_emissions_kg)} kg`
+  let totalCarbon = 0
+  
+  // Sum carbon from all air bookings
+  if (booking.air_bookings && booking.air_bookings.length > 0) {
+    booking.air_bookings.forEach(airBooking => {
+      if (airBooking.total_carbon_kg) {
+        totalCarbon += parseFloat(airBooking.total_carbon_kg)
+      }
+    })
   }
+  
+  if (totalCarbon > 0) {
+    // Format large values as tonnes
+    if (totalCarbon >= 1000) {
+      return `${(totalCarbon / 1000).toFixed(1)} t`
+    }
+    return `${Math.round(totalCarbon)} kg`
+  }
+  
   return '-'
 }
 
@@ -520,31 +573,14 @@ const formatDate = (dateString) => {
   })
 }
 
-const getBookingTypeClass = (type) => {
-  const classes = {
-    'AIR': 'px-2 py-1 text-xs font-medium rounded-full bg-sky-100 text-sky-800',
-    'HOTEL': 'px-2 py-1 text-xs font-medium rounded-full bg-purple-100 text-purple-800',
-    'CAR': 'px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800',
-    'OTHER': 'px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800'
-  }
-  return classes[type] || classes['OTHER']
-}
-
-const getStatusClass = (status) => {
-  const classes = {
-    'CONFIRMED': 'px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800',
-    'CANCELLED': 'px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800',
-    'PENDING': 'px-2 py-1 text-xs font-medium rounded-full bg-yellow-100 text-yellow-800',
-    'REFUNDED': 'px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800'
-  }
-  return classes[status] || classes['PENDING']
-}
-
 const getComplianceClass = (isCompliant) => {
   if (isCompliant === true) {
     return 'px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800'
-  } else {
+  } else if (isCompliant === false) {
     return 'px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800'
+  } else {
+    // Undefined or null - show gray for N/A
+    return 'px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800'
   }
 }
 
