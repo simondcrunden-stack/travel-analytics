@@ -1,5 +1,4 @@
 from django.contrib import admin
-from .models import Airport, Airline, CurrencyExchangeRate, Country
 from .models import Airport, Airline, CurrencyExchangeRate, Country, HotelChain, CarRentalCompany
 
 

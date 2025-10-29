@@ -1,7 +1,13 @@
+# apps/reference_data/models.py
+# Session 34: Enhanced with improved CurrencyExchangeRate.get_rate() method
+
 from django.db import models
 from django.core.validators import MinValueValidator
 from decimal import Decimal
 import uuid
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class Airport(models.Model):
@@ -38,7 +44,11 @@ class Airline(models.Model):
 
 
 class CurrencyExchangeRate(models.Model):
-    """Store daily exchange rates for currency conversion"""
+    """
+    Store daily exchange rates for currency conversion
+    
+    Session 34: Enhanced get_rate() method with intelligent fallback
+    """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     
     # Currency pair
@@ -69,35 +79,121 @@ class CurrencyExchangeRate(models.Model):
     def __str__(self):
         return f"{self.from_currency}/{self.to_currency}: {self.exchange_rate} ({self.rate_date})"
     
-    @staticmethod
-    def get_rate(from_currency, to_currency, date):
-        """Get exchange rate for a specific date"""
+    # ==================================================================
+    # SESSION 34 ENHANCEMENT: Intelligent Rate Lookup with Fallbacks
+    # ==================================================================
+    
+    @classmethod
+    def get_rate(cls, from_currency, to_currency, date):
+        """
+        Get exchange rate for a specific date with intelligent fallback
+        
+        Args:
+            from_currency (str): Source currency code (e.g., 'USD')
+            to_currency (str): Target currency code (e.g., 'AUD')
+            date (date): Date for which to get the rate
+            
+        Returns:
+            Decimal: Exchange rate, or None if not found
+            
+        Logic:
+        1. If same currency, return 1.0
+        2. Look for exact date match (from → to)
+        3. If not found, look for most recent rate before this date
+        4. If not found, look for reverse rate (to → from) and invert
+        5. If still not found, log warning and return None
+        
+        Example:
+            >>> rate = CurrencyExchangeRate.get_rate('USD', 'AUD', date(2024, 1, 15))
+            >>> print(rate)  # 1.52
+        """
+        # Same currency, no conversion needed
         if from_currency == to_currency:
             return Decimal('1.0')
         
         try:
-            rate = CurrencyExchangeRate.objects.get(
+            # Try to find exact date match first
+            direct_rate = cls.objects.filter(
                 from_currency=from_currency,
                 to_currency=to_currency,
                 rate_date=date
-            )
-            return rate.exchange_rate
-        except CurrencyExchangeRate.DoesNotExist:
-            # Try to find the most recent rate before this date
-            rate = CurrencyExchangeRate.objects.filter(
+            ).first()
+            
+            if direct_rate:
+                logger.debug(
+                    f"Found exact rate {from_currency}→{to_currency} "
+                    f"on {direct_rate.rate_date}: {direct_rate.exchange_rate}"
+                )
+                return Decimal(str(direct_rate.exchange_rate))
+            
+            # Try to find most recent rate before this date
+            direct_rate = cls.objects.filter(
                 from_currency=from_currency,
                 to_currency=to_currency,
                 rate_date__lte=date
+            ).order_by('-rate_date').first()
+            
+            if direct_rate:
+                logger.debug(
+                    f"Found recent rate {from_currency}→{to_currency} "
+                    f"on {direct_rate.rate_date}: {direct_rate.exchange_rate}"
+                )
+                return Decimal(str(direct_rate.exchange_rate))
+            
+        except Exception as e:
+            logger.error(f"Error looking up direct rate: {e}")
+        
+        try:
+            # Try to find reverse rate (to → from) and invert it
+            # First try exact date
+            reverse_rate = cls.objects.filter(
+                from_currency=to_currency,
+                to_currency=from_currency,
+                rate_date=date
             ).first()
             
-            if rate:
-                return rate.exchange_rate
+            if not reverse_rate:
+                # Try most recent before date
+                reverse_rate = cls.objects.filter(
+                    from_currency=to_currency,
+                    to_currency=from_currency,
+                    rate_date__lte=date
+                ).order_by('-rate_date').first()
             
-            return None
+            if reverse_rate and reverse_rate.exchange_rate:
+                inverted_rate = Decimal('1.0') / Decimal(str(reverse_rate.exchange_rate))
+                logger.debug(
+                    f"Found reverse rate {to_currency}→{from_currency} "
+                    f"on {reverse_rate.rate_date}: {reverse_rate.exchange_rate}, "
+                    f"inverted to: {inverted_rate}"
+                )
+                return inverted_rate
+            
+        except Exception as e:
+            logger.error(f"Error looking up reverse rate: {e}")
+        
+        # No rate found - log warning and return None
+        logger.warning(
+            f"No exchange rate found for {from_currency} → {to_currency} "
+            f"on or before {date}. "
+            f"Please add exchange rate data for accurate conversions."
+        )
+        return None
     
     @staticmethod
     def convert_amount(amount, from_currency, to_currency, date):
-        """Convert an amount from one currency to another"""
+        """
+        Convert an amount from one currency to another
+        
+        Args:
+            amount (Decimal): Amount to convert
+            from_currency (str): Source currency
+            to_currency (str): Target currency
+            date (date): Date for exchange rate
+            
+        Returns:
+            Decimal: Converted amount, or None if rate not found
+        """
         if from_currency == to_currency:
             return amount
         
@@ -107,32 +203,33 @@ class CurrencyExchangeRate(models.Model):
         
         return None
 
-# ============================================================================
-# COUNTRY MODELS
-# ============================================================================
+# ==================================================================
+# COUNTRY MODELS - ADDED BACK INTO THE CODE IN SESSION 35
+# ==================================================================
 
 class Country(models.Model):
-    """ISO 3166-1 Country reference data for standardized country identification"""
+    """
+    Country reference data using ISO 3166-1 standard
     
-    # ISO codes (using alpha_3 as primary key for consistency with HighRiskDestination)
-    alpha_2 = models.CharField(max_length=2, unique=True, help_text="ISO 3166-1 alpha-2 code (e.g., AU)")
-    alpha_3 = models.CharField(max_length=3, unique=True, primary_key=True, 
-                               help_text="ISO 3166-1 alpha-3 code (e.g., AUS)")
-    numeric_code = models.CharField(max_length=3, blank=True, help_text="ISO 3166-1 numeric code (e.g., 036)")
+    Multi-tenant design: Domestic status calculated dynamically
+    """
+    
+    # ISO 3166-1 codes
+    alpha_3 = models.CharField(max_length=3, primary_key=True)
+    alpha_2 = models.CharField(max_length=2, unique=True)
+    numeric_code = models.CharField(max_length=3, blank=True)
     
     # Names
-    name = models.CharField(max_length=100, help_text="Official country name")
-    common_name = models.CharField(max_length=100, blank=True, help_text="Commonly used name")
+    name = models.CharField(max_length=200)
+    common_name = models.CharField(max_length=200, blank=True)
     
-    # Regional classification (UN M49 standard)
-    region = models.CharField(max_length=50, blank=True, 
-                             help_text="UN region: Africa, Americas, Asia, Europe, Oceania")
-    subregion = models.CharField(max_length=50, blank=True,
-                                help_text="UN subregion: e.g., South-Eastern Asia, Western Europe")
+    # Regional classification
+    region = models.CharField(max_length=100, blank=True)
+    subregion = models.CharField(max_length=100, blank=True)
     
-    # Practical info
-    currency_code = models.CharField(max_length=3, blank=True, help_text="ISO 4217 currency code")
-    phone_prefix = models.CharField(max_length=10, blank=True, help_text="International dialing code")
+    # Travel-related info
+    currency_code = models.CharField(max_length=3, blank=True)
+    phone_prefix = models.CharField(max_length=10, blank=True)
     
     # Status
     is_active = models.BooleanField(default=True)
@@ -143,97 +240,23 @@ class Country(models.Model):
     
     class Meta:
         db_table = 'countries'
-        ordering = ['name']
         verbose_name_plural = 'Countries'
+        ordering = ['name']
+        indexes = [
+            models.Index(fields=['region']),
+            models.Index(fields=['subregion']),
+            models.Index(fields=['is_active']),
+        ]
     
     def __str__(self):
         return f"{self.name} ({self.alpha_3})"
     
     def is_domestic_for_organization(self, organization):
-        """
-        Dynamically determine if this country is domestic for a given organization.
-        
-        Args:
-            organization: Organization model instance
-            
-        Returns:
-            bool: True if country matches organization's home_country
-        """
-        if not organization or not hasattr(organization, 'home_country'):
-            return False
+        """Check if this country is domestic for the given organization"""
         return self.alpha_3 == organization.home_country
-    
-    @classmethod
-    def get_domestic_country(cls, organization):
-        """
-        Get the domestic country for an organization.
-        
-        Args:
-            organization: Organization model instance
-            
-        Returns:
-            Country instance or None
-        """
-        if not organization or not hasattr(organization, 'home_country'):
-            return None
-        try:
-            return cls.objects.get(alpha_3=organization.home_country)
-        except cls.DoesNotExist:
-            return None
-
 
 # ============================================================================
-# NOTES ON DOMESTIC VS INTERNATIONAL TRAVEL
-# ============================================================================
-"""
-Domestic vs International is determined by Organization.home_country, not stored in Country model.
-
-Example usage in queries:
-    
-    # Get domestic bookings for an organization
-    domestic_bookings = Booking.objects.filter(
-        organization=org,
-        # Assuming Organization has home_country field
-        air_booking__origin_country=org.home_country,
-        air_booking__destination_country=org.home_country
-    )
-    
-    # In API/views:
-    def is_domestic_travel(booking, organization):
-        '''Check if booking is domestic based on org's home country'''
-        home_country = organization.home_country  # e.g., 'AUS' or 'NZL'
-        
-        if hasattr(booking, 'air_details'):
-            # For air travel, both origin and destination must be in home country
-            return (booking.air_details.origin_country == home_country and 
-                    booking.air_details.destination_country == home_country)
-        
-        elif hasattr(booking, 'accommodation_details'):
-            # For accommodation, hotel must be in home country
-            return booking.accommodation_details.country == home_country
-        
-        elif hasattr(booking, 'car_hire_details'):
-            # For car hire, rental must be in home country
-            return booking.car_hire_details.country == home_country
-        
-        return False
-
-Future Enhancement: Add home_country to Organization model
-    
-    # In apps/organizations/models.py:
-    class Organization(models.Model):
-        ...
-        home_country = models.ForeignKey(
-            'reference_data.Country',
-            on_delete=models.PROTECT,
-            related_name='home_organizations',
-            to_field='alpha_3',
-            help_text="Organization's home country for domestic/international classification"
-        )
-"""
-
-# ============================================================================
-# SUPPLIER MODELS
+# SUPPLIER MODELS (if you have these)
 # ============================================================================
 
 class HotelChain(models.Model):
@@ -245,41 +268,47 @@ class HotelChain(models.Model):
     ]
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    name = models.CharField(max_length=200, unique=True)
-    alternative_names = models.JSONField(default=list, blank=True)  # ["Hilton", "Hilton Hotels", "Hilton Worldwide"]
+    
+    # Basic info
+    name = models.CharField(max_length=200)
+    alternative_names = models.TextField(
+        blank=True,
+        help_text="Alternative names or abbreviations (comma-separated)"
+    )
     website = models.URLField(blank=True)
     
-    # Preferred supplier tracking (for compliance)
+    # Supplier status
     is_preferred = models.BooleanField(default=False)
-    tier = models.CharField(max_length=20, choices=SUPPLIER_TIERS, blank=True)
+    tier = models.CharField(max_length=20, choices=SUPPLIER_TIERS, default='STANDARD')
+    is_active = models.BooleanField(default=True)
     
     # Corporate rates
     has_corporate_rate = models.BooleanField(default=False)
-    corporate_discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    corporate_discount_percentage = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Average discount percentage off BAR (Best Available Rate)"
+    )
     
-    # Contact information
+    # Account manager
     account_manager_name = models.CharField(max_length=200, blank=True)
     account_manager_email = models.EmailField(blank=True)
-    account_manager_phone = models.CharField(max_length=20, blank=True)
+    account_manager_phone = models.CharField(max_length=50, blank=True)
     
-    # Contract details
+    # Contract
     contract_start_date = models.DateField(null=True, blank=True)
     contract_end_date = models.DateField(null=True, blank=True)
     
-    # Status
-    is_active = models.BooleanField(default=True)
-    
-    # Notes
-    notes = models.TextField(blank=True)
-    
     # Metadata
+    notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
         db_table = 'hotel_chains'
         ordering = ['name']
-        verbose_name_plural = 'Hotel Chains'
     
     def __str__(self):
         return self.name
@@ -294,41 +323,47 @@ class CarRentalCompany(models.Model):
     ]
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    name = models.CharField(max_length=200, unique=True)
-    alternative_names = models.JSONField(default=list, blank=True)  # ["Hertz", "Hertz Rent A Car"]
+    
+    # Basic info
+    name = models.CharField(max_length=200)
+    alternative_names = models.TextField(
+        blank=True,
+        help_text="Alternative names or abbreviations (comma-separated)"
+    )
     website = models.URLField(blank=True)
     
-    # Preferred supplier tracking
+    # Supplier status
     is_preferred = models.BooleanField(default=False)
-    tier = models.CharField(max_length=20, choices=SUPPLIER_TIERS, blank=True)
+    tier = models.CharField(max_length=20, choices=SUPPLIER_TIERS, default='STANDARD')
+    is_active = models.BooleanField(default=True)
     
     # Corporate rates
     has_corporate_rate = models.BooleanField(default=False)
-    corporate_discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    corporate_discount_percentage = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Average discount percentage"
+    )
     
-    # Contact information
+    # Account manager
     account_manager_name = models.CharField(max_length=200, blank=True)
     account_manager_email = models.EmailField(blank=True)
-    account_manager_phone = models.CharField(max_length=20, blank=True)
+    account_manager_phone = models.CharField(max_length=50, blank=True)
     
-    # Contract details
+    # Contract
     contract_start_date = models.DateField(null=True, blank=True)
     contract_end_date = models.DateField(null=True, blank=True)
     
-    # Status
-    is_active = models.BooleanField(default=True)
-    
-    # Notes
-    notes = models.TextField(blank=True)
-    
     # Metadata
+    notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
         db_table = 'car_rental_companies'
         ordering = ['name']
-        verbose_name_plural = 'Car Rental Companies'
     
     def __str__(self):
         return self.name
