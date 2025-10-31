@@ -3,9 +3,13 @@
 
 from apps.users.models import User
 from django.db import models
+from django.contrib.contenttypes.fields import GenericForeignKey
+from django.contrib.contenttypes.models import ContentType
+from django.core.serializers.json import DjangoJSONEncoder
 from django.core.validators import MinValueValidator
 from decimal import Decimal
 import uuid
+import json
 import logging
 
 logger = logging.getLogger(__name__)
@@ -927,3 +931,746 @@ class ServiceFee(models.Model):
     
     def __str__(self):
         return f"{self.get_fee_type_display()} - {self.organization.code} - ${self.fee_amount}"
+
+# ============================================================================
+# BOOKING TRANSACTION MODEL
+# ============================================================================
+
+class BookingTransaction(models.Model):
+    """
+    Universal transaction tracking for all booking amendments.
+    
+    Tracks the complete lifecycle of any booking component:
+    - Original bookings
+    - Exchanges/modifications
+    - Refunds (full or partial)
+    - Cancellations
+    - Voids
+    - Reissues
+    
+    Links to: AirBooking, AccommodationBooking, CarHireBooking, ServiceFee
+    """
+    
+    # Transaction types that apply across all booking categories
+    TRANSACTION_TYPE_CHOICES = [
+        # Original transaction
+        ('ORIGINAL', 'Original Booking'),
+        
+        # Air-specific
+        ('EXCHANGE', 'Ticket Exchange'),
+        ('REISSUE', 'Ticket Reissue'),
+        ('VOID', 'Ticket Void'),
+        
+        # Modifications (all types)
+        ('MODIFICATION', 'Booking Modification'),
+        ('DATE_CHANGE', 'Date Change'),
+        ('UPGRADE', 'Upgrade'),
+        ('DOWNGRADE', 'Downgrade'),
+        
+        # Cancellations & Refunds (all types)
+        ('CANCELLATION', 'Cancellation'),
+        ('PARTIAL_CANCELLATION', 'Partial Cancellation'),
+        ('REFUND', 'Refund'),
+        ('PARTIAL_REFUND', 'Partial Refund'),
+        
+        # Adjustments
+        ('ADJUSTMENT', 'Price Adjustment'),
+        ('CREDIT', 'Credit'),
+        ('DEBIT', 'Debit'),
+        ('FEE_ADJUSTMENT', 'Fee Adjustment'),
+    ]
+    
+    # Status of this transaction
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('CONFIRMED', 'Confirmed'),
+        ('CANCELLED', 'Cancelled'),
+        ('REFUNDED', 'Refunded'),
+    ]
+    
+    # =============================================================================
+    # IDENTIFICATION
+    # =============================================================================
+    id = models.UUIDField(
+        primary_key=True, 
+        default=uuid.uuid4, 
+        editable=False
+    )
+    
+    # =============================================================================
+    # POLYMORPHIC LINK TO BOOKING COMPONENT
+    # =============================================================================
+    # This allows linking to AirBooking, AccommodationBooking, CarHireBooking, etc.
+    content_type = models.ForeignKey(
+        ContentType,
+        on_delete=models.CASCADE,
+        limit_choices_to={
+            'model__in': ('airbooking', 'accommodationbooking', 'carhirebooking', 'servicefee')
+        },
+        verbose_name="Booking Type"
+    )
+    object_id = models.UUIDField(
+        verbose_name="Booking ID"
+    )
+    booking_component = GenericForeignKey('content_type', 'object_id')
+    
+    # =============================================================================
+    # TRANSACTION DETAILS
+    # =============================================================================
+    transaction_type = models.CharField(
+        max_length=30,
+        choices=TRANSACTION_TYPE_CHOICES,
+        db_index=True,
+        help_text="Type of transaction (original, exchange, refund, etc.)"
+    )
+    
+    transaction_date = models.DateField(
+        db_index=True,
+        help_text="Date the transaction was processed"
+    )
+    
+    transaction_reference = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="External reference (ticket number, confirmation code, etc.)"
+    )
+    
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='CONFIRMED',
+        db_index=True
+    )
+    
+    # =============================================================================
+    # FINANCIAL DETAILS
+    # =============================================================================
+    # All amounts support positive (charge) and negative (credit/refund) values
+    
+    currency = models.CharField(
+        max_length=3,
+        default='AUD',
+        help_text="Transaction currency (e.g., AUD, USD, EUR)"
+    )
+    
+    # Breakdown of costs
+    base_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text="Base fare/rate amount (can be negative for refunds)"
+    )
+    
+    taxes = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text="Tax amount (can be negative for refunds)"
+    )
+    
+    fees = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text="Fees charged (can be negative for credits)"
+    )
+    
+    total_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        db_index=True,
+        help_text="Total transaction amount (base + taxes + fees). Negative = refund/credit"
+    )
+    
+    # Converted to organization's base currency
+    base_amount_base = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Base amount converted to organization base currency"
+    )
+    
+    taxes_base = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Taxes converted to organization base currency"
+    )
+    
+    fees_base = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Fees converted to organization base currency"
+    )
+    
+    total_amount_base = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Total amount in organization base currency"
+    )
+    
+    exchange_rate = models.DecimalField(
+        max_digits=12,
+        decimal_places=6,
+        null=True,
+        blank=True,
+        help_text="Exchange rate used for currency conversion"
+    )
+    
+    # =============================================================================
+    # REASON & NOTES
+    # =============================================================================
+    reason = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Reason for transaction (why was ticket exchanged, booking cancelled, etc.)"
+    )
+    
+    notes = models.TextField(
+        blank=True,
+        help_text="Additional notes, comments, or details"
+    )
+    
+    # =============================================================================
+    # AUDIT TRAIL
+    # =============================================================================
+    created_by = models.ForeignKey(
+        'users.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='transactions_created',
+        help_text="User who created this transaction record"
+    )
+    
+    created_at = models.DateTimeField(
+        auto_now_add=True
+    )
+    
+    updated_at = models.DateTimeField(
+        auto_now=True
+    )
+    
+    # =============================================================================
+    # META
+    # =============================================================================
+    class Meta:
+        db_table = 'booking_transactions'
+        ordering = ['transaction_date', 'created_at']
+        indexes = [
+            # Query by booking component
+            models.Index(fields=['content_type', 'object_id']),
+            # Query by transaction type and date
+            models.Index(fields=['transaction_type', 'transaction_date']),
+            # Query by status
+            models.Index(fields=['status', 'transaction_date']),
+            # Financial queries
+            models.Index(fields=['transaction_date', 'total_amount']),
+            models.Index(fields=['currency', 'transaction_date']),
+        ]
+        verbose_name = 'Booking Transaction'
+        verbose_name_plural = 'Booking Transactions'
+    
+    # =============================================================================
+    # METHODS
+    # =============================================================================
+    def __str__(self):
+        """String representation showing transaction type and amount"""
+        amount_display = f"{self.currency} {self.total_amount:,.2f}"
+        if self.total_amount < 0:
+            amount_display = f"({amount_display})"  # Show negative in parentheses
+        
+        return f"{self.get_transaction_type_display()} - {amount_display} - {self.transaction_date}"
+    
+    def save(self, *args, **kwargs):
+        """
+        Auto-calculate total_amount and convert to base currency on save.
+        Uses .update() to avoid infinite recursion.
+        """
+        # Calculate total if not already set
+        if self.total_amount is None or self.total_amount == 0:
+            self.total_amount = self.base_amount + self.taxes + self.fees
+        
+        # Save first to get the ID
+        super().save(*args, **kwargs)
+        
+        # Convert to base currency if needed
+        self.convert_to_base_currency()
+    
+    def convert_to_base_currency(self):
+        """
+        Convert transaction amounts to organization's base currency.
+        Gets the base currency from the booking's organization.
+        """
+        # Import here to avoid circular imports
+        from apps.reference_data.models import CurrencyExchangeRate
+        
+        # Get the booking component to find the organization
+        booking_component = self.booking_component
+        if not booking_component:
+            return
+        
+        # Get the parent Booking to access organization
+        try:
+            parent_booking = booking_component.booking
+            org = parent_booking.organization
+            base_currency = org.base_currency
+        except AttributeError:
+            # Couldn't find organization, skip conversion
+            return
+        
+        # If already in base currency, just copy values
+        if self.currency == base_currency:
+            BookingTransaction.objects.filter(pk=self.pk).update(
+                base_amount_base=self.base_amount,
+                taxes_base=self.taxes,
+                fees_base=self.fees,
+                total_amount_base=self.total_amount,
+                exchange_rate=Decimal('1.000000')
+            )
+            return
+        
+        # Get exchange rate
+        rate = CurrencyExchangeRate.get_rate(
+            from_currency=self.currency,
+            to_currency=base_currency,
+            date=self.transaction_date
+        )
+        
+        if rate is None:
+            # No rate found, log warning and use 1:1 fallback
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                f"No exchange rate found for {self.currency} to {base_currency} "
+                f"on {self.transaction_date}. Using 1:1 rate."
+            )
+            rate = Decimal('1.0')
+        
+        # Convert all amounts
+        BookingTransaction.objects.filter(pk=self.pk).update(
+            base_amount_base=self.base_amount * rate,
+            taxes_base=self.taxes * rate,
+            fees_base=self.fees * rate,
+            total_amount_base=self.total_amount * rate,
+            exchange_rate=rate
+        )
+    
+    @property
+    def is_refund(self):
+        """Check if this is a refund/credit transaction"""
+        return self.total_amount < 0
+    
+    @property
+    def is_cancellation(self):
+        """Check if this is a cancellation"""
+        return self.transaction_type in ['CANCELLATION', 'PARTIAL_CANCELLATION', 'VOID']
+    
+    @property
+    def booking_reference(self):
+        """Get the booking reference from the parent booking"""
+        try:
+            return self.booking_component.booking.agent_booking_reference
+        except AttributeError:
+            return "N/A"
+
+# =============================================================================
+# BOOKING AUDIT LOG MODEL
+# =============================================================================
+
+class BookingAuditLog(models.Model):
+    """
+    Complete audit trail for booking-level changes.
+    
+    Captures ALL changes to bookings and related objects:
+    - Transaction additions/modifications/deletions
+    - Booking field changes
+    - Component changes (Air/Accommodation/Car)
+    - Status changes
+    - Financial adjustments
+    
+    Provides compliance documentation and complete change history.
+    """
+    
+    # Action types
+    ACTION_CHOICES = [
+        # Transaction actions
+        ('TRANSACTION_CREATED', 'Transaction Created'),
+        ('TRANSACTION_MODIFIED', 'Transaction Modified'),
+        ('TRANSACTION_DELETED', 'Transaction Deleted'),
+        
+        # Booking actions
+        ('BOOKING_CREATED', 'Booking Created'),
+        ('BOOKING_MODIFIED', 'Booking Modified'),
+        ('BOOKING_DELETED', 'Booking Deleted'),
+        ('BOOKING_STATUS_CHANGED', 'Booking Status Changed'),
+        
+        # Component actions
+        ('COMPONENT_CREATED', 'Component Created'),
+        ('COMPONENT_MODIFIED', 'Component Modified'),
+        ('COMPONENT_DELETED', 'Component Deleted'),
+        
+        # Financial actions
+        ('TOTAL_RECALCULATED', 'Total Recalculated'),
+        ('CURRENCY_CONVERTED', 'Currency Converted'),
+        ('REFUND_PROCESSED', 'Refund Processed'),
+        
+        # Other
+        ('NOTE_ADDED', 'Note Added'),
+        ('SYSTEM_ACTION', 'System Action'),
+    ]
+    
+    # =============================================================================
+    # IDENTIFICATION
+    # =============================================================================
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+    
+    # Link to the main booking
+    booking = models.ForeignKey(
+        'Booking',
+        on_delete=models.CASCADE,
+        related_name='audit_logs',
+        db_index=True,
+        help_text="The booking this audit log entry relates to"
+    )
+    
+    # =============================================================================
+    # ACTION DETAILS
+    # =============================================================================
+    action = models.CharField(
+        max_length=30,
+        choices=ACTION_CHOICES,
+        db_index=True,
+        help_text="Type of action performed"
+    )
+    
+    timestamp = models.DateTimeField(
+        auto_now_add=True,
+        db_index=True,
+        help_text="When this action occurred"
+    )
+    
+    # =============================================================================
+    # RELATED OBJECT (Optional - for component/transaction changes)
+    # =============================================================================
+    # Links to the object that was changed (Transaction, AirBooking, etc.)
+    content_type = models.ForeignKey(
+        ContentType,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        help_text="Type of related object (if applicable)"
+    )
+    
+    object_id = models.UUIDField(
+        null=True,
+        blank=True,
+        help_text="ID of related object (if applicable)"
+    )
+    
+    related_object = GenericForeignKey('content_type', 'object_id')
+    
+    related_object_repr = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="String representation of related object (preserved even after deletion)"
+    )
+    
+    # =============================================================================
+    # CHANGE DETAILS
+    # =============================================================================
+    field_name = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Name of field that changed (if applicable)"
+    )
+    
+    old_value = models.JSONField(
+        null=True,
+        blank=True,
+        encoder=DjangoJSONEncoder,
+        help_text="Previous value (JSON format)"
+    )
+    
+    new_value = models.JSONField(
+        null=True,
+        blank=True,
+        encoder=DjangoJSONEncoder,
+        help_text="New value (JSON format)"
+    )
+    
+    # =============================================================================
+    # DESCRIPTION & CONTEXT
+    # =============================================================================
+    description = models.TextField(
+        help_text="Human-readable description of what changed"
+    )
+    
+    notes = models.TextField(
+        blank=True,
+        help_text="Additional notes or context"
+    )
+    
+    # =============================================================================
+    # USER TRACKING
+    # =============================================================================
+    user = models.ForeignKey(
+        'users.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='booking_audit_logs',
+        help_text="User who performed this action"
+    )
+    
+    user_repr = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="String representation of user (preserved even after user deletion)"
+    )
+    
+    # IP address for additional tracking
+    ip_address = models.GenericIPAddressField(
+        null=True,
+        blank=True,
+        help_text="IP address of user who made the change"
+    )
+    
+    # =============================================================================
+    # METADATA
+    # =============================================================================
+    class Meta:
+        db_table = 'booking_audit_logs'
+        ordering = ['-timestamp']
+        indexes = [
+            models.Index(fields=['booking', '-timestamp']),
+            models.Index(fields=['action', '-timestamp']),
+            models.Index(fields=['user', '-timestamp']),
+            models.Index(fields=['content_type', 'object_id']),
+        ]
+        verbose_name = 'Booking Audit Log'
+        verbose_name_plural = 'Booking Audit Logs'
+    
+    # =============================================================================
+    # METHODS
+    # =============================================================================
+    def __str__(self):
+        return f"{self.timestamp.strftime('%Y-%m-%d %H:%M:%S')} - {self.get_action_display()} - {self.booking.agent_booking_reference}"
+    
+    def save(self, *args, **kwargs):
+        """Auto-populate string representations"""
+        # Store string representation of related object
+        if self.related_object and not self.related_object_repr:
+            self.related_object_repr = str(self.related_object)
+        
+        # Store string representation of user
+        if self.user and not self.user_repr:
+            self.user_repr = str(self.user)
+        
+        super().save(*args, **kwargs)
+    
+    @classmethod
+    def log_transaction_created(cls, booking, transaction, user=None):
+        """Log when a transaction is created"""
+        return cls.objects.create(
+            booking=booking,
+            action='TRANSACTION_CREATED',
+            content_type=ContentType.objects.get_for_model(transaction),
+            object_id=transaction.id,
+            related_object_repr=str(transaction),
+            description=f"Transaction created: {transaction.get_transaction_type_display()} - {transaction.currency} {transaction.total_amount}",
+            new_value={
+                'transaction_type': transaction.transaction_type,
+                'total_amount': str(transaction.total_amount),
+                'currency': transaction.currency,
+                'transaction_date': transaction.transaction_date.isoformat(),
+            },
+            user=user
+        )
+    
+    @classmethod
+    def log_transaction_modified(cls, booking, transaction, old_data, new_data, user=None):
+        """Log when a transaction is modified"""
+        changes = []
+        for key in old_data.keys():
+            if old_data.get(key) != new_data.get(key):
+                changes.append(f"{key}: {old_data.get(key)} → {new_data.get(key)}")
+        
+        return cls.objects.create(
+            booking=booking,
+            action='TRANSACTION_MODIFIED',
+            content_type=ContentType.objects.get_for_model(transaction),
+            object_id=transaction.id,
+            related_object_repr=str(transaction),
+            description=f"Transaction modified: {', '.join(changes)}",
+            old_value=old_data,
+            new_value=new_data,
+            user=user
+        )
+    
+    @classmethod
+    def log_transaction_deleted(cls, booking, transaction_data, user=None):
+        """Log when a transaction is deleted"""
+        return cls.objects.create(
+            booking=booking,
+            action='TRANSACTION_DELETED',
+            related_object_repr=f"{transaction_data.get('transaction_type')} - {transaction_data.get('currency')} {transaction_data.get('total_amount')}",
+            description=f"Transaction deleted: {transaction_data.get('transaction_type')} - {transaction_data.get('currency')} {transaction_data.get('total_amount')}",
+            old_value=transaction_data,
+            user=user
+        )
+    
+    @classmethod
+    def log_booking_modified(cls, booking, field_name, old_value, new_value, user=None):
+        """Log when a booking field is modified"""
+        return cls.objects.create(
+            booking=booking,
+            action='BOOKING_MODIFIED',
+            field_name=field_name,
+            old_value={'value': old_value},
+            new_value={'value': new_value},
+            description=f"Booking {field_name} changed from {old_value} to {new_value}",
+            user=user
+        )
+    
+    @classmethod
+    def log_total_recalculated(cls, booking, old_total, new_total, reason='', user=None):
+        """Log when booking total is recalculated"""
+        return cls.objects.create(
+            booking=booking,
+            action='TOTAL_RECALCULATED',
+            field_name='total_amount',
+            old_value={'total': str(old_total)},
+            new_value={'total': str(new_total)},
+            description=f"Total recalculated: {old_total} → {new_total}. {reason}",
+            user=user
+        )
+    
+    @classmethod
+    def log_component_change(cls, booking, component, action_type, description, user=None):
+        """Log component (Air/Accommodation/Car) changes"""
+        return cls.objects.create(
+            booking=booking,
+            action=action_type,
+            content_type=ContentType.objects.get_for_model(component),
+            object_id=component.id,
+            related_object_repr=str(component),
+            description=description,
+            user=user
+        )
+
+# =============================================================================
+# USAGE EXAMPLES
+# =============================================================================
+"""
+Example 1: Original Air Booking
+--------------------------------
+BookingTransaction.objects.create(
+    content_type=ContentType.objects.get_for_model(AirBooking),
+    object_id=air_booking.id,
+    transaction_type='ORIGINAL',
+    transaction_date=date(2025, 10, 15),
+    transaction_reference='TKT-1234567890',
+    base_amount=Decimal('450.00'),
+    taxes=Decimal('45.00'),
+    fees=Decimal('5.00'),
+    total_amount=Decimal('500.00'),
+    currency='AUD',
+    reason='Original ticket purchase',
+)
+
+Example 2: Ticket Exchange with Additional Cost
+------------------------------------------------
+BookingTransaction.objects.create(
+    content_type=ContentType.objects.get_for_model(AirBooking),
+    object_id=air_booking.id,
+    transaction_type='EXCHANGE',
+    transaction_date=date(2025, 10, 20),
+    transaction_reference='TKT-1234567891',
+    base_amount=Decimal('150.00'),  # Additional fare
+    taxes=Decimal('15.00'),
+    fees=Decimal('50.00'),  # Exchange fee
+    total_amount=Decimal('215.00'),
+    currency='AUD',
+    reason='Date change - departure moved forward 3 days',
+)
+
+Example 3: Partial Refund (Negative Amount)
+--------------------------------------------
+BookingTransaction.objects.create(
+    content_type=ContentType.objects.get_for_model(AirBooking),
+    object_id=air_booking.id,
+    transaction_type='PARTIAL_REFUND',
+    transaction_date=date(2025, 10, 25),
+    transaction_reference='REF-9876543210',
+    base_amount=Decimal('-300.00'),  # Negative = refund
+    taxes=Decimal('-30.00'),
+    fees=Decimal('25.00'),  # Non-refundable admin fee (positive)
+    total_amount=Decimal('-305.00'),  # Net refund
+    currency='AUD',
+    reason='Trip cancelled - partial refund processed',
+)
+
+Example 4: Accommodation Cancellation
+--------------------------------------
+BookingTransaction.objects.create(
+    content_type=ContentType.objects.get_for_model(AccommodationBooking),
+    object_id=accommodation_booking.id,
+    transaction_type='CANCELLATION',
+    transaction_date=date(2025, 10, 18),
+    base_amount=Decimal('-800.00'),  # Full refund of room charges
+    taxes=Decimal('-80.00'),
+    fees=Decimal('50.00'),  # Cancellation fee retained
+    total_amount=Decimal('-830.00'),
+    currency='AUD',
+    reason='Hotel booking cancelled due to change in travel plans',
+)
+
+Example 5: Car Hire Date Extension
+-----------------------------------
+BookingTransaction.objects.create(
+    content_type=ContentType.objects.get_for_model(CarHireBooking),
+    object_id=car_hire_booking.id,
+    transaction_type='MODIFICATION',
+    transaction_date=date(2025, 10, 22),
+    base_amount=Decimal('120.00'),  # 2 additional days at $60/day
+    taxes=Decimal('12.00'),
+    fees=Decimal('0.00'),
+    total_amount=Decimal('132.00'),
+    currency='AUD',
+    reason='Extended rental by 2 days',
+)
+
+Example 6: Get All Transactions for a Booking Component
+--------------------------------------------------------
+from django.contrib.contenttypes.models import ContentType
+
+# Get all transactions for an air booking
+ct = ContentType.objects.get_for_model(AirBooking)
+transactions = BookingTransaction.objects.filter(
+    content_type=ct,
+    object_id=air_booking.id
+).order_by('transaction_date')
+
+# Calculate net amount across all transactions
+total = sum(t.total_amount for t in transactions)
+
+Example 7: Query Refunds in a Date Range
+-----------------------------------------
+refunds = BookingTransaction.objects.filter(
+    transaction_type__in=['REFUND', 'PARTIAL_REFUND'],
+    transaction_date__range=['2025-10-01', '2025-10-31'],
+    total_amount__lt=0  # Negative amounts
+)
+"""
