@@ -287,7 +287,14 @@ const loadData = async () => {
     })
     console.log('All bookings:', allBookingsData)
     
-    const bookings = allBookingsData.results || allBookingsData
+    const data = await bookingService.getBookings(params)
+
+    // Handle paginated response (data.results) or direct array
+    const bookings = data.results || data
+
+    console.log('Bookings loaded:', bookings.length)
+    console.log('First booking:', bookings[0])
+    console.log('Booking types:', bookings.map(b => b.booking_type))
 
     // Calculate summary from bookings
     summary.value = {
@@ -305,13 +312,13 @@ const loadData = async () => {
       const amount = parseFloat(booking.total_amount) || 0
       summary.value.total_spend += amount
 
-      if (booking.booking_type === 'AIR') {
+      if (booking.primary_booking_type === 'AIR') {
         summary.value.air_spend += amount
         summary.value.air_bookings++
-      } else if (booking.booking_type === 'HOTEL') {
+      } else if (booking.primary_booking_type === 'HOTEL') {
         summary.value.hotel_spend += amount
         summary.value.hotel_bookings++
-      } else if (booking.booking_type === 'CAR') {
+      } else if (booking.primary_booking_type === 'CAR') {
         summary.value.car_spend += amount
         summary.value.car_bookings++
       }
