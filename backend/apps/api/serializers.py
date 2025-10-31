@@ -91,11 +91,11 @@ class AirSegmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = AirSegment
         fields = [
-            'id', 'segment_number', 'airline_iata_code', 'airline_name',  # Updated
+            'id', 'segment_number', 'airline_iata_code', 'airline_name',
             'flight_number', 'origin_airport_iata_code', 'destination_airport_iata_code',  # Updated
             'departure_date', 'departure_time', 'arrival_date', 'arrival_time',
             'booking_class', 'fare_basis', 'distance_km',
-            'carbon_emissions_kg'  # NEW
+            'carbon_emissions_kg'
         ]
 
 
@@ -110,7 +110,7 @@ class AirBookingSerializer(serializers.ModelSerializer):
             'primary_airline_iata_code', 'primary_airline_name', 
             'origin_airport_iata_code', 'destination_airport_iata_code', 
             'lowest_fare_available', 'lowest_fare_currency', 'potential_savings', 
-            'segments', 'total_carbon_kg'
+            'segments', 'total_carbon_kg', 'base_fare', 'taxes', 'gst_amount'
         ]
     
     def get_total_carbon_kg(self, obj):
@@ -129,7 +129,7 @@ class AccommodationBookingSerializer(serializers.ModelSerializer):
             'id', 'hotel_name', 'hotel_chain', 'city', 'country',
             'address', 'check_in_date', 'check_out_date',
             'number_of_nights', 'room_type', 'nightly_rate',
-            'currency', 'nightly_rate_base', 'total_amount_base'
+            'currency', 'nightly_rate_base', 'gst_amount', 'total_amount_base'
         ]
 
 
@@ -141,7 +141,7 @@ class CarHireBookingSerializer(serializers.ModelSerializer):
             'pickup_location', 'pickup_city', 'pickup_date', 'pickup_time',
             'dropoff_location', 'dropoff_city', 'dropoff_date', 'dropoff_time',
             'country', 'number_of_days', 'daily_rate', 'currency',
-            'daily_rate_base', 'total_amount_base'
+            'daily_rate_base', 'gst_amount', 'total_amount_base'
         ]
 
 
@@ -155,6 +155,9 @@ class BookingListSerializer(serializers.ModelSerializer):
     accommodation_bookings = AccommodationBookingSerializer(many=True, read_only=True)
     car_hire_bookings = CarHireBookingSerializer(many=True, read_only=True)
     
+    # Computed field for primary booking type
+    primary_booking_type = serializers.SerializerMethodField()
+    
     class Meta:
         model = Booking
         fields = [
@@ -163,8 +166,21 @@ class BookingListSerializer(serializers.ModelSerializer):
             'status', 'traveller_name', 'organization_name',
             'currency', 'total_amount',
             'policy_compliant', 'air_bookings', 'accommodation_bookings', 
-            'car_hire_bookings'
+            'car_hire_bookings',
+            'primary_booking_type'  # ← ADD THIS
         ]
+    
+    def get_primary_booking_type(self, obj):
+        """Determine primary booking type based on which bookings exist"""
+        # Check what type of bookings are present (priority: AIR > HOTEL > CAR)
+        if obj.air_bookings.exists():
+            return 'AIR'
+        elif obj.accommodation_bookings.exists():
+            return 'HOTEL'
+        elif obj.car_hire_bookings.exists():
+            return 'CAR'
+        else:
+            return 'OTHER'
 
 
 class BookingDetailSerializer(serializers.ModelSerializer):

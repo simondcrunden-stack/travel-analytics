@@ -277,36 +277,34 @@ class AirBooking(models.Model):
     destination_airport_iata_code = models.CharField(max_length=3)
     
     # Fare breakdown
-    base_fare = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    taxes = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    base_fare = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    taxes = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     fees = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    total_fare = models.DecimalField(max_digits=10, decimal_places=2)
+    gst_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    total_fare = models.DecimalField(max_digits=12, decimal_places=2)
     currency = models.CharField(max_length=3, default='AUD')
     
     # Carbon emissions (total from all segments)
     total_carbon_kg = models.DecimalField(
         max_digits=10,
         decimal_places=2,
-        null=True,
-        blank=True,
+        default=0,
         help_text="Total CO2 emissions in kg (sum of all segments)"
     )
     
     # Compliance
     lowest_fare_available = models.DecimalField(
-        max_digits=10,
+        max_digits=12,
         decimal_places=2,
-        null=True,
-        blank=True
+        default=0
     )
     lowest_fare_currency = models.CharField(max_length=3, blank=True)
     
     # Savings/lost savings calculation
     potential_savings = models.DecimalField(
-        max_digits=10,
+        max_digits=12,
         decimal_places=2,
-        null=True,
-        blank=True,
+        default=0,
         help_text="Amount that could have been saved if lowest fare was used"
     )
     
@@ -460,8 +458,7 @@ class AirSegment(models.Model):
     carbon_emissions_kg = models.DecimalField(
         max_digits=8, 
         decimal_places=2, 
-        null=True, 
-        blank=True,
+        default=0,
         help_text="CO2 emissions in kilograms for this segment (ICAO standards)"
     )
     
@@ -614,12 +611,13 @@ class AccommodationBooking(models.Model):
     room_type = models.CharField(max_length=100, blank=True)
     
     # Rate
-    nightly_rate = models.DecimalField(max_digits=10, decimal_places=2)
+    nightly_rate = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     currency = models.CharField(max_length=3, default='AUD')
     
     # Converted to base currency
-    nightly_rate_base = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    total_amount_base = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    nightly_rate_base = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    gst_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    total_amount_base = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     
     class Meta:
         db_table = 'accommodation_bookings'
@@ -747,12 +745,13 @@ class CarHireBooking(models.Model):
     
     # Duration & rate
     number_of_days = models.IntegerField()
-    daily_rate = models.DecimalField(max_digits=10, decimal_places=2)
+    daily_rate = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     currency = models.CharField(max_length=3, default='AUD')
     
     # Converted to base currency
-    daily_rate_base = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    total_amount_base = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    daily_rate_base = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    gst_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    total_amount_base = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     
     class Meta:
         db_table = 'car_hire_bookings'

@@ -434,10 +434,18 @@ class BookingTransactionAdmin(admin.ModelAdmin):
     
     @admin.display(description='Amount Breakdown')
     def amount_breakdown(self, obj):
-        base_str = f"{obj.base_amount:,.2f}"
-        taxes_str = f"{obj.taxes:,.2f}"
-        fees_str = f"{obj.fees:,.2f}"
-        total_str = f"{obj.total_amount:,.2f}"
+        """Show breakdown of transaction amount"""
+        if obj.amount:
+            base = obj.amount_base or 0  # ← Add default of 0
+            gst = obj.gst_amount or 0     # ← Add default of 0
+            return format_html(
+                '<strong>Amount:</strong> {}<br>'
+                '<strong>Base:</strong> {}<br>'
+                '<strong>GST:</strong> {}',
+                f'{obj.amount:,.2f}' if obj.amount else '0.00',
+                f'{base:,.2f}',
+                f'{gst:,.2f}'
+            )
         
         return format_html(
             '<table style="font-size: 11px;">'
@@ -1051,13 +1059,16 @@ class AirBookingAdmin(admin.ModelAdmin):
             'fields': ('booking',)
         }),
         ('Flight Details', {
-            'fields': ('trip_type', 'travel_class', 'ticket_number', 'total_fare')
+            'fields': ('trip_type', 'travel_class', 'ticket_number')
         }),
         ('Route', {
             'fields': ('origin_airport_iata_code', 'destination_airport_iata_code')
         }),
         ('Airline', {
             'fields': ('primary_airline_iata_code', 'primary_airline_name')
+        }),
+        ('Financial Breakdown', {
+            'fields': ('base_fare', 'taxes', 'gst_amount', 'total_fare')
         }),
         ('Compliance', {
             'fields': ('lowest_fare_available', 'lowest_fare_currency', 'potential_savings')
