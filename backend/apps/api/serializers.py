@@ -172,11 +172,11 @@ class BookingListSerializer(serializers.ModelSerializer):
     
     def get_primary_booking_type(self, obj):
         """Determine primary booking type based on which bookings exist"""
-        # Check what type of bookings are present (priority: AIR > HOTEL > CAR)
+        # Check what type of bookings are present (priority: AIR > ACCOMMODATION > CAR)
         if obj.air_bookings.exists():
             return 'AIR'
         elif obj.accommodation_bookings.exists():
-            return 'HOTEL'
+            return 'ACCOMMODATION'
         elif obj.car_hire_bookings.exists():
             return 'CAR'
         else:
