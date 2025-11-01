@@ -312,15 +312,31 @@ const loadData = async () => {
       const amount = parseFloat(booking.total_amount) || 0
       summary.value.total_spend += amount
 
-      if (booking.primary_booking_type === 'AIR') {
-        summary.value.air_spend += amount
-        summary.value.air_bookings++
-      } else if (booking.primary_booking_type === 'HOTEL') {
-        summary.value.hotel_spend += amount
-        summary.value.hotel_bookings++
-      } else if (booking.primary_booking_type === 'CAR') {
-        summary.value.car_spend += amount
-        summary.value.car_bookings++
+      // Count air bookings
+      if (booking.air_bookings && booking.air_bookings.length > 0) {
+        const airSpend = booking.air_bookings.reduce((sum, air) => {
+          const baseFare = parseFloat(air.base_fare) || 0
+          const taxes = parseFloat(air.taxes) || 0
+          return sum + baseFare + taxes
+        }, 0)
+        summary.value.air_spend += airSpend
+        summary.value.air_bookings += booking.air_bookings.length
+      }
+
+      // Count accommodation bookings
+      if (booking.accommodation_bookings && booking.accommodation_bookings.length > 0) {
+        const hotelSpend = booking.accommodation_bookings.reduce((sum, hotel) => 
+          sum + (parseFloat(hotel.total_amount_base) || 0), 0)
+        summary.value.hotel_spend += hotelSpend
+        summary.value.hotel_bookings += booking.accommodation_bookings.length
+      }
+
+      // Count car hire bookings
+      if (booking.car_hire_bookings && booking.car_hire_bookings.length > 0) {
+        const carSpend = booking.car_hire_bookings.reduce((sum, car) => 
+          sum + (parseFloat(car.total_amount_base) || 0), 0)
+        summary.value.car_spend += carSpend
+        summary.value.car_bookings += booking.car_hire_bookings.length
       }
     })
 
@@ -518,7 +534,7 @@ const formatDate = (dateString) => {
 const getBookingTypeClass = (type) => {
   const classes = {
     'AIR': 'px-2 py-1 text-xs rounded-full bg-sky-100 text-sky-800',
-    'HOTEL': 'px-2 py-1 text-xs rounded-full bg-purple-100 text-purple-800',
+    'ACCOMMODATION': 'px-2 py-1 text-xs rounded-full bg-purple-100 text-purple-800',
     'CAR': 'px-2 py-1 text-xs rounded-full bg-green-100 text-green-800',
     'OTHER': 'px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-800'
   }
