@@ -158,7 +158,8 @@ class Booking(models.Model):
     total_amount = models.DecimalField(
         max_digits=10, 
         decimal_places=2,
-        help_text="Total amount in original currency (sum of all air, hotel, car, fees)"
+        default=0,
+        help_text="Total amount in original currency (auto-calculated from all components)"
     )
     base_fare = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     taxes = models.DecimalField(max_digits=10, decimal_places=2, default=0)
@@ -389,9 +390,18 @@ class AirBooking(models.Model):
         Enhanced save with automatic calculations
         
         Calculates:
-        1. Total carbon from segments (if segments exist)
-        2. Potential savings (if lowest fare available)
+        1. total_fare from component fields (base_fare + taxes + gst_amount + fees)
+        2. Total carbon from segments (if segments exist)
+        3. Potential savings (if lowest fare available)
         """
+        # Calculate total_fare from components
+        self.total_fare = (
+            Decimal(str(self.base_fare or 0)) +
+            Decimal(str(self.taxes or 0)) +
+            Decimal(str(self.gst_amount or 0)) +
+            Decimal(str(self.fees or 0))
+        )
+        
         is_new = self.pk is None
         
         # Save first to ensure we have an ID for relationships
@@ -424,6 +434,20 @@ class AirBooking(models.Model):
                     logger.info(f"Updated savings for {self.booking.agent_booking_reference}: {calculated_savings}")
             except Exception as e:
                 logger.error(f"Error calculating potential savings: {e}")
+        
+        # ==================================================================
+        # SESSION 45: Update parent Booking total_amount
+        # ==================================================================
+        try:
+            # Recalculate parent booking's total from all components
+            new_total = self.booking.calculate_total_amount()
+            if new_total != self.booking.total_amount:
+                Booking.objects.filter(pk=self.booking.pk).update(
+                    total_amount=new_total
+                )
+                logger.info(f"Updated booking {self.booking.agent_booking_reference} total: {new_total}")
+        except Exception as e:
+            logger.error(f"Error updating booking total: {e}")
 
 
 class AirSegment(models.Model):
@@ -695,6 +719,20 @@ class AccommodationBooking(models.Model):
         
         # Save with converted values
         super().save(*args, **kwargs)
+        
+        # ==================================================================
+        # SESSION 45: Update parent Booking total_amount
+        # ==================================================================
+        try:
+            # Recalculate parent booking's total from all components
+            new_total = self.booking.calculate_total_amount()
+            if new_total != self.booking.total_amount:
+                Booking.objects.filter(pk=self.booking.pk).update(
+                    total_amount=new_total
+                )
+                logger.info(f"Updated booking {self.booking.agent_booking_reference} total: {new_total}")
+        except Exception as e:
+            logger.error(f"Error updating booking total: {e}")
 
 
 # ============================================================================
@@ -829,6 +867,20 @@ class CarHireBooking(models.Model):
         
         # Save with converted values
         super().save(*args, **kwargs)
+        
+        # ==================================================================
+        # SESSION 45: Update parent Booking total_amount
+        # ==================================================================
+        try:
+            # Recalculate parent booking's total from all components
+            new_total = self.booking.calculate_total_amount()
+            if new_total != self.booking.total_amount:
+                Booking.objects.filter(pk=self.booking.pk).update(
+                    total_amount=new_total
+                )
+                logger.info(f"Updated booking {self.booking.agent_booking_reference} total: {new_total}")
+        except Exception as e:
+            logger.error(f"Error updating booking total: {e}")
 
 
 # ============================================================================
