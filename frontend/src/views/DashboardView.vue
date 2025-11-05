@@ -309,36 +309,58 @@ const loadData = async () => {
     }
 
     bookings.forEach(booking => {
-      const amount = parseFloat(booking.total_amount) || 0
-      summary.value.total_spend += amount
+      // Total spend will be calculated from components after the loop
 
       // Count air bookings
+      // Use total_amount_base if available, fall back to total_amount, 
+      // then calculate from components (base_fare + taxes + gst_amount + fees)
       if (booking.air_bookings && booking.air_bookings.length > 0) {
         const airSpend = booking.air_bookings.reduce((sum, air) => {
-          const baseFare = parseFloat(air.base_fare) || 0
-          const taxes = parseFloat(air.taxes) || 0
-          return sum + baseFare + taxes
+          let amount = parseFloat(air.total_amount_base) || parseFloat(air.total_amount)
+          
+          // If no total fields exist, calculate from components
+          if (!amount) {
+            const baseFare = parseFloat(air.base_fare) || 0
+            const taxes = parseFloat(air.taxes) || 0
+            const gst = parseFloat(air.gst_amount) || 0
+            const fees = parseFloat(air.fees) || 0
+            amount = baseFare + taxes + gst + fees
+          }
+          
+          return sum + amount
         }, 0)
         summary.value.air_spend += airSpend
         summary.value.air_bookings += booking.air_bookings.length
       }
 
       // Count accommodation bookings
+      // Use total_amount_base if available, fall back to total_amount, then 0
       if (booking.accommodation_bookings && booking.accommodation_bookings.length > 0) {
-        const hotelSpend = booking.accommodation_bookings.reduce((sum, hotel) => 
-          sum + (parseFloat(hotel.total_amount_base) || 0), 0)
+        const hotelSpend = booking.accommodation_bookings.reduce((sum, hotel) => {
+          const amount = parseFloat(hotel.total_amount_base) || parseFloat(hotel.total_amount) || 0
+          return sum + amount
+        }, 0)
         summary.value.hotel_spend += hotelSpend
         summary.value.hotel_bookings += booking.accommodation_bookings.length
       }
 
       // Count car hire bookings
+      // Use total_amount_base if available, fall back to total_amount, then 0
       if (booking.car_hire_bookings && booking.car_hire_bookings.length > 0) {
-        const carSpend = booking.car_hire_bookings.reduce((sum, car) => 
-          sum + (parseFloat(car.total_amount_base) || 0), 0)
+        const carSpend = booking.car_hire_bookings.reduce((sum, car) => {
+          const amount = parseFloat(car.total_amount_base) || parseFloat(car.total_amount) || 0
+          return sum + amount
+        }, 0)
         summary.value.car_spend += carSpend
         summary.value.car_bookings += booking.car_hire_bookings.length
       }
     })
+
+    // Calculate total spend from component totals (not from booking.total_amount)
+    // This ensures accuracy even when components are added/updated without updating parent booking
+    summary.value.total_spend = summary.value.air_spend + 
+                                 summary.value.hotel_spend + 
+                                 summary.value.car_spend
 
     // Get recent bookings (last 10)
     recentBookings.value = bookings
