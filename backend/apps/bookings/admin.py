@@ -1079,11 +1079,11 @@ class AirBookingAdmin(admin.ModelAdmin):
 @admin.register(AirSegment)
 class AirSegmentAdmin(admin.ModelAdmin):
     list_display = ['air_booking', 'segment_number', 'airline_iata_code', 'flight_number',
-                    'origin_airport_iata_code', 'destination_airport_iata_code', 
-                    'departure_date', 'distance_km', 'carbon_emissions_kg']
+                'origin_airport', 'destination_airport', 
+                'departure_date', 'distance_km', 'carbon_emissions_kg']
     list_filter = ['airline_iata_code', 'departure_date']
     search_fields = ['air_booking__booking__agent_booking_reference', 'flight_number',
-                    'origin_airport_iata_code', 'destination_airport_iata_code']
+                'origin_airport__iata_code', 'destination_airport__iata_code']
     readonly_fields = ['distance_km', 'carbon_emissions_kg']
     
     fieldsets = (
@@ -1094,7 +1094,7 @@ class AirSegmentAdmin(admin.ModelAdmin):
             'fields': ('airline_iata_code', 'airline_name', 'flight_number')
         }),
         ('Route', {
-            'fields': ('origin_airport_iata_code', 'destination_airport_iata_code')
+            'fields': ('origin_airport', 'destination_airport')
         }),
         ('Schedule', {
             'fields': ('departure_date', 'departure_time', 'arrival_date', 'arrival_time')

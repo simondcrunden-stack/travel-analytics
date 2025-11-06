@@ -180,9 +180,14 @@ class BookingViewSet(viewsets.ModelViewSet):
     API endpoint for bookings with comprehensive filtering.
     
     Supports filtering by:
-    - organization, traveller, status
+    - organization, traveller (single or multiple), status
     - Date ranges (booking_date, travel_date)
     - Search by reference numbers
+    - Destination filters (domestic/international/regions)
+    - Country filters (single or multiple)
+    - City/location search
+    - Travel consultant (single or multiple)
+    - Supplier filter
     """
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
@@ -213,16 +218,150 @@ class BookingViewSet(viewsets.ModelViewSet):
             # Customer users see only their organization
             queryset = Booking.objects.filter(organization=user.organization)
         
-        # Optimize queries with select_related
+        # Apply advanced filters
+        queryset = self._apply_advanced_filters(queryset, user)
+        
+        # Optimize queries with select_related and prefetch_related
         return queryset.select_related(
             'organization', 'traveller', 'travel_arranger', 'travel_consultant'
+        ).prefetch_related(
+            'air_bookings__segments',
+            'accommodation_bookings',
+            'car_hire_bookings'
         )
+    
+    def _apply_advanced_filters(self, queryset, user):
+        """
+        Apply advanced filtering to booking queryset.
+        Uses subqueries for Airport/Country lookups (works with CharField + properties).
+        """
+        from apps.reference_data.models import Airport, Country
+        from django.db.models import Q
+        
+        # Get filter parameters
+        travellers = self.request.query_params.get('travellers', '')
+        countries = self.request.query_params.get('countries', '')
+        destination_preset = self.request.query_params.get('destination_preset', '')
+        city = self.request.query_params.get('city', '')
+        travel_consultant = self.request.query_params.get('travel_consultant', '')
+        travel_consultants = self.request.query_params.get('travel_consultants', '')
+        supplier = self.request.query_params.get('supplier', '')
+        
+        # ========================================================================
+        # DESTINATION PRESET FILTERS
+        # ========================================================================
+        if destination_preset:
+            user_country = getattr(user, 'country', 'AUS')
+            
+            if destination_preset == 'within_user_country':
+                # Domestic: Get all airport codes in user's country
+                domestic_airports = Airport.objects.filter(
+                    country=user_country
+                ).values_list('iata_code', flat=True)
+                
+                queryset = queryset.filter(
+                    air_bookings__segments__destination_airport_iata_code__in=domestic_airports
+                )
+            
+            elif destination_preset == 'outside_user_country':
+                # International: Exclude user's country airports
+                domestic_airports = Airport.objects.filter(
+                    country=user_country
+                ).values_list('iata_code', flat=True)
+                
+                queryset = queryset.exclude(
+                    air_bookings__segments__destination_airport_iata_code__in=domestic_airports
+                )
+            
+            elif destination_preset in ['asia', 'europe', 'oceania', 'americas', 'africa', 'middle_east']:
+                # Regional filters: Get airport codes in that region
+                region_map = {
+                    'asia': 'Asia',
+                    'europe': 'Europe',
+                    'oceania': 'Oceania',
+                    'americas': 'Americas',
+                    'africa': 'Africa',
+                    'middle_east': 'Middle East'
+                }
+                
+                # Get countries in the region
+                region_countries = Country.objects.filter(
+                    region__iexact=region_map[destination_preset]
+                ).values_list('name', flat=True)
+                
+                # Get airports in those countries
+                region_airports = Airport.objects.filter(
+                    country__in=region_countries
+                ).values_list('iata_code', flat=True)
+                
+                queryset = queryset.filter(
+                    air_bookings__segments__destination_airport_iata_code__in=region_airports
+                )
+        
+        # ========================================================================
+        # CITY FILTER
+        # ========================================================================
+        if city:
+            city_airports = Airport.objects.filter(
+                city__icontains=city
+            ).values_list('iata_code', flat=True)
+            
+            queryset = queryset.filter(
+                Q(air_bookings__segments__origin_airport_iata_code__in=city_airports) |
+                Q(air_bookings__segments__destination_airport_iata_code__in=city_airports)
+            )
+        
+        # ========================================================================
+        # COUNTRY FILTER (Multi-select)
+        # ========================================================================
+        if countries:
+            country_list = [c.strip() for c in countries.split(',')]
+            country_names = Country.objects.filter(
+                alpha_3__in=country_list
+            ).values_list('name', flat=True)
+            
+            country_airports = Airport.objects.filter(
+                country__in=country_names
+            ).values_list('iata_code', flat=True)
+            
+            queryset = queryset.filter(
+                air_bookings__segments__destination_airport_iata_code__in=country_airports
+            )
+        
+        # ========================================================================
+        # TRAVELLER FILTERS
+        # ========================================================================
+        if travellers:
+            traveller_list = [t.strip() for t in travellers.split(',')]
+            queryset = queryset.filter(traveller_id__in=traveller_list)
+        
+        # ========================================================================
+        # CONSULTANT FILTERS
+        # ========================================================================
+        if travel_consultant:
+            queryset = queryset.filter(travel_consultant_id=travel_consultant)
+        
+        if travel_consultants:
+            consultant_list = [c.strip() for c in travel_consultants.split(',')]
+            queryset = queryset.filter(travel_consultant_id__in=consultant_list)
+        
+        # ========================================================================
+        # SUPPLIER FILTER
+        # ========================================================================
+        if supplier:
+            queryset = queryset.filter(
+                Q(air_bookings__operating_airline__icontains=supplier) |
+                Q(accommodation_bookings__hotel_chain__icontains=supplier) |
+                Q(car_hire_bookings__supplier__icontains=supplier)
+            )
+        
+        # Return distinct results (avoid duplicates from joins)
+        return queryset.distinct()
     
     def get_serializer_class(self):
         if self.action == 'retrieve':
             return BookingDetailSerializer
         return BookingListSerializer
-    
     @action(detail=False, methods=['get'])
     def summary(self, request):
         """

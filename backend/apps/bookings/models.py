@@ -495,6 +495,29 @@ class AirSegment(models.Model):
         ]
         ordering = ['segment_number']
     
+    # ========================================================================
+    # PROPERTY METHODS FOR AIRPORT LOOKUPS
+    # ========================================================================
+    @property
+    def origin_airport(self):
+        """Get Airport object for origin - enables Airport.country lookups"""
+        from apps.reference_data.models import Airport
+        try:
+            return Airport.objects.get(iata_code=self.origin_airport_iata_code)
+        except Airport.DoesNotExist:
+            logger.warning(f"Airport not found: {self.origin_airport_iata_code}")
+            return None
+    
+    @property
+    def destination_airport(self):
+        """Get Airport object for destination - enables Airport.country lookups"""
+        from apps.reference_data.models import Airport
+        try:
+            return Airport.objects.get(iata_code=self.destination_airport_iata_code)
+        except Airport.DoesNotExist:
+            logger.warning(f"Airport not found: {self.destination_airport_iata_code}")
+            return None
+    
     def calculate_distance(self):
         """
         Calculate great circle distance between origin and destination airports.
@@ -502,14 +525,14 @@ class AirSegment(models.Model):
         """
         try:
             from math import radians, sin, cos, sqrt, atan2
-            from apps.reference_data.models import Airport
             
-            origin_airport = Airport.objects.get(iata_code=self.origin_airport_iata_code)
-            dest_airport = Airport.objects.get(iata_code=self.destination_airport_iata_code)
+            # Use ForeignKey relationships directly
+            origin_airport = self.origin_airport
+            dest_airport = self.destination_airport
             
             if not all([origin_airport.latitude, origin_airport.longitude,
                        dest_airport.latitude, dest_airport.longitude]):
-                logger.warning(f"Missing coordinates for {self.origin_airport_iata_code} or {self.destination_airport_iata_code}")
+                logger.warning(f"Missing coordinates for {origin_airport.iata_code} or {dest_airport.iata_code}")
                 return None
             
             # Haversine formula

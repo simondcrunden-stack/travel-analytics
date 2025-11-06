@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 class Airport(models.Model):
     """Airport reference data"""
-    iata_code = models.CharField(max_length=3, primary_key=True)  # IATA code
+    iata_code = models.CharField(max_length=3, primary_key=True)
     name = models.CharField(max_length=200)
     city = models.CharField(max_length=100)
     country = models.CharField(max_length=100)
