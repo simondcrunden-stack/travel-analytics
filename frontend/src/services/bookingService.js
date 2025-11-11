@@ -4,7 +4,24 @@ import api from './api'
 export default {
   // Main bookings list with filtering
   async getBookings(params = {}) {
-    const response = await api.get('/bookings/', { params })
+    // Convert arrays to comma-separated strings for multi-select filters
+    const processedParams = {}
+    
+    Object.keys(params).forEach(key => {
+      const value = params[key]
+      if (value !== null && value !== undefined && value !== '') {
+        // Convert arrays to comma-separated strings
+        if (Array.isArray(value)) {
+          if (value.length > 0) {
+            processedParams[key] = value.join(',')
+          }
+        } else {
+          processedParams[key] = value
+        }
+      }
+    })
+    
+    const response = await api.get('/bookings/', { params: processedParams })
     return response.data
   },
 
@@ -103,7 +120,7 @@ export default {
 
   // Get available countries (countries that have booking data)
   async getAvailableCountries(params = {}) {
-    const response = await api.get('/countries/available/', { params })
+    const response = await api.get('/bookings/available_countries/', { params })
     return response.data
   },
 

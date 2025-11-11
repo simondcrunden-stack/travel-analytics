@@ -269,11 +269,14 @@ const currentFilters = ref({})
 const expandedBookings = ref(new Set())
 
 // Methods
-const loadBookings = async () => {
+const loadBookings = async (filters = {}) => {
   try {
     loading.value = true
     error.value = null
-    const data = await bookingService.getBookings()
+    
+    console.log('🌐 [BookingsView] Loading bookings with filters:', filters)
+    
+    const data = await bookingService.getBookings(filters)
     // API returns { results: [...] } structure
     bookings.value = data.results || []
     
@@ -296,9 +299,12 @@ const loadBookings = async () => {
   }
 }
 
-const handleFiltersChanged = (filters) => {
+const handleFiltersChanged = async (filters) => {
+  console.log('📥 [BookingsView] Received filters:', filters)
   currentFilters.value = filters
   currentPage.value = 1
+  // Actually load bookings with the new filters!
+  await loadBookings(filters)
 }
 
 // Computed

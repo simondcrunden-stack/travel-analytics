@@ -8,41 +8,16 @@
       </p>
     </div>
 
-    <!-- Simple Date Range Filter (Temporary until we add UniversalFilters) -->
-    <div class="bg-white rounded-2xl shadow-sm p-4">
-      <div class="flex flex-wrap gap-4">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">
-            Start Date
-          </label>
-          <input
-            v-model="filters.start_date"
-            type="date"
-            class="border border-gray-300 rounded-md px-3 py-2 text-sm"
-            @change="loadData"
-          />
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">
-            End Date
-          </label>
-          <input
-            v-model="filters.end_date"
-            type="date"
-            class="border border-gray-300 rounded-md px-3 py-2 text-sm"
-            @change="loadData"
-          />
-        </div>
-        <div class="flex items-end">
-          <button
-            @click="resetFilters"
-            class="px-4 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
-          >
-            Reset
-          </button>
-        </div>
-      </div>
-    </div>
+    <!-- Universal Filters -->
+    <UniversalFilters
+      :show-traveller="true"
+      :show-date-range="true"
+      :show-destinations="true"
+      :show-organization="false"
+      :show-status="true"
+      :show-supplier="false"
+      @filters-changed="handleFiltersChanged"
+    />
 
     <!-- Loading State -->
     <div v-if="loading" class="flex justify-center items-center py-12">
@@ -100,7 +75,7 @@
             </div>
           </div>
           <p class="text-xs text-gray-500 mt-2">
-            {{ summary.air_bookings }} flights
+            {{ summary.air_bookings }} bookings
           </p>
         </div>
 
@@ -110,17 +85,17 @@
             <div>
               <p class="text-sm font-medium text-gray-600">Accommodation</p>
               <p class="text-2xl font-bold text-gray-900 mt-2">
-                {{ formatCurrency(summary.hotel_spend) }}
+                {{ formatCurrency(summary.accommodation_spend) }}
               </p>
             </div>
-            <div class="bg-purple-100 p-3 rounded-full">
-              <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+            <div class="bg-amber-100 p-3 rounded-full">
+              <svg class="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
               </svg>
             </div>
           </div>
           <p class="text-xs text-gray-500 mt-2">
-            {{ summary.hotel_bookings }} stays
+            {{ summary.accommodation_bookings }} bookings
           </p>
         </div>
 
@@ -130,17 +105,17 @@
             <div>
               <p class="text-sm font-medium text-gray-600">Car Hire</p>
               <p class="text-2xl font-bold text-gray-900 mt-2">
-                {{ formatCurrency(summary.car_spend) }}
+                {{ formatCurrency(summary.car_hire_spend) }}
               </p>
             </div>
-            <div class="bg-green-100 p-3 rounded-full">
-              <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div class="bg-emerald-100 p-3 rounded-full">
+              <svg class="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
               </svg>
             </div>
           </div>
           <p class="text-xs text-gray-500 mt-2">
-            {{ summary.car_bookings }} rentals
+            {{ summary.car_hire_bookings }} bookings
           </p>
         </div>
       </div>
@@ -234,6 +209,7 @@
 import { ref, onMounted, nextTick } from 'vue'
 import { Chart } from 'chart.js/auto'
 import bookingService from '@/services/bookingService'
+import UniversalFilters from '@/components/common/UniversalFilters.vue'
 
 // State
 const loading = ref(true)
@@ -243,25 +219,29 @@ const summary = ref({
   total_bookings: 0,
   air_spend: 0,
   air_bookings: 0,
-  hotel_spend: 0,
-  hotel_bookings: 0,
-  car_spend: 0,
-  car_bookings: 0
+  accommodation_spend: 0,
+  accommodation_bookings: 0,
+  car_hire_spend: 0,
+  car_hire_bookings: 0
 })
 const recentBookings = ref([])
 const monthlyData = ref([])
 
 // Filter state
-const filters = ref({
-  start_date: '',
-  end_date: ''
-})
+const activeFilters = ref({})
 
 // Chart refs
 const categoryChart = ref(null)
 const trendChart = ref(null)
 let categoryChartInstance = null
 let trendChartInstance = null
+
+// Handle filter changes from UniversalFilters
+const handleFiltersChanged = (newFilters) => {
+  console.log('📊 Dashboard filters changed:', newFilters)
+  activeFilters.value = newFilters
+  loadData()
+}
 
 // Load data
 const loadData = async () => {
@@ -273,19 +253,18 @@ const loadData = async () => {
     
     // Build query params from filters
     const params = {}
-    if (filters.value.start_date) {
-      params.travel_date__gte = filters.value.start_date
+    if (activeFilters.value.dateFrom) {
+      params.travel_date__gte = activeFilters.value.dateFrom
     }
-    if (filters.value.end_date) {
-      params.travel_date__lte = filters.value.end_date
+    if (activeFilters.value.dateTo) {
+      params.travel_date__lte = activeFilters.value.dateTo
     }
-    
-    // Load ALL bookings (we'll calculate summary from this)
-    const allBookingsData = await bookingService.getBookings({
-      ...params,
-      limit: 1000
-    })
-    console.log('All bookings:', allBookingsData)
+    if (activeFilters.value.traveller) {
+      params.traveller = activeFilters.value.traveller
+    }
+    if (activeFilters.value.status) {
+      params.status = activeFilters.value.status
+    }
     
     const data = await bookingService.getBookings(params)
 
@@ -294,7 +273,6 @@ const loadData = async () => {
 
     console.log('Bookings loaded:', bookings.length)
     console.log('First booking:', bookings[0])
-    console.log('Booking types:', bookings.map(b => b.booking_type))
 
     // Calculate summary from bookings
     summary.value = {
@@ -302,21 +280,17 @@ const loadData = async () => {
       total_bookings: bookings.length,
       air_spend: 0,
       air_bookings: 0,
-      hotel_spend: 0,
-      hotel_bookings: 0,
-      car_spend: 0,
-      car_bookings: 0
+      accommodation_spend: 0,
+      accommodation_bookings: 0,
+      car_hire_spend: 0,
+      car_hire_bookings: 0
     }
 
     bookings.forEach(booking => {
-      // Total spend will be calculated from components after the loop
-
       // Count air bookings
-      // Use total_amount_base if available, fall back to total_amount, 
-      // then calculate from components (base_fare + taxes + gst_amount + fees)
       if (booking.air_bookings && booking.air_bookings.length > 0) {
         const airSpend = booking.air_bookings.reduce((sum, air) => {
-          let amount = parseFloat(air.total_amount_base) || parseFloat(air.total_amount)
+          let amount = parseFloat(air.total_amount_base) || parseFloat(air.total_amount) || parseFloat(air.total_fare)
           
           // If no total fields exist, calculate from components
           if (!amount) {
@@ -334,33 +308,30 @@ const loadData = async () => {
       }
 
       // Count accommodation bookings
-      // Use total_amount_base if available, fall back to total_amount, then 0
       if (booking.accommodation_bookings && booking.accommodation_bookings.length > 0) {
         const hotelSpend = booking.accommodation_bookings.reduce((sum, hotel) => {
           const amount = parseFloat(hotel.total_amount_base) || parseFloat(hotel.total_amount) || 0
           return sum + amount
         }, 0)
-        summary.value.hotel_spend += hotelSpend
-        summary.value.hotel_bookings += booking.accommodation_bookings.length
+        summary.value.accommodation_spend += hotelSpend
+        summary.value.accommodation_bookings += booking.accommodation_bookings.length
       }
 
       // Count car hire bookings
-      // Use total_amount_base if available, fall back to total_amount, then 0
       if (booking.car_hire_bookings && booking.car_hire_bookings.length > 0) {
         const carSpend = booking.car_hire_bookings.reduce((sum, car) => {
           const amount = parseFloat(car.total_amount_base) || parseFloat(car.total_amount) || 0
           return sum + amount
         }, 0)
-        summary.value.car_spend += carSpend
-        summary.value.car_bookings += booking.car_hire_bookings.length
+        summary.value.car_hire_spend += carSpend
+        summary.value.car_hire_bookings += booking.car_hire_bookings.length
       }
     })
 
-    // Calculate total spend from component totals (not from booking.total_amount)
-    // This ensures accuracy even when components are added/updated without updating parent booking
+    // Calculate total spend from component totals
     summary.value.total_spend = summary.value.air_spend + 
-                                 summary.value.hotel_spend + 
-                                 summary.value.car_spend
+                                 summary.value.accommodation_spend + 
+                                 summary.value.car_hire_spend
 
     // Get recent bookings (last 10)
     recentBookings.value = bookings
@@ -372,7 +343,6 @@ const loadData = async () => {
 
     console.log('Summary calculated:', summary.value)
     console.log('Monthly data points:', monthlyData.value.length)
-    console.log('Processed monthly data:', monthlyData.value)
 
   } catch (err) {
     console.error('Error loading dashboard data:', err)
@@ -413,8 +383,6 @@ const processMonthlyData = (bookings) => {
   monthlyData.value = Object.values(monthGroups).sort((a, b) => 
     a.month.localeCompare(b.month)
   )
-
-  console.log('Processed monthly data:', monthlyData.value)
 }
 
 const renderCharts = () => {
@@ -430,8 +398,8 @@ const renderCharts = () => {
     
     const categoryData = [
       summary.value.air_spend,
-      summary.value.hotel_spend,
-      summary.value.car_spend
+      summary.value.accommodation_spend,
+      summary.value.car_hire_spend
     ]
     
     console.log('Category chart data:', categoryData)
@@ -444,8 +412,8 @@ const renderCharts = () => {
           data: categoryData,
           backgroundColor: [
             '#0ea5e9', // sky-500
-            '#a855f7', // purple-500
-            '#22c55e'  // green-500
+            '#f59e0b', // amber-500
+            '#10b981'  // emerald-500
           ]
         }]
       },
@@ -530,12 +498,6 @@ const renderCharts = () => {
   }
 }
 
-const resetFilters = () => {
-  filters.value.start_date = ''
-  filters.value.end_date = ''
-  loadData()
-}
-
 const formatCurrency = (amount) => {
   return new Intl.NumberFormat('en-AU', {
     style: 'currency',
@@ -556,8 +518,8 @@ const formatDate = (dateString) => {
 const getBookingTypeClass = (type) => {
   const classes = {
     'AIR': 'px-2 py-1 text-xs rounded-full bg-sky-100 text-sky-800',
-    'ACCOMMODATION': 'px-2 py-1 text-xs rounded-full bg-purple-100 text-purple-800',
-    'CAR': 'px-2 py-1 text-xs rounded-full bg-green-100 text-green-800',
+    'ACCOMMODATION': 'px-2 py-1 text-xs rounded-full bg-amber-100 text-amber-800',
+    'CAR': 'px-2 py-1 text-xs rounded-full bg-emerald-100 text-emerald-800',
     'OTHER': 'px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-800'
   }
   return classes[type] || classes['OTHER']

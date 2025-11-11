@@ -12,11 +12,11 @@
           <span class="font-medium text-blue-900">{{ formattedDateRange }}</span>
         </div>
 
-        <!-- Traveller Badge -->
-        <div v-if="localFilters.traveller" class="flex items-center gap-2 rounded-lg bg-indigo-50 px-3 py-1.5 text-sm">
+        <!-- Travellers Badge (Multi-Select) -->
+        <div v-if="localFilters.travellers.length > 0" class="flex items-center gap-2 rounded-lg bg-indigo-50 px-3 py-1.5 text-sm">
           <MdiIcon :path="mdiAccount" :size="16" class="text-indigo-600" />
-          <span class="font-medium text-indigo-900">{{ selectedTravellerName }}</span>
-          <button @click="clearTraveller" class="text-indigo-600 hover:text-indigo-800">
+          <span class="font-medium text-indigo-900">{{ selectedTravellersText }}</span>
+          <button @click="clearTravellers" class="text-indigo-600 hover:text-indigo-800">
             <MdiIcon :path="mdiClose" :size="16" />
           </button>
         </div>
@@ -39,11 +39,11 @@
           </button>
         </div>
 
-        <!-- Country Badge -->
-        <div v-if="localFilters.country" class="flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-1.5 text-sm">
+        <!-- Countries Badge (Multi-Select) -->
+        <div v-if="localFilters.countries.length > 0" class="flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-1.5 text-sm">
           <MdiIcon :path="mdiEarth" :size="16" class="text-amber-600" />
-          <span class="font-medium text-amber-900">{{ getCountryName(localFilters.country) }}</span>
-          <button @click="clearCountry" class="text-amber-600 hover:text-amber-800">
+          <span class="font-medium text-amber-900">{{ selectedCountriesText }}</span>
+          <button @click="clearCountries" class="text-amber-600 hover:text-amber-800">
             <MdiIcon :path="mdiClose" :size="16" />
           </button>
         </div>
@@ -135,19 +135,22 @@
             </select>
           </div>
 
-          <!-- Traveller Filter -->
+          <!-- Traveller Filter (Multi-Select) -->
           <div v-if="showTraveller">
-            <label class="mb-2 block text-sm font-medium text-gray-700">Traveller</label>
-            <select
-              v-model="localFilters.traveller"
-              class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-              @change="emitFilters"
-            >
-              <option value="">All Travellers</option>
-              <option v-for="traveller in travellers" :key="traveller.id" :value="traveller.id">
-                {{ traveller.first_name }} {{ traveller.last_name }}
-              </option>
-            </select>
+            <label class="mb-2 block text-sm font-medium text-gray-700">
+              Travellers
+              <span v-if="localFilters.travellers.length > 0" class="text-xs text-blue-600">
+                ({{ localFilters.travellers.length }} selected)
+              </span>
+            </label>
+            <MultiSelect
+              :model-value="localFilters.travellers"
+              @update:model-value="handleTravellerChange"
+              :options="travellerOptions"
+              label-key="label"
+              reduce-key="value"
+              placeholder="Select travellers..."
+            />
           </div>
 
           <!-- Date From -->
@@ -194,23 +197,25 @@
             </select>
           </div>
 
-          <!-- Country Filter -->
+          <!-- Country Filter (Multi-Select)-->
           <div v-if="showDestinations">
             <label class="mb-2 block text-sm font-medium text-gray-700">
-              Country
+              Countries
               <span v-if="isLoadingCountries" class="text-xs text-gray-500">(loading...)</span>
+              <span v-else-if="localFilters.countries.length > 0" class="text-xs text-blue-600">
+                ({{ localFilters.countries.length }} selected)
+              </span>
             </label>
-            <select
-              v-model="localFilters.country"
+            <MultiSelect
+              :model-value="localFilters.countries"
+              @update:model-value="handleCountryChange"
+              :options="countryOptions"
+              label-key="label"
+              reduce-key="value"
               :disabled="isLoadingCountries"
-              class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:bg-gray-100"
-              @change="emitFilters"
-            >
-              <option value="">All Countries</option>
-              <option v-for="country in countries" :key="country.code" :value="country.code">
-                {{ country.name }}
-              </option>
-            </select>
+              placeholder="Select countries..."
+              no-options-text="No countries with bookings"
+            />
           </div>
 
           <!-- City/Location Filter -->
@@ -324,6 +329,7 @@ import {
 } from '@mdi/js'
 import api from '@/services/api'
 import { bookingService, userService } from '@/services/api'
+import MultiSelect from './MultiSelect.vue'
 
 // Props
 const props = defineProps({
@@ -375,15 +381,17 @@ const isSaving = ref(false)
 const homeCountry = ref('AU')
 
 const localFilters = reactive({
-  traveller: '',
-  dateFrom: '',
-  dateTo: '',
-  destinationPreset: '',
-  country: '',
-  city: '',
-  organization: '',
-  status: '',
-  supplier: '',
+  traveller: props.filters?.traveller || '',
+  travellers: props.filters?.travellers || [],
+  dateFrom: props.filters?.dateFrom || '',
+  dateTo: props.filters?.dateTo || '',
+  destinationPreset: props.filters?.destinationPreset || '',
+  country: props.filters?.country || '',
+  countries: props.filters?.countries || [],
+  city: props.filters?.city || '',
+  organization: props.filters?.organization || '',
+  status: props.filters?.status || '',
+  supplier: props.filters?.supplier || '',
 })
 
 // Computed
@@ -407,7 +415,7 @@ const formattedDateRange = computed(() => {
 const selectedTravellerName = computed(() => {
   if (!localFilters.traveller) return ''
   const traveller = travellers.value.find((t) => t.id === localFilters.traveller)
-  return traveller ? `${traveller.first_name} ${traveller.last_name}` : ''
+  return traveller ? traveller.full_name : ''
 })
 
 const selectedOrgName = computed(() => {
@@ -446,6 +454,41 @@ const hasActiveFilters = computed(() => {
   )
 })
 
+// Computed for displaying selected travellers
+const selectedTravellersText = computed(() => {
+  if (localFilters.travellers.length === 0) return ''
+  if (localFilters.travellers.length === 1) {
+    const traveller = travellers.value.find(t => t.id === localFilters.travellers[0])
+    return traveller ? traveller.full_name : ''
+  }
+  return `${localFilters.travellers.length} travellers`
+})
+
+// Computed for displaying selected countries
+const selectedCountriesText = computed(() => {
+  if (localFilters.countries.length === 0) return ''
+  if (localFilters.countries.length === 1) {
+    return getCountryName(localFilters.countries[0])
+  }
+  return `${localFilters.countries.length} countries`
+})
+
+// Transform travellers for MultiSelect component
+const travellerOptions = computed(() => {
+  return travellers.value.map(t => ({
+    value: t.id,
+    label: t.full_name
+  }))
+})
+
+// Transform countries for MultiSelect component
+const countryOptions = computed(() => {
+  return countries.value.map(c => ({
+    value: c.code,
+    label: c.name
+  }))
+})
+
 // Watch for filter changes to show "Save as Default" button
 watch(
   localFilters,
@@ -460,13 +503,27 @@ const toggleFilters = () => {
   showFilters.value = !showFilters.value
 }
 
+const handleTravellerChange = (newValue) => {
+  console.log('🎯 [UniversalFilters] Traveller selection changed:', newValue)
+  localFilters.travellers = newValue || []
+  console.log('📝 [UniversalFilters] Updated localFilters.travellers:', localFilters.travellers)
+  emitFilters()
+}
+
+const handleCountryChange = (newValue) => {
+  console.log('🌍 [UniversalFilters] Country selection changed:', newValue)
+  localFilters.countries = newValue || []
+  console.log('📝 [UniversalFilters] Updated localFilters.countries:', localFilters.countries)
+  emitFilters()
+}
+
 const getCountryName = (code) => {
   const country = countries.value.find((c) => c.code === code)
   return country ? country.name : code
 }
 
-const clearTraveller = () => {
-  localFilters.traveller = ''
+const clearTravellers = () => {
+  localFilters.travellers = []
   emitFilters()
 }
 
@@ -480,8 +537,8 @@ const clearDestinationPreset = () => {
   emitFilters()
 }
 
-const clearCountry = () => {
-  localFilters.country = ''
+const clearCountries = () => {
+  localFilters.countries = []
   emitFilters()
 }
 
@@ -502,10 +559,12 @@ const clearSupplier = () => {
 
 const clearAllFilters = () => {
   localFilters.traveller = ''
+  localFilters.travellers = []
   localFilters.dateFrom = ''
   localFilters.dateTo = ''
   localFilters.destinationPreset = ''
   localFilters.country = ''
+  localFilters.countries = []
   localFilters.city = ''
   localFilters.organization = ''
   localFilters.status = ''
@@ -514,14 +573,22 @@ const clearAllFilters = () => {
 }
 
 const emitFilters = () => {
+  console.log('🔍 [UniversalFilters] emitFilters called')
+  console.log('📊 [UniversalFilters] Current localFilters:', JSON.stringify(localFilters, null, 2))
+  
   // Create a clean object with only non-empty values
   const activeFilters = {}
   Object.keys(localFilters).forEach((key) => {
-    if (localFilters[key]) {
-      activeFilters[key] = localFilters[key]
+    const value = localFilters[key]
+    // Include arrays if they have items, strings if not empty
+    if (Array.isArray(value) ? value.length > 0 : value) {
+      activeFilters[key] = value
     }
   })
+  
+  console.log('📤 [UniversalFilters] Emitting filters:', JSON.stringify(activeFilters, null, 2))
   emit('filters-changed', activeFilters)
+  console.log('✅ [UniversalFilters] Event emitted')
 }
 
 const applyDatePreset = (preset) => {
@@ -577,7 +644,7 @@ const loadTravellers = async () => {
   try {
     const response = await api.get('/travellers/')
     const travellerData = response.data.results || response.data
-    console.log('Loaded travellers:', travellerData)
+    console.log('✅ Loaded travellers:', travellerData)
     travellers.value = Array.isArray(travellerData) ? travellerData : []
   } catch (error) {
     console.error('Failed to load travellers:', error)
