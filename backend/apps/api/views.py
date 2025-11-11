@@ -202,6 +202,11 @@ class BookingViewSet(viewsets.ModelViewSet):
                     'traveller__first_name', 'traveller__last_name']
     ordering_fields = ['booking_date', 'travel_date', 'total_amount', 'created_at']
     ordering = ['-travel_date']
+
+    def get_serializer_class(self):
+        if self.action == 'retrieve':
+            return BookingDetailSerializer
+        return BookingListSerializer
     
     def get_queryset(self):
         user = self.request.user
@@ -231,12 +236,10 @@ class BookingViewSet(viewsets.ModelViewSet):
         )
     
     def _apply_advanced_filters(self, queryset, user):
-        """
-        Apply advanced filtering to booking queryset.
-        Uses subqueries for Airport/Country lookups (works with CharField + properties).
-        """
+        
         from apps.reference_data.models import Airport, Country
-        from django.db.models import Q
+        from apps.bookings.models import AirSegment, AccommodationBooking, CarHireBooking
+        from django.db.models import Q, Exists, OuterRef
         
         # Get filter parameters
         travellers = self.request.query_params.get('travellers', '')
@@ -248,307 +251,362 @@ class BookingViewSet(viewsets.ModelViewSet):
         supplier = self.request.query_params.get('supplier', '')
         
         # ========================================================================
-        # DESTINATION PRESET FILTERS
+        # TRAVELLERS FILTER (Multi-select)
+        # ========================================================================
+        if travellers:
+            traveller_ids = [t.strip() for t in travellers.split(',') if t.strip()]
+            if traveller_ids:
+                queryset = queryset.filter(traveller_id__in=traveller_ids)
+        
+        # ========================================================================
+        # COUNTRIES FILTER (Multi-select) - SMART LOGIC
+        # ========================================================================
+        if countries:
+            country_codes = [c.strip() for c in countries.split(',') if c.strip()]
+            if country_codes:
+                # Get user's home country
+                user_home_country_code = 'AUS'  # Default
+                if hasattr(user, 'organization') and user.organization:
+                    user_home_country_code = user.organization.home_country or 'AUS'
+                
+                # Convert country codes to country names
+                country_names = []
+                for code in country_codes:
+                    try:
+                        country = Country.objects.get(alpha_3=code)
+                        country_names.append(country.name)
+                    except Country.DoesNotExist:
+                        try:
+                            country = Country.objects.get(alpha_2=code)
+                            country_names.append(country.name)
+                        except Country.DoesNotExist:
+                            country_names.append(code)
+                
+                # Get all airports in the selected countries
+                country_airports = list(Airport.objects.filter(
+                    country__in=country_names
+                ).values_list('iata_code', flat=True))
+                
+                # SMART LOGIC: Determine filter type based on selection
+                # If filtering by ONLY home country → STRICT (all segments within)
+                # Otherwise → TOUCHES (any segment touches selected countries)
+                
+                filtering_home_country_only = (
+                    len(country_codes) == 1 and 
+                    country_codes[0] == user_home_country_code
+                )
+                
+                booking_ids_matching = []
+                
+                for booking in queryset.prefetch_related('air_bookings__segments'):
+                    has_air_bookings = booking.air_bookings.exists()
+                    
+                    if has_air_bookings:
+                        if filtering_home_country_only:
+                            # STRICT: ALL segments must be within home country
+                            all_segments_within = True
+                            
+                            for air_booking in booking.air_bookings.all():
+                                for segment in air_booking.segments.all():
+                                    origin_in = segment.origin_airport_iata_code in country_airports
+                                    dest_in = segment.destination_airport_iata_code in country_airports
+                                    
+                                    if not (origin_in and dest_in):
+                                        all_segments_within = False
+                                        break
+                                
+                                if not all_segments_within:
+                                    break
+                            
+                            if all_segments_within:
+                                booking_ids_matching.append(booking.id)
+                        else:
+                            # TOUCHES: ANY segment touches selected countries
+                            touches_countries = False
+                            
+                            for air_booking in booking.air_bookings.all():
+                                for segment in air_booking.segments.all():
+                                    origin_in = segment.origin_airport_iata_code in country_airports
+                                    dest_in = segment.destination_airport_iata_code in country_airports
+                                    
+                                    if origin_in or dest_in:
+                                        touches_countries = True
+                                        break
+                                
+                                if touches_countries:
+                                    break
+                            
+                            if touches_countries:
+                                booking_ids_matching.append(booking.id)
+                    else:
+                        # For non-air bookings, check accommodation/car hire
+                        has_matching_accom = booking.accommodation_bookings.filter(
+                            country__in=country_names
+                        ).exists()
+                        
+                        has_matching_car = booking.car_hire_bookings.filter(
+                            country__in=country_names
+                        ).exists()
+                        
+                        if has_matching_accom or has_matching_car:
+                            booking_ids_matching.append(booking.id)
+                
+                queryset = queryset.filter(id__in=booking_ids_matching)
+        
+        # ========================================================================
+        # DESTINATION PRESET FILTERS - FIXED SESSION 49
         # ========================================================================
         if destination_preset:
-            user_country = getattr(user, 'country', 'AUS')
+            # Get user's home country
+            user_country_code = 'AUS'  # Default
+            if hasattr(user, 'organization') and user.organization:
+                user_country_code = user.organization.home_country or 'AUS'
+            
+            # Convert to country name
+            try:
+                user_country_obj = Country.objects.get(alpha_3=user_country_code)
+                user_country_name = user_country_obj.name
+            except Country.DoesNotExist:
+                user_country_name = 'Australia'
             
             if destination_preset == 'within_user_country':
-                # Domestic: Get all airport codes in user's country
-                domestic_airports = Airport.objects.filter(
-                    country=user_country
-                ).values_list('iata_code', flat=True)
+                # DOMESTIC: ALL segments must be within user's country (STRICT)
+                domestic_airports = list(Airport.objects.filter(
+                    country=user_country_name
+                ).values_list('iata_code', flat=True))
                 
-                queryset = queryset.filter(
-                    air_bookings__segments__destination_airport_iata_code__in=domestic_airports
-                )
+                booking_ids_domestic = []
+                
+                for booking in queryset.prefetch_related('air_bookings__segments'):
+                    if booking.air_bookings.exists():
+                        all_domestic = True
+                        
+                        for air_booking in booking.air_bookings.all():
+                            for segment in air_booking.segments.all():
+                                origin_domestic = segment.origin_airport_iata_code in domestic_airports
+                                dest_domestic = segment.destination_airport_iata_code in domestic_airports
+                                
+                                if not (origin_domestic and dest_domestic):
+                                    all_domestic = False
+                                    break
+                            
+                            if not all_domestic:
+                                break
+                        
+                        if all_domestic:
+                            booking_ids_domestic.append(booking.id)
+                
+                queryset = queryset.filter(id__in=booking_ids_domestic)
             
             elif destination_preset == 'outside_user_country':
-                # International: Exclude user's country airports
-                domestic_airports = Airport.objects.filter(
-                    country=user_country
-                ).values_list('iata_code', flat=True)
+                # INTERNATIONAL: At least ONE segment outside user's country
+                domestic_airports = list(Airport.objects.filter(
+                    country=user_country_name
+                ).values_list('iata_code', flat=True))
                 
-                queryset = queryset.exclude(
-                    air_bookings__segments__destination_airport_iata_code__in=domestic_airports
-                )
+                booking_ids_international = []
+                
+                for booking in queryset.prefetch_related('air_bookings__segments'):
+                    if booking.air_bookings.exists():
+                        has_international = False
+                        
+                        for air_booking in booking.air_bookings.all():
+                            for segment in air_booking.segments.all():
+                                origin_domestic = segment.origin_airport_iata_code in domestic_airports
+                                dest_domestic = segment.destination_airport_iata_code in domestic_airports
+                                
+                                if not origin_domestic or not dest_domestic:
+                                    has_international = True
+                                    break
+                            
+                            if has_international:
+                                break
+                        
+                        if has_international:
+                            booking_ids_international.append(booking.id)
+                
+                queryset = queryset.filter(id__in=booking_ids_international)
             
-            elif destination_preset in ['asia', 'europe', 'oceania', 'americas', 'africa', 'middle_east']:
-                # Regional filters: Get airport codes in that region
+            elif destination_preset in ['asia', 'europe', 'oceania', 'americas', 'africa', 'middle_east', 
+                                        'north_america', 'south_america']:
+                # REGIONAL FILTERS: Destination touches selected region
                 region_map = {
                     'asia': 'Asia',
                     'europe': 'Europe',
                     'oceania': 'Oceania',
                     'americas': 'Americas',
                     'africa': 'Africa',
-                    'middle_east': 'Middle East'
+                    'middle_east': 'Middle East',
+                    'north_america': 'Americas',
+                    'south_america': 'Americas',
                 }
                 
-                # Get countries in the region
-                region_countries = Country.objects.filter(
-                    region__iexact=region_map[destination_preset]
-                ).values_list('name', flat=True)
+                region_name = region_map.get(destination_preset)
                 
-                # Get airports in those countries
-                region_airports = Airport.objects.filter(
-                    country__in=region_countries
-                ).values_list('iata_code', flat=True)
-                
-                queryset = queryset.filter(
-                    air_bookings__segments__destination_airport_iata_code__in=region_airports
-                )
+                if region_name:
+                    region_countries = Country.objects.filter(
+                        region=region_name
+                    ).values_list('name', flat=True)
+                    
+                    region_airports = list(Airport.objects.filter(
+                        country__in=region_countries
+                    ).values_list('iata_code', flat=True))
+                    
+                    booking_ids_regional = []
+                    
+                    for booking in queryset.prefetch_related('air_bookings__segments'):
+                        if booking.air_bookings.exists():
+                            has_regional_dest = False
+                            
+                            for air_booking in booking.air_bookings.all():
+                                for segment in air_booking.segments.all():
+                                    if segment.destination_airport_iata_code in region_airports:
+                                        has_regional_dest = True
+                                        break
+                                
+                                if has_regional_dest:
+                                    break
+                            
+                            if has_regional_dest:
+                                booking_ids_regional.append(booking.id)
+                    
+                    queryset = queryset.filter(id__in=booking_ids_regional)
         
         # ========================================================================
-        # CITY FILTER
+        # CITY/LOCATION SEARCH - NEW SESSION 49
         # ========================================================================
         if city:
-            city_airports = Airport.objects.filter(
-                city__icontains=city
+            city_search = city.strip().lower()
+            city_q = Q()
+            
+            # Air bookings: Search in airport cities
+            air_booking_airports = Airport.objects.filter(
+                Q(city__icontains=city_search) | Q(name__icontains=city_search)
             ).values_list('iata_code', flat=True)
             
-            queryset = queryset.filter(
-                Q(air_bookings__segments__origin_airport_iata_code__in=city_airports) |
-                Q(air_bookings__segments__destination_airport_iata_code__in=city_airports)
+            city_q |= Q(
+                air_bookings__segments__origin_airport_iata_code__in=air_booking_airports
+            ) | Q(
+                air_bookings__segments__destination_airport_iata_code__in=air_booking_airports
             )
-        
-        # ========================================================================
-        # COUNTRY FILTER (Multi-select)
-        # ========================================================================
-        if countries:
-            country_list = [c.strip() for c in countries.split(',')]
-            country_names = Country.objects.filter(
-                alpha_3__in=country_list
-            ).values_list('name', flat=True)
             
-            country_airports = Airport.objects.filter(
-                country__in=country_names
-            ).values_list('iata_code', flat=True)
+            # Accommodation bookings
+            city_q |= Q(accommodation_bookings__city__icontains=city_search)
             
-            queryset = queryset.filter(
-                air_bookings__segments__destination_airport_iata_code__in=country_airports
+            # Car hire bookings
+            city_q |= Q(
+                Q(car_hire_bookings__pickup_city__icontains=city_search) |
+                Q(car_hire_bookings__dropoff_city__icontains=city_search)
             )
+            
+            queryset = queryset.filter(city_q).distinct()
         
         # ========================================================================
-        # TRAVELLER FILTERS
+        # TRAVEL CONSULTANT FILTER (Multi-select)
         # ========================================================================
-        if travellers:
-            traveller_list = [t.strip() for t in travellers.split(',')]
-            queryset = queryset.filter(traveller_id__in=traveller_list)
-        
-        # ========================================================================
-        # CONSULTANT FILTERS
-        # ========================================================================
-        if travel_consultant:
-            queryset = queryset.filter(travel_consultant_id=travel_consultant)
-        
         if travel_consultants:
-            consultant_list = [c.strip() for c in travel_consultants.split(',')]
-            queryset = queryset.filter(travel_consultant_id__in=consultant_list)
+            consultant_ids = [c.strip() for c in travel_consultants.split(',') if c.strip()]
+            if consultant_ids:
+                queryset = queryset.filter(travel_consultant_id__in=consultant_ids)
+        elif travel_consultant:
+            queryset = queryset.filter(travel_consultant_id=travel_consultant)
         
         # ========================================================================
         # SUPPLIER FILTER
         # ========================================================================
         if supplier:
-            queryset = queryset.filter(
-                Q(air_bookings__operating_airline__icontains=supplier) |
-                Q(accommodation_bookings__hotel_chain__icontains=supplier) |
-                Q(car_hire_bookings__supplier__icontains=supplier)
+            supplier_search = supplier.strip()
+            supplier_q = Q()
+            
+            supplier_q |= Q(air_bookings__primary_airline_name__icontains=supplier_search)
+            supplier_q |= Q(
+                Q(accommodation_bookings__hotel_name__icontains=supplier_search) |
+                Q(accommodation_bookings__hotel_chain__icontains=supplier_search)
             )
+            supplier_q |= Q(car_hire_bookings__rental_company__icontains=supplier_search)
+            
+            queryset = queryset.filter(supplier_q).distinct()
         
-        # Return distinct results (avoid duplicates from joins)
-        return queryset.distinct()
+        return queryset
     
-    def get_serializer_class(self):
-        if self.action == 'retrieve':
-            return BookingDetailSerializer
-        return BookingListSerializer
-    @action(detail=False, methods=['get'])
-    def summary(self, request):
-        """
-        Get booking summary statistics.
-        
-        Query params:
-        - start_date: Filter from date (YYYY-MM-DD)
-        - end_date: Filter to date (YYYY-MM-DD)
-        - organization: Filter by organization ID
-        """
-        queryset = self.get_queryset()
-        
-        # Apply date filters
-        start_date = request.query_params.get('start_date')
-        end_date = request.query_params.get('end_date')
-        organization = request.query_params.get('organization')
-        
-        if start_date:
-            queryset = queryset.filter(travel_date__gte=start_date)
-        if end_date:
-            queryset = queryset.filter(travel_date__lte=end_date)
-        if organization:
-            queryset = queryset.filter(organization_id=organization)
-        
-        # Calculate statistics
-        summary = {
-            'total_bookings': queryset.count(),
-            'total_spend': queryset.aggregate(Sum('total_amount'))['total_amount__sum'] or 0,
-            'by_status': list(queryset.values('status').annotate(
-                count=Count('id'),
-                total=Sum('total_amount')
-            )),
-        }
-        
-        return Response(summary)
-    
-    @action(detail=False, methods=['get'])
-    def carbon_report(self, request):
-        """
-        Get carbon emissions report for air bookings.
-        """
-        queryset = self.get_queryset()
-        
-        # Apply date filters
-        start_date = request.query_params.get('start_date')
-        end_date = request.query_params.get('end_date')
-        
-        if start_date:
-            queryset = queryset.filter(travel_date__gte=start_date)
-        if end_date:
-            queryset = queryset.filter(travel_date__lte=end_date)
-        
-        # Get air bookings with segments - only bookings that have air components
-        air_bookings = AirBooking.objects.filter(
-            booking__in=queryset
-        ).prefetch_related('segments')
-        
-        total_carbon = 0
-        total_distance = 0
-        segment_count = 0
-        
-        for air_booking in air_bookings:
-            for segment in air_booking.segments.all():
-                if segment.carbon_emissions_kg:
-                    total_carbon += float(segment.carbon_emissions_kg)
-                if segment.distance_km:
-                    total_distance += segment.distance_km
-                segment_count += 1
-        
-        report = {
-            'total_flights': air_bookings.count(),
-            'total_segments': segment_count,
-            'total_carbon_kg': round(total_carbon, 2),
-            'total_carbon_tonnes': round(total_carbon / 1000, 2),
-            'total_distance_km': total_distance,
-            'average_carbon_per_flight': round(total_carbon / air_bookings.count(), 2) if air_bookings.count() > 0 else 0,
-        }
-        
-        return Response(report)
-
-    @action(detail=False, methods=['get'])
     @action(detail=False, methods=['get'])
     def available_countries(self, request):
         """
-        Get list of countries where the organization has bookings.
-        Used to populate country filter dropdowns.
-        
-        Returns countries that appear in:
-        - Air segments (via airport lookups)
-        - Accommodation bookings
-        - Car hire bookings
-        
-        GET /api/v1/bookings/available_countries/
+        Get list of countries that appear in the user's accessible bookings.
+        Uses the same queryset logic as get_queryset() for consistency.
         """
-        from apps.bookings.models import AirSegment, AccommodationBooking, CarHireBooking
-        from apps.reference_data.models import Country, Airport
-        from django.db.models import Q
+        user = request.user
         
-        # Get user's organization
-        user_org = request.user.organization
-        if not user_org:
-            return Response([])
+        # Build base queryset using same logic as get_queryset()
+        if user.user_type == 'ADMIN':
+            base_queryset = Booking.objects.all()
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            # Travel agents see bookings from their customers
+            base_queryset = Booking.objects.filter(
+                Q(organization=user.organization) |
+                Q(organization__travel_agent=user.organization)
+            )
+        else:
+            # Customer users see only their organization
+            base_queryset = Booking.objects.filter(organization=user.organization)
         
-        # Collect all country codes from bookings
-        country_codes = set()
+        # Collect unique country names
+        countries_set = set()
         
-        # ========================================================================
-        # From air segments - get airport codes, then look up countries
-        # ========================================================================
+        # Get countries from air segments
         air_segments = AirSegment.objects.filter(
-            air_booking__booking__organization=user_org
+            air_booking__booking__in=base_queryset
         ).values_list('origin_airport_iata_code', 'destination_airport_iata_code')
         
-        # Collect all airport codes
-        airport_codes = set()
+        # Build list of unique IATA codes
+        iata_codes = set()
         for origin_code, dest_code in air_segments:
             if origin_code:
-                airport_codes.add(origin_code)
+                iata_codes.add(origin_code)
             if dest_code:
-                airport_codes.add(dest_code)
+                iata_codes.add(dest_code)
         
-        # Look up countries from airports
-        # Note: Airport.country is a CharField (country name), not FK to Country
-        # We'll need to map country names to country codes
-        if airport_codes:
-            airports = Airport.objects.filter(iata_code__in=airport_codes)
-            country_names = set(a.country for a in airports if a.country)
-            
-            # Try to match country names to Country records
-            # This is a best-effort match since Airport.country is just a string
-            for country_name in country_names:
-                # Try exact match on name or common_name
-                try:
-                    country = Country.objects.filter(
-                        Q(name__iexact=country_name) | Q(common_name__iexact=country_name),
-                        is_active=True
-                    ).first()
-                    if country:
-                        country_codes.add(country.alpha_3)
-                except:
-                    pass
+        # Get countries from airports
+        if iata_codes:
+            airports = Airport.objects.filter(iata_code__in=iata_codes).values_list('country', flat=True)
+            countries_set.update(airports)
         
-        # ========================================================================
-        # From accommodation bookings
-        # ========================================================================
-        # AccommodationBooking.country should be alpha_3 code
-        hotel_countries = AccommodationBooking.objects.filter(
-            booking__organization=user_org
-        ).values_list('country', flat=True)
-        country_codes.update(filter(None, hotel_countries))
+        # Get countries from accommodation bookings
+        accommodation_countries = AccommodationBooking.objects.filter(
+            booking__in=base_queryset,
+            country__isnull=False
+        ).values_list('country', flat=True).distinct()
+        countries_set.update(accommodation_countries)
         
-        # ========================================================================
-        # From car hire bookings
-        # ========================================================================
-        # From car hire bookings
-        # ========================================================================
-        # CarHireBooking only has 'country' field (not pickup_country/dropoff_country)
-        car_countries = CarHireBooking.objects.filter(
-            booking__organization=user_org
-        ).values_list('country', flat=True)
-        country_codes.update(filter(None, car_countries))
+        # Get countries from car hire bookings
+        car_hire_countries = CarHireBooking.objects.filter(
+            booking__in=base_queryset,
+            country__isnull=False
+        ).values_list('country', flat=True).distinct()
+        countries_set.update(car_hire_countries)
         
-        # ========================================================================
-        # Get country details from reference data
-        # ========================================================================
-        if not country_codes:
-            # No bookings yet, return all active countries as fallback
-            countries = Country.objects.filter(
-                is_active=True
-            ).values('alpha_3', 'common_name', 'name').order_by('common_name')
-        else:
-            # Return only countries that have bookings
-            countries = Country.objects.filter(
-                alpha_3__in=country_codes,
-                is_active=True
-            ).values('alpha_3', 'common_name', 'name').order_by('common_name')
+        # Convert country names to Country objects with codes
+        from apps.reference_data.models import Country
+        country_data = []
         
-        # Format response
-        result = [
-            {
-                'code': c['alpha_3'],
-                'name': c['common_name'] or c['name']
-            }
-            for c in countries
-        ]
+        for country_name in countries_set:
+            try:
+                country = Country.objects.get(name=country_name)
+                country_data.append({
+                    'code': country.alpha_3,
+                    'name': country.name
+                })
+            except Country.DoesNotExist:
+                # If country not in reference data, still include it
+                country_data.append({
+                    'code': country_name[:3].upper(),
+                    'name': country_name
+                })
         
-        return Response(result)
+        # Sort by name
+        country_data.sort(key=lambda x: x['name'])
+        
+        return Response(country_data)
 
 
 # ============================================================================
