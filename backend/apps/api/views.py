@@ -564,11 +564,15 @@ class BookingViewSet(viewsets.ModelViewSet):
         )['total'] or Decimal('0')
 
         # Calculate total emissions from air bookings
+        # NOTE: We calculate from segments (same logic as serializer) because
+        # the air_booking.total_carbon_kg field may not be populated
         total_emissions = 0
-        for booking in queryset.prefetch_related('air_bookings'):
+        for booking in queryset.prefetch_related('air_bookings__segments'):
             for air_booking in booking.air_bookings.all():
-                if air_booking.total_carbon_kg:
-                    total_emissions += float(air_booking.total_carbon_kg)
+                # Sum carbon from all segments in this air booking
+                for segment in air_booking.segments.all():
+                    if segment.carbon_emissions_kg:
+                        total_emissions += float(segment.carbon_emissions_kg)
 
         # Calculate compliance rate
         booking_count = queryset.count()
