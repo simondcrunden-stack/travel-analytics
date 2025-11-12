@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, nextTick } from 'vue'
 import bookingService from '@/services/bookingService'
 import { Chart, registerables } from 'chart.js'
+import UniversalFilters from '@/components/common/UniversalFilters.vue'
 
 // Register Chart.js components
 Chart.register(...registerables)
@@ -10,6 +11,13 @@ Chart.register(...registerables)
 const loading = ref(true)
 const error = ref(null)
 const bookings = ref([])
+const summary = ref({
+  total_spend: 0,
+  total_emissions: 0,
+  compliance_rate: 0,
+  booking_count: 0
+})
+const currentFilters = ref({})
 
 // Chart refs
 const cityChartRef = ref(null)
@@ -17,112 +25,63 @@ const hotelChainChartRef = ref(null)
 let cityChart = null
 let hotelChainChart = null
 
-// Filters
-const filters = ref({
-  startDate: '',
-  endDate: '',
-  city: '',
-  hotelChain: '',
-})
-
-// Computed
+// Accommodation bookings computed (backend filters, we just display hotel ones)
 const accommodationBookings = computed(() => {
-  return bookings.value.filter(b => {
-    // A booking has accommodation if it has accommodation_bookings array with items
-    if (!b.accommodation_bookings || b.accommodation_bookings.length === 0) return false
-    
-    // Apply filters
-    if (filters.value.startDate && b.travel_date < filters.value.startDate) return false
-    if (filters.value.endDate && b.travel_date > filters.value.endDate) return false
-    
-    // Filter on any of the accommodation_bookings
-    if (filters.value.city) {
-      const hasCity = b.accommodation_bookings.some(hotel => 
-        hotel.city?.toLowerCase().includes(filters.value.city.toLowerCase())
-      )
-      if (!hasCity) return false
-    }
-    
-    if (filters.value.hotelChain) {
-      const hasChain = b.accommodation_bookings.some(hotel => 
-        hotel.hotel_chain?.toLowerCase().includes(filters.value.hotelChain.toLowerCase())
-      )
-      if (!hasChain) return false
-    }
-    
-    return true
-  })
+  return bookings.value.filter(b => b.accommodation_bookings && b.accommodation_bookings.length > 0)
 })
 
+// Summary stats from backend + view-specific calculations
 const summaryStats = computed(() => {
-  const total = accommodationBookings.value.length
-  const totalSpend = accommodationBookings.value.reduce((sum, b) => sum + parseFloat(b.total_amount || 0), 0)
-  const avgSpend = total > 0 ? totalSpend / total : 0
-  
-  // Sum nights from ALL accommodation_bookings in each booking
+  // Sum nights from accommodation bookings (view-specific metric)
   const totalNights = accommodationBookings.value.reduce((sum, b) => {
-    const bookingNights = b.accommodation_bookings.reduce((nightSum, hotel) => 
+    const bookingNights = b.accommodation_bookings.reduce((nightSum, hotel) =>
       nightSum + (hotel.number_of_nights || 0), 0)
     return sum + bookingNights
   }, 0)
-  
+
+  const totalSpend = summary.value.total_spend || 0
   const avgNightlyRate = totalNights > 0 ? totalSpend / totalNights : 0
 
   return {
-    total_bookings: total,
+    total_bookings: summary.value.booking_count || accommodationBookings.value.length,
     total_spend: totalSpend,
-    avg_spend: avgSpend,
+    avg_spend: summary.value.booking_count > 0 ? totalSpend / summary.value.booking_count : 0,
     total_nights: totalNights,
     avg_nightly_rate: avgNightlyRate,
   }
 })
 
-// Get unique cities from all accommodation_bookings
-const availableCities = computed(() => {
-  const cities = new Set()
-  accommodationBookings.value.forEach(b => {
-    b.accommodation_bookings.forEach(hotel => {
-      if (hotel.city) {
-        cities.add(hotel.city)
-      }
-    })
-  })
-  return Array.from(cities).sort()
-})
+// Removed availableCities and availableHotelChains - not needed with UniversalFilters
 
-// Get unique hotel chains from all accommodation_bookings
-const availableHotelChains = computed(() => {
-  const chains = new Set()
-  accommodationBookings.value.forEach(b => {
-    b.accommodation_bookings.forEach(hotel => {
-      if (hotel.hotel_chain) {
-        chains.add(hotel.hotel_chain)
-      }
-    })
-  })
-  return Array.from(chains).sort()
-})
+// Handle filter changes from UniversalFilters
+const handleFiltersChanged = async (filters) => {
+  console.log('🏨 [AccommodationView] Filters changed:', filters)
+  currentFilters.value = filters
+  await loadData(filters)
+}
 
 // Methods
-const loadData = async () => {
+const loadData = async (filters = {}) => {
   try {
     loading.value = true
     error.value = null
 
-    const params = {}
-    
-    if (filters.value.startDate) {
-      params.travel_date_after = filters.value.startDate
-    }
-    if (filters.value.endDate) {
-      params.travel_date_before = filters.value.endDate
+    console.log('🌐 [AccommodationView] Loading accommodation data with filters:', filters)
+
+    // bookingService handles filter transformation automatically
+    const data = await bookingService.getBookings(filters)
+    bookings.value = data.results || []
+
+    // Use backend summary statistics
+    if (data.summary) {
+      summary.value = data.summary
+      console.log('📊 [AccommodationView] Backend summary:', summary.value)
     }
 
-    const response = await bookingService.getBookings(params)
-    bookings.value = response.results || response
+    console.log('✅ [AccommodationView] Loaded', bookings.value.length, 'bookings,', accommodationBookings.value.length, 'with accommodation')
 
   } catch (err) {
-    console.error('Error loading booking data:', err)
+    console.error('❌ [AccommodationView] Error loading data:', err)
     error.value = 'Failed to load booking data. Please try again.'
   } finally {
     loading.value = false
@@ -241,15 +200,7 @@ const renderCharts = () => {
   }
 }
 
-const clearFilters = () => {
-  filters.value = {
-    startDate: '',
-    endDate: '',
-    city: '',
-    hotelChain: '',
-  }
-  loadData()
-}
+// Removed clearFilters - UniversalFilters handles this now
 
 const formatCurrency = (amount) => {
   return new Intl.NumberFormat('en-AU', {
@@ -333,6 +284,17 @@ onMounted(async () => {
       <p class="text-gray-600 mt-2">Analyze hotel bookings, spending patterns, and lodging preferences</p>
     </div>
 
+    <!-- Universal Filters -->
+    <UniversalFilters
+      :show-traveller="true"
+      :show-date-range="true"
+      :show-destinations="true"
+      :show-organization="false"
+      :show-status="true"
+      :show-supplier="false"
+      @filters-changed="handleFiltersChanged"
+    />
+
     <!-- Loading State -->
     <div v-if="loading" class="loading-state">
       <div class="spinner"></div>
@@ -348,49 +310,6 @@ onMounted(async () => {
 
     <!-- Content -->
     <div v-else>
-      <!-- Filters -->
-      <div class="filters-card">
-        <div class="filters-header">
-          <h3 class="text-lg font-semibold text-gray-700">Filters</h3>
-          <button @click="clearFilters" class="clear-filters-btn">
-            <span class="mdi mdi-filter-off"></span>
-            Clear All
-          </button>
-        </div>
-
-        <div class="filters-grid">
-          <div class="filter-group">
-            <label class="filter-label">Start Date</label>
-            <input v-model="filters.startDate" @change="loadData" type="date" class="filter-input" />
-          </div>
-
-          <div class="filter-group">
-            <label class="filter-label">End Date</label>
-            <input v-model="filters.endDate" @change="loadData" type="date" class="filter-input" />
-          </div>
-
-          <div class="filter-group">
-            <label class="filter-label">City</label>
-            <select v-model="filters.city" class="filter-input">
-              <option value="">All Cities</option>
-              <option v-for="city in availableCities" :key="city" :value="city">
-                {{ city }}
-              </option>
-            </select>
-          </div>
-
-          <div class="filter-group">
-            <label class="filter-label">Hotel Chain</label>
-            <select v-model="filters.hotelChain" class="filter-input">
-              <option value="">All Chains</option>
-              <option v-for="chain in availableHotelChains" :key="chain" :value="chain">
-                {{ chain }}
-              </option>
-            </select>
-          </div>
-        </div>
-      </div>
-
       <!-- Summary Cards -->
       <div class="summary-cards">
         <div class="summary-card">
