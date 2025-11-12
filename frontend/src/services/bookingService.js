@@ -1,27 +1,23 @@
 // src/services/bookingService.js
 import api from './api'
+import { transformFiltersForBackend } from '@/utils/filterTransformer'
 
 export default {
   // Main bookings list with filtering
   async getBookings(params = {}) {
-    // Convert arrays to comma-separated strings for multi-select filters
-    const processedParams = {}
-    
-    Object.keys(params).forEach(key => {
-      const value = params[key]
-      if (value !== null && value !== undefined && value !== '') {
-        // Convert arrays to comma-separated strings
-        if (Array.isArray(value)) {
-          if (value.length > 0) {
-            processedParams[key] = value.join(',')
-          }
-        } else {
-          processedParams[key] = value
-        }
-      }
+    // Transform frontend filter format to backend API format
+    // Handles:
+    // - dateFrom/dateTo → travel_date__gte/lte
+    // - travellers/countries arrays → comma-separated strings
+    // - destinationPreset → destination_preset
+    const backendParams = transformFiltersForBackend(params)
+
+    console.log('🔄 [bookingService] Transformed filters:', {
+      frontend: params,
+      backend: backendParams
     })
-    
-    const response = await api.get('/bookings/', { params: processedParams })
+
+    const response = await api.get('/bookings/', { params: backendParams })
     return response.data
   },
 
