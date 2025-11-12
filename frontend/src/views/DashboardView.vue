@@ -247,44 +247,37 @@ const handleFiltersChanged = (newFilters) => {
 const loadData = async () => {
   loading.value = true
   error.value = null
-  
+
   try {
-    console.log('Loading dashboard data...')
-    
-    // Build query params from filters
-    const params = {}
-    if (activeFilters.value.dateFrom) {
-      params.travel_date__gte = activeFilters.value.dateFrom
-    }
-    if (activeFilters.value.dateTo) {
-      params.travel_date__lte = activeFilters.value.dateTo
-    }
-    if (activeFilters.value.traveller) {
-      params.traveller = activeFilters.value.traveller
-    }
-    if (activeFilters.value.status) {
-      params.status = activeFilters.value.status
-    }
-    
-    const data = await bookingService.getBookings(params)
+    console.log('🌐 [DashboardView] Loading dashboard data with filters:', activeFilters.value)
+
+    // Use bookingService which handles filter transformation automatically
+    // No need to manually convert filter names - filterTransformer does it!
+    const data = await bookingService.getBookings(activeFilters.value)
 
     // Handle paginated response (data.results) or direct array
     const bookings = data.results || data
 
-    console.log('Bookings loaded:', bookings.length)
-    console.log('First booking:', bookings[0])
+    console.log('✅ [DashboardView] Bookings loaded:', bookings.length)
 
-    // Calculate summary from bookings
-    summary.value = {
-      total_spend: 0,
-      total_bookings: bookings.length,
-      air_spend: 0,
-      air_bookings: 0,
-      accommodation_spend: 0,
-      accommodation_bookings: 0,
-      car_hire_spend: 0,
-      car_hire_bookings: 0
+    // Use backend summary statistics for totals (same as BookingsView pattern)
+    if (data.summary) {
+      console.log('📊 [DashboardView] Backend summary:', data.summary)
+      summary.value.total_spend = data.summary.total_spend || 0
+      summary.value.total_bookings = data.summary.booking_count || bookings.length
+    } else {
+      // Fallback if summary not available
+      summary.value.total_spend = 0
+      summary.value.total_bookings = bookings.length
     }
+
+    // Calculate breakdown by booking type (dashboard-specific)
+    summary.value.air_spend = 0
+    summary.value.air_bookings = 0
+    summary.value.accommodation_spend = 0
+    summary.value.accommodation_bookings = 0
+    summary.value.car_hire_spend = 0
+    summary.value.car_hire_bookings = 0
 
     bookings.forEach(booking => {
       // Count air bookings
@@ -328,10 +321,8 @@ const loadData = async () => {
       }
     })
 
-    // Calculate total spend from component totals
-    summary.value.total_spend = summary.value.air_spend + 
-                                 summary.value.accommodation_spend + 
-                                 summary.value.car_hire_spend
+    // Note: total_spend comes from backend summary (more accurate)
+    // We don't recalculate it from components to avoid discrepancies
 
     // Get recent bookings (last 10)
     recentBookings.value = bookings
