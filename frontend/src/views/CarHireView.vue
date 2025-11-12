@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, nextTick } from 'vue'
 import bookingService from '@/services/bookingService'
 import { Chart, registerables } from 'chart.js'
+import UniversalFilters from '@/components/common/UniversalFilters.vue'
 
 // Register Chart.js components
 Chart.register(...registerables)
@@ -10,6 +11,13 @@ Chart.register(...registerables)
 const loading = ref(true)
 const error = ref(null)
 const bookings = ref([])
+const summary = ref({
+  total_spend: 0,
+  total_emissions: 0,
+  compliance_rate: 0,
+  booking_count: 0
+})
+const currentFilters = ref({})
 
 // Chart refs
 const locationChartRef = ref(null)
@@ -17,133 +25,63 @@ const rentalCompanyChartRef = ref(null)
 let locationChart = null
 let rentalCompanyChart = null
 
-// Filters
-const filters = ref({
-  startDate: '',
-  endDate: '',
-  city: '',
-  rentalCompany: '',
-  vehicleType: '',
-})
-
-// Computed
+// Car hire bookings computed (backend filters, we just display car ones)
 const carHireBookings = computed(() => {
-  return bookings.value.filter(b => {
-    // NEW: A booking has car hire if it has car_hire_bookings array with items
-    if (!b.car_hire_bookings || b.car_hire_bookings.length === 0) return false
-    
-    // Apply filters
-    if (filters.value.startDate && b.travel_date < filters.value.startDate) return false
-    if (filters.value.endDate && b.travel_date > filters.value.endDate) return false
-    
-    // NEW: Filter on any of the car_hire_bookings
-    if (filters.value.city) {
-      const hasCity = b.car_hire_bookings.some(car => 
-        car.pickup_city?.toLowerCase().includes(filters.value.city.toLowerCase())
-      )
-      if (!hasCity) return false
-    }
-    
-    if (filters.value.rentalCompany) {
-      const hasCompany = b.car_hire_bookings.some(car => 
-        car.rental_company?.toLowerCase().includes(filters.value.rentalCompany.toLowerCase())
-      )
-      if (!hasCompany) return false
-    }
-    
-    if (filters.value.vehicleType) {
-      const hasType = b.car_hire_bookings.some(car => 
-        car.vehicle_type?.toLowerCase().includes(filters.value.vehicleType.toLowerCase())
-      )
-      if (!hasType) return false
-    }
-    
-    return true
-  })
+  return bookings.value.filter(b => b.car_hire_bookings && b.car_hire_bookings.length > 0)
 })
 
+// Summary stats from backend + view-specific calculations
 const summaryStats = computed(() => {
-  const total = carHireBookings.value.length
-  const totalSpend = carHireBookings.value.reduce((sum, b) => sum + parseFloat(b.total_amount || 0), 0)
-  const avgSpend = total > 0 ? totalSpend / total : 0
-  
-  // NEW: Sum rental days from ALL car_hire_bookings in each booking
+  // Sum rental days from car bookings (view-specific metric)
   const totalDays = carHireBookings.value.reduce((sum, b) => {
-    const bookingDays = b.car_hire_bookings.reduce((daySum, car) => 
+    const bookingDays = b.car_hire_bookings.reduce((daySum, car) =>
       daySum + (car.number_of_days || 0), 0)
     return sum + bookingDays
   }, 0)
-  
+
+  const totalSpend = summary.value.total_spend || 0
   const avgDailyRate = totalDays > 0 ? totalSpend / totalDays : 0
 
   return {
-    total_bookings: total,
+    total_bookings: summary.value.booking_count || carHireBookings.value.length,
     total_spend: totalSpend,
-    avg_spend: avgSpend,
+    avg_spend: summary.value.booking_count > 0 ? totalSpend / summary.value.booking_count : 0,
     total_days: totalDays,
     avg_daily_rate: avgDailyRate,
   }
 })
 
-// NEW: Get unique cities from all car_hire_bookings
-const availableCities = computed(() => {
-  const cities = new Set()
-  carHireBookings.value.forEach(b => {
-    b.car_hire_bookings.forEach(car => {
-      if (car.pickup_city) {
-        cities.add(car.pickup_city)
-      }
-    })
-  })
-  return Array.from(cities).sort()
-})
+// Removed availableCities, availableRentalCompanies, availableVehicleTypes - not needed with UniversalFilters
 
-// NEW: Get unique rental companies from all car_hire_bookings
-const availableRentalCompanies = computed(() => {
-  const companies = new Set()
-  carHireBookings.value.forEach(b => {
-    b.car_hire_bookings.forEach(car => {
-      if (car.rental_company) {
-        companies.add(car.rental_company)
-      }
-    })
-  })
-  return Array.from(companies).sort()
-})
-
-// NEW: Get unique vehicle types from all car_hire_bookings
-const availableVehicleTypes = computed(() => {
-  const types = new Set()
-  carHireBookings.value.forEach(b => {
-    b.car_hire_bookings.forEach(car => {
-      if (car.vehicle_type) {
-        types.add(car.vehicle_type)
-      }
-    })
-  })
-  return Array.from(types).sort()
-})
+// Handle filter changes from UniversalFilters
+const handleFiltersChanged = async (filters) => {
+  console.log('🚗 [CarHireView] Filters changed:', filters)
+  currentFilters.value = filters
+  await loadData(filters)
+}
 
 // Methods
-const loadData = async () => {
+const loadData = async (filters = {}) => {
   try {
     loading.value = true
     error.value = null
 
-    const params = {}
-    
-    if (filters.value.startDate) {
-      params.travel_date_after = filters.value.startDate
-    }
-    if (filters.value.endDate) {
-      params.travel_date_before = filters.value.endDate
+    console.log('🌐 [CarHireView] Loading car hire data with filters:', filters)
+
+    // bookingService handles filter transformation automatically
+    const data = await bookingService.getBookings(filters)
+    bookings.value = data.results || []
+
+    // Use backend summary statistics
+    if (data.summary) {
+      summary.value = data.summary
+      console.log('📊 [CarHireView] Backend summary:', summary.value)
     }
 
-    const response = await bookingService.getBookings(params)
-    bookings.value = response.results || response
+    console.log('✅ [CarHireView] Loaded', bookings.value.length, 'bookings,', carHireBookings.value.length, 'with car hires')
 
   } catch (err) {
-    console.error('Error loading booking data:', err)
+    console.error('❌ [CarHireView] Error loading data:', err)
     error.value = 'Failed to load booking data. Please try again.'
   } finally {
     loading.value = false
@@ -263,16 +201,7 @@ const renderCharts = () => {
   }
 }
 
-const clearFilters = () => {
-  filters.value = {
-    startDate: '',
-    endDate: '',
-    city: '',
-    rentalCompany: '',
-    vehicleType: '',
-  }
-  loadData()
-}
+// Removed clearFilters - UniversalFilters handles this now
 
 const formatCurrency = (amount) => {
   return new Intl.NumberFormat('en-AU', {
@@ -370,64 +299,16 @@ onMounted(async () => {
       <p class="text-gray-600 mt-2">Analyze car rental bookings, spending patterns, and vehicle preferences</p>
     </div>
 
-    <!-- Filters -->
-    <div class="filters-card">
-      <div class="filters-header">
-        <h3 class="text-lg font-semibold text-gray-700">Filters</h3>
-        <button @click="clearFilters" class="clear-filters-btn">
-          <span class="mdi mdi-filter-off"></span>
-          Clear All
-        </button>
-      </div>
-
-      <div class="filters-grid">
-        <div class="filter-group">
-          <label class="filter-label">Start Date</label>
-          <input v-model="filters.startDate" type="date" class="filter-input" />
-        </div>
-
-        <div class="filter-group">
-          <label class="filter-label">End Date</label>
-          <input v-model="filters.endDate" type="date" class="filter-input" />
-        </div>
-
-        <div class="filter-group">
-          <label class="filter-label">City</label>
-          <select v-model="filters.city" class="filter-input">
-            <option value="">All Cities</option>
-            <option v-for="city in availableCities" :key="city" :value="city">
-              {{ city }}
-            </option>
-          </select>
-        </div>
-
-        <div class="filter-group">
-          <label class="filter-label">Rental Company</label>
-          <select v-model="filters.rentalCompany" class="filter-input">
-            <option value="">All Companies</option>
-            <option v-for="company in availableRentalCompanies" :key="company" :value="company">
-              {{ company }}
-            </option>
-          </select>
-        </div>
-
-        <div class="filter-group">
-          <label class="filter-label">Vehicle Type</label>
-          <select v-model="filters.vehicleType" class="filter-input">
-            <option value="">All Types</option>
-            <option v-for="type in availableVehicleTypes" :key="type" :value="type">
-              {{ type }}
-            </option>
-          </select>
-        </div>
-
-        <div class="filter-group" style="display: flex; align-items: flex-end;">
-          <button @click="loadData" class="filter-input" style="background: #3b82f6; color: white; border: none; cursor: pointer; font-weight: 600;">
-            Apply Filters
-          </button>
-        </div>
-      </div>
-    </div>
+    <!-- Universal Filters -->
+    <UniversalFilters
+      :show-traveller="true"
+      :show-date-range="true"
+      :show-destinations="true"
+      :show-organization="false"
+      :show-status="true"
+      :show-supplier="false"
+      @filters-changed="handleFiltersChanged"
+    />
 
     <!-- Loading State -->
     <div v-if="loading" class="loading-state">
