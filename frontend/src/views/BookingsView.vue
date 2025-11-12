@@ -26,7 +26,7 @@
         <div class="flex items-center justify-between">
           <div>
             <p class="text-sm font-medium text-gray-600">Total Bookings</p>
-            <p class="text-3xl font-bold text-gray-900 mt-2">{{ filteredBookings.length }}</p>
+            <p class="text-3xl font-bold text-gray-900 mt-2">{{ sortedBookings.length }}</p>
           </div>
           <div class="bg-blue-100 p-3 rounded-full">
             <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -105,7 +105,7 @@
       <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
         <div class="flex items-center space-x-4">
           <span class="text-sm text-gray-700">
-            Showing {{ startIndex + 1 }}-{{ Math.min(endIndex, filteredBookings.length) }} of {{ filteredBookings.length }} bookings
+            Showing {{ startIndex + 1 }}-{{ Math.min(endIndex, sortedBookings.length) }} of {{ sortedBookings.length }} bookings
           </span>
         </div>
         <div class="flex items-center space-x-2">
@@ -259,6 +259,12 @@ import BookingDetails from '@/components/common/BookingDetails.vue'
 
 // State
 const bookings = ref([])
+const summary = ref({
+  total_spend: 0,
+  total_emissions: 0,
+  compliance_rate: 0,
+  booking_count: 0
+})
 const loading = ref(true)
 const error = ref(null)
 const currentPage = ref(1)
@@ -273,26 +279,23 @@ const loadBookings = async (filters = {}) => {
   try {
     loading.value = true
     error.value = null
-    
+
     console.log('🌐 [BookingsView] Loading bookings with filters:', filters)
-    
+
     const data = await bookingService.getBookings(filters)
-    // API returns { results: [...] } structure
+
+    // API returns { results: [...], summary: {...} } structure
     bookings.value = data.results || []
-    
-    // DEBUG: Log the data structure to understand what we're working with
-    console.log('='.repeat(80))
-    console.log('📊 BOOKINGS DATA LOADED')
-    console.log('='.repeat(80))
-    console.log('Total bookings loaded:', bookings.value.length)
-    if (bookings.value.length > 0) {
-      console.log('\n📋 First booking object:')
-      console.log(JSON.stringify(bookings.value[0], null, 2))
-      console.log('\n🔑 Available fields:', Object.keys(bookings.value[0]))
+
+    // Extract summary statistics from backend
+    if (data.summary) {
+      summary.value = data.summary
+      console.log('📊 [BookingsView] Summary statistics from backend:', summary.value)
     }
-    console.log('='.repeat(80))
+
+    console.log('✅ [BookingsView] Loaded', bookings.value.length, 'bookings')
   } catch (err) {
-    console.error('Error loading bookings:', err)
+    console.error('❌ [BookingsView] Error loading bookings:', err)
     error.value = 'Failed to load bookings. Please try again.'
   } finally {
     loading.value = false
@@ -303,163 +306,51 @@ const handleFiltersChanged = async (filters) => {
   console.log('📥 [BookingsView] Received filters:', filters)
   currentFilters.value = filters
   currentPage.value = 1
-  // Actually load bookings with the new filters!
+  // Load bookings with new filters from backend
+  // Backend handles ALL filtering logic - no client-side filtering needed!
   await loadBookings(filters)
 }
 
-// Computed
-const filteredBookings = computed(() => {
-  let filtered = [...bookings.value]
-  
-  // Apply traveller filter
-  if (currentFilters.value.traveller) {
-    const searchTerm = currentFilters.value.traveller.toLowerCase()
-    filtered = filtered.filter(booking => 
-      booking.traveller_name?.toLowerCase().includes(searchTerm)
-    )
-  }
-  
-  // Apply date range filter
-  if (currentFilters.value.startDate) {
-    filtered = filtered.filter(booking => 
-      new Date(booking.travel_date) >= new Date(currentFilters.value.startDate)
-    )
-  }
-  if (currentFilters.value.endDate) {
-    filtered = filtered.filter(booking => 
-      new Date(booking.travel_date) <= new Date(currentFilters.value.endDate)
-    )
-  }
-  
-  // Apply organization filter
-  if (currentFilters.value.organization) {
-    filtered = filtered.filter(booking => 
-      booking.organization_id === currentFilters.value.organization
-    )
-  }
-  
-  // Apply status filter
-  if (currentFilters.value.status) {
-    filtered = filtered.filter(booking => 
-      booking.status === currentFilters.value.status
-    )
-  }
-  
-  // Apply destination preset filter
-  if (currentFilters.value.destinationPreset && currentFilters.value.destinationPreset !== 'all') {
-    filtered = applyDestinationPreset(filtered, currentFilters.value.destinationPreset)
-  }
-  
-  // Apply country filter
-  if (currentFilters.value.country) {
-    filtered = filtered.filter(booking => {
-      if (booking.booking_type === 'AIR' && booking.air_details) {
-        return booking.air_details.origin_country === currentFilters.value.country ||
-               booking.air_details.destination_country === currentFilters.value.country
-      }
-      return true
-    })
-  }
-  
-  if (currentFilters.value.city) {
-    const citySearch = currentFilters.value.city.toLowerCase()
-    filtered = filtered.filter(booking => {
-      if (booking.booking_type === 'AIR' && booking.air_details) {
-        return booking.air_details.origin_airport_code?.toLowerCase().includes(citySearch) ||
-               booking.air_details.destination_airport_code?.toLowerCase().includes(citySearch)
-      }
-      if (booking.booking_type === 'HOTEL' && booking.accommodation_details) {
-        return booking.accommodation_details.city?.toLowerCase().includes(citySearch)
-      }
-      if (booking.booking_type === 'CAR' && booking.car_hire_details) {
-        return booking.car_hire_details.pickup_location?.toLowerCase().includes(citySearch)
-      }
-      return false
-    })
-  }
-  
+// Computed - Sorted bookings (backend does filtering, we just sort for display)
+const sortedBookings = computed(() => {
+  const sorted = [...bookings.value]
+
   // Apply sorting
-  filtered.sort((a, b) => {
+  sorted.sort((a, b) => {
     let aVal = a[sortField.value]
     let bVal = b[sortField.value]
-    
+
     // Handle numeric values
     if (sortField.value === 'total_amount') {
       aVal = parseFloat(aVal) || 0
       bVal = parseFloat(bVal) || 0
     }
-    
+
     if (sortDirection.value === 'asc') {
       return aVal > bVal ? 1 : -1
     } else {
       return aVal < bVal ? 1 : -1
     }
   })
-  
-  return filtered
+
+  return sorted
 })
 
-const applyDestinationPreset = (bookings, preset) => {
-  const australianAirports = ['SYD', 'MEL', 'BNE', 'PER', 'ADL', 'CNS', 'DRW', 'HBA', 'CBR', 'OOL']
-  const usAirports = ['LAX', 'SFO', 'JFK', 'ORD', 'DFW', 'ATL', 'MIA', 'SEA', 'DEN', 'LAS']
-  const nzAirports = ['AKL', 'CHC', 'WLG', 'ZQN']
-  const asianAirports = ['SIN', 'HKG', 'BKK', 'NRT', 'ICN', 'KUL', 'MNL', 'CGK']
-  
-  return bookings.filter(booking => {
-    if (booking.booking_type !== 'AIR' || !booking.air_details) return true
-    
-    const origin = booking.air_details.origin_airport_code
-    const dest = booking.air_details.destination_airport_code
-    
-    switch (preset) {
-      case 'within_australia':
-        return australianAirports.includes(origin) && australianAirports.includes(dest)
-      case 'outside_australia':
-        return !australianAirports.includes(origin) || !australianAirports.includes(dest)
-      case 'aus_usa':
-        return (australianAirports.includes(origin) && usAirports.includes(dest)) ||
-               (usAirports.includes(origin) && australianAirports.includes(dest))
-      case 'aus_nz':
-        return (australianAirports.includes(origin) && nzAirports.includes(dest)) ||
-               (nzAirports.includes(origin) && australianAirports.includes(dest))
-      case 'aus_asia':
-        return (australianAirports.includes(origin) && asianAirports.includes(dest)) ||
-               (asianAirports.includes(origin) && australianAirports.includes(dest))
-      default:
-        return true
-    }
-  })
-}
-
+// Use summary statistics from backend (calculated on filtered data)
 const totalSpend = computed(() => {
-  return filteredBookings.value.reduce((sum, booking) => {
-    return sum + (parseFloat(booking.total_amount) || 0)
-  }, 0)
+  return summary.value.total_spend || 0
 })
 
 const totalEmissions = computed(() => {
-  const total = filteredBookings.value.reduce((sum, booking) => {
-    // Sum up carbon from all air bookings
-    if (booking.air_bookings && booking.air_bookings.length > 0) {
-      booking.air_bookings.forEach(airBooking => {
-        if (airBooking.total_carbon_kg) {
-          sum += parseFloat(airBooking.total_carbon_kg)
-        }
-      })
-    }
-    return sum
-  }, 0)
-  return Math.round(total)
+  return summary.value.total_emissions || 0
 })
 
 const complianceRate = computed(() => {
-  if (filteredBookings.value.length === 0) return 0
-  const compliant = filteredBookings.value.filter(b => b.policy_compliant === true).length
-  return Math.round((compliant / filteredBookings.value.length) * 100)
+  return summary.value.compliance_rate || 0
 })
 
 const totalPages = computed(() => {
-  return Math.ceil(filteredBookings.value.length / itemsPerPage.value)
+  return Math.ceil(sortedBookings.value.length / itemsPerPage.value)
 })
 
 const startIndex = computed(() => {
@@ -471,7 +362,7 @@ const endIndex = computed(() => {
 })
 
 const paginatedBookings = computed(() => {
-  return filteredBookings.value.slice(startIndex.value, endIndex.value)
+  return sortedBookings.value.slice(startIndex.value, endIndex.value)
 })
 
 // Table helpers

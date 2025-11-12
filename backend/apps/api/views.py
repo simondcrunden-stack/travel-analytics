@@ -178,7 +178,7 @@ class TravellerViewSet(viewsets.ModelViewSet):
 class BookingViewSet(viewsets.ModelViewSet):
     """
     API endpoint for bookings with comprehensive filtering.
-    
+
     Supports filtering by:
     - organization, traveller (single or multiple), status
     - Date ranges (booking_date, travel_date)
@@ -188,6 +188,12 @@ class BookingViewSet(viewsets.ModelViewSet):
     - City/location search
     - Travel consultant (single or multiple)
     - Supplier filter
+
+    Response includes summary statistics:
+    - total_spend: Sum of all booking amounts
+    - total_emissions: Sum of carbon emissions (kg CO2)
+    - compliance_rate: Percentage of compliant bookings
+    - booking_count: Total number of bookings
     """
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
@@ -198,7 +204,7 @@ class BookingViewSet(viewsets.ModelViewSet):
         'booking_date': ['gte', 'lte', 'exact'],
         'travel_date': ['gte', 'lte', 'exact'],
     }
-    search_fields = ['agent_booking_reference', 'supplier_reference', 
+    search_fields = ['agent_booking_reference', 'supplier_reference',
                     'traveller__first_name', 'traveller__last_name']
     ordering_fields = ['booking_date', 'travel_date', 'total_amount', 'created_at']
     ordering = ['-travel_date']
@@ -528,7 +534,75 @@ class BookingViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(supplier_q).distinct()
         
         return queryset
-    
+
+    def list(self, request, *args, **kwargs):
+        """
+        Override list to include summary statistics with the response.
+
+        Returns:
+        {
+            "count": 150,
+            "next": null,
+            "previous": null,
+            "results": [...],
+            "summary": {
+                "total_spend": 125000.50,
+                "total_emissions": 45000,
+                "compliance_rate": 85,
+                "booking_count": 150
+            }
+        }
+        """
+        # Get the filtered queryset
+        queryset = self.filter_queryset(self.get_queryset())
+
+        # Calculate summary statistics on the filtered queryset
+        from decimal import Decimal
+
+        total_spend = queryset.aggregate(
+            total=Sum('total_amount')
+        )['total'] or Decimal('0')
+
+        # Calculate total emissions from air bookings
+        total_emissions = 0
+        for booking in queryset.prefetch_related('air_bookings'):
+            for air_booking in booking.air_bookings.all():
+                if air_booking.total_carbon_kg:
+                    total_emissions += float(air_booking.total_carbon_kg)
+
+        # Calculate compliance rate
+        booking_count = queryset.count()
+        if booking_count > 0:
+            compliant_count = queryset.filter(policy_compliant=True).count()
+            compliance_rate = round((compliant_count / booking_count) * 100)
+        else:
+            compliance_rate = 0
+
+        # Build summary object
+        summary = {
+            'total_spend': float(total_spend),
+            'total_emissions': round(total_emissions),
+            'compliance_rate': compliance_rate,
+            'booking_count': booking_count
+        }
+
+        # Get paginated response
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            response = self.get_paginated_response(serializer.data)
+            # Add summary to response data
+            response.data['summary'] = summary
+            return response
+
+        # Non-paginated response
+        serializer = self.get_serializer(queryset, many=True)
+        return Response({
+            'results': serializer.data,
+            'count': booking_count,
+            'summary': summary
+        })
+
     @action(detail=False, methods=['get'])
     def available_countries(self, request):
         """
