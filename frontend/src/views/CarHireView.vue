@@ -306,7 +306,9 @@ onMounted(async () => {
       :show-destinations="true"
       :show-organization="false"
       :show-status="true"
-      :show-supplier="false"
+      :show-supplier="true"
+      supplier-label="Rental Company"
+      supplier-placeholder="Hertz, Avis, Budget..."
       @filters-changed="handleFiltersChanged"
     />
 

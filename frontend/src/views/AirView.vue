@@ -334,7 +334,9 @@ onMounted(async () => {
       :show-destinations="true"
       :show-organization="false"
       :show-status="true"
-      :show-supplier="false"
+      :show-supplier="true"
+      supplier-label="Airline"
+      supplier-placeholder="Qantas Airways, Emirates..."
       @filters-changed="handleFiltersChanged"
     />
 
