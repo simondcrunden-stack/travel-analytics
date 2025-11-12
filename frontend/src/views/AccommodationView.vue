@@ -291,7 +291,9 @@ onMounted(async () => {
       :show-destinations="true"
       :show-organization="false"
       :show-status="true"
-      :show-supplier="false"
+      :show-supplier="true"
+      supplier-label="Hotel Chain"
+      supplier-placeholder="Marriott, Hilton, Accor..."
       @filters-changed="handleFiltersChanged"
     />
 
