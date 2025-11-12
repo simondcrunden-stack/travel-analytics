@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, nextTick } from 'vue'
 import bookingService from '@/services/bookingService'
 import { Chart, registerables } from 'chart.js'
+import UniversalFilters from '@/components/common/UniversalFilters.vue'
 
 // Register Chart.js components
 Chart.register(...registerables)
@@ -10,6 +11,13 @@ Chart.register(...registerables)
 const loading = ref(true)
 const error = ref(null)
 const bookings = ref([])
+const summary = ref({
+  total_spend: 0,
+  total_emissions: 0,
+  compliance_rate: 0,
+  booking_count: 0
+})
+const currentFilters = ref({})
 
 // Chart refs
 const airlineChartRef = ref(null)
@@ -19,124 +27,52 @@ let airlineChart = null
 let classChart = null
 let routeChart = null
 
-// Filters
-const filters = ref({
-  startDate: '',
-  endDate: '',
-  airline: '',
-  travelClass: '',
-  destination: '',
-})
-
-// Computed
+// Air bookings computed (backend filters, we just display air ones)
 const airBookings = computed(() => {
-  return bookings.value.filter(b => {
-    // A booking has air if it has air_bookings array with items
-    if (!b.air_bookings || b.air_bookings.length === 0) return false
-    
-    // Apply filters
-    if (filters.value.startDate && b.travel_date < filters.value.startDate) return false
-    if (filters.value.endDate && b.travel_date > filters.value.endDate) return false
-    
-    // Filter on any of the air_bookings
-    if (filters.value.airline) {
-      const hasAirline = b.air_bookings.some(air => 
-        air.primary_airline_name?.toLowerCase().includes(filters.value.airline.toLowerCase())
-      )
-      if (!hasAirline) return false
-    }
-    
-    if (filters.value.travelClass) {
-      const hasClass = b.air_bookings.some(air => 
-        air.travel_class === filters.value.travelClass
-      )
-      if (!hasClass) return false
-    }
-    
-    if (filters.value.destination) {
-      const hasDestination = b.air_bookings.some(air =>
-        air.destination_airport_iata_code?.includes(filters.value.destination.toUpperCase())
-      )
-      if (!hasDestination) return false
-    }
-    
-    return true
-  })
+  return bookings.value.filter(b => b.air_bookings && b.air_bookings.length > 0)
 })
 
+// Summary stats from backend
 const summaryStats = computed(() => {
-  const total = airBookings.value.length
-  const totalSpend = airBookings.value.reduce((sum, b) => sum + parseFloat(b.total_amount || 0), 0)
-  const avgSpend = total > 0 ? totalSpend / total : 0
-  
-  // Sum carbon from ALL air_bookings in each booking
-  const totalCarbon = airBookings.value.reduce((sum, b) => {
-    const bookingCarbon = (b.air_bookings || []).reduce((airSum, air) => {
-      const segmentCarbon = (air.segments || []).reduce((segSum, seg) => 
-        segSum + (parseFloat(seg.carbon_emissions_kg) || 0), 0)
-      return airSum + segmentCarbon
-    }, 0)
-    return sum + bookingCarbon
-  }, 0)
-
   return {
-    total_bookings: total,
-    total_spend: totalSpend,
-    avg_spend: avgSpend,
-    total_carbon_kg: totalCarbon,
+    total_bookings: summary.value.booking_count || airBookings.value.length,
+    total_spend: summary.value.total_spend || 0,
+    avg_spend: summary.value.booking_count > 0 ? summary.value.total_spend / summary.value.booking_count : 0,
+    total_carbon_kg: summary.value.total_emissions || 0,
   }
 })
 
-// Get unique airlines from all air_bookings
-const availableAirlines = computed(() => {
-  const airlines = new Set()
-  bookings.value.forEach(b => {
-    if (b.air_bookings) {
-      b.air_bookings.forEach(air => {
-        if (air.primary_airline_name) {
-          airlines.add(air.primary_airline_name)
-        }
-      })
-    }
-  })
-  return Array.from(airlines).sort()
-})
+// Removed availableAirlines and availableDestinations - not needed with UniversalFilters
 
-// Get unique destinations from all air_bookings
-const availableDestinations = computed(() => {
-  const destinations = new Set()
-  bookings.value.forEach(b => {
-    if (b.air_bookings) {
-      b.air_bookings.forEach(air => {
-        if (air.destination_airport_iata_code) {
-          destinations.add(air.destination_airport_iata_code)
-        }
-      })
-    }
-  })
-  return Array.from(destinations).sort()
-})
+// Handle filter changes from UniversalFilters
+const handleFiltersChanged = async (filters) => {
+  console.log('✈️ [AirView] Filters changed:', filters)
+  currentFilters.value = filters
+  await loadData(filters)
+}
 
 // Methods
-const loadData = async () => {
+const loadData = async (filters = {}) => {
   try {
     loading.value = true
     error.value = null
 
-    const params = {}
-    
-    if (filters.value.startDate) {
-      params.travel_date_after = filters.value.startDate
-    }
-    if (filters.value.endDate) {
-      params.travel_date_before = filters.value.endDate
+    console.log('🌐 [AirView] Loading air travel data with filters:', filters)
+
+    // bookingService handles filter transformation automatically
+    const data = await bookingService.getBookings(filters)
+    bookings.value = data.results || []
+
+    // Use backend summary statistics
+    if (data.summary) {
+      summary.value = data.summary
+      console.log('📊 [AirView] Backend summary:', summary.value)
     }
 
-    const response = await bookingService.getBookings(params)
-    bookings.value = response.results || response
+    console.log('✅ [AirView] Loaded', bookings.value.length, 'bookings,', airBookings.value.length, 'with flights')
 
   } catch (err) {
-    console.error('Error loading booking data:', err)
+    console.error('❌ [AirView] Error loading data:', err)
     error.value = 'Failed to load booking data. Please try again.'
   } finally {
     loading.value = false
@@ -308,16 +244,7 @@ const renderCharts = () => {
   }
 }
 
-const clearFilters = () => {
-  filters.value = {
-    startDate: '',
-    endDate: '',
-    airline: '',
-    travelClass: '',
-    destination: '',
-  }
-  loadData()
-}
+// Removed clearFilters - UniversalFilters handles this now
 
 const formatCurrency = (amount) => {
   return new Intl.NumberFormat('en-AU', {
@@ -400,6 +327,17 @@ onMounted(async () => {
       <p class="text-gray-600 mt-2">Analyze flight bookings, airline spending, and carbon emissions</p>
     </div>
 
+    <!-- Universal Filters -->
+    <UniversalFilters
+      :show-traveller="true"
+      :show-date-range="true"
+      :show-destinations="true"
+      :show-organization="false"
+      :show-status="true"
+      :show-supplier="false"
+      @filters-changed="handleFiltersChanged"
+    />
+
     <!-- Loading State -->
     <div v-if="loading" class="loading-state">
       <div class="spinner"></div>
@@ -415,60 +353,6 @@ onMounted(async () => {
 
     <!-- Content -->
     <div v-else>
-      <!-- Filters -->
-      <div class="filters-card">
-        <div class="filters-header">
-          <h3 class="text-lg font-semibold text-gray-700">Filters</h3>
-          <button @click="clearFilters" class="clear-filters-btn">
-            <span class="mdi mdi-filter-off"></span>
-            Clear All
-          </button>
-        </div>
-
-        <div class="filters-grid">
-          <div class="filter-group">
-            <label class="filter-label">Start Date</label>
-            <input v-model="filters.startDate" @change="loadData" type="date" class="filter-input" />
-          </div>
-
-          <div class="filter-group">
-            <label class="filter-label">End Date</label>
-            <input v-model="filters.endDate" @change="loadData" type="date" class="filter-input" />
-          </div>
-
-          <div class="filter-group">
-            <label class="filter-label">Airline</label>
-            <select v-model="filters.airline" class="filter-input">
-              <option value="">All Airlines</option>
-              <option v-for="airline in availableAirlines" :key="airline" :value="airline">
-                {{ airline }}
-              </option>
-            </select>
-          </div>
-
-          <div class="filter-group">
-            <label class="filter-label">Travel Class</label>
-            <select v-model="filters.travelClass" class="filter-input">
-              <option value="">All Classes</option>
-              <option value="ECONOMY">Economy</option>
-              <option value="PREMIUM_ECONOMY">Premium Economy</option>
-              <option value="BUSINESS">Business</option>
-              <option value="FIRST">First Class</option>
-            </select>
-          </div>
-
-          <div class="filter-group">
-            <label class="filter-label">Destination</label>
-            <select v-model="filters.destination" class="filter-input">
-              <option value="">All Destinations</option>
-              <option v-for="dest in availableDestinations" :key="dest" :value="dest">
-                {{ dest }}
-              </option>
-            </select>
-          </div>
-        </div>
-      </div>
-
       <!-- Summary Cards -->
       <div class="summary-cards">
         <div class="summary-card">
