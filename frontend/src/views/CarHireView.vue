@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, nextTick } from 'vue'
 import bookingService from '@/services/bookingService'
 import { Chart, registerables } from 'chart.js'
+import UniversalFilters from '@/components/common/UniversalFilters.vue'
 
 // Register Chart.js components
 Chart.register(...registerables)
@@ -10,6 +11,13 @@ Chart.register(...registerables)
 const loading = ref(true)
 const error = ref(null)
 const bookings = ref([])
+const summary = ref({
+  total_spend: 0,
+  total_emissions: 0,
+  compliance_rate: 0,
+  booking_count: 0
+})
+const currentFilters = ref({})
 
 // Chart refs
 const locationChartRef = ref(null)
@@ -17,133 +25,63 @@ const rentalCompanyChartRef = ref(null)
 let locationChart = null
 let rentalCompanyChart = null
 
-// Filters
-const filters = ref({
-  startDate: '',
-  endDate: '',
-  city: '',
-  rentalCompany: '',
-  vehicleType: '',
-})
-
-// Computed
+// Car hire bookings computed (backend filters, we just display car ones)
 const carHireBookings = computed(() => {
-  return bookings.value.filter(b => {
-    // NEW: A booking has car hire if it has car_hire_bookings array with items
-    if (!b.car_hire_bookings || b.car_hire_bookings.length === 0) return false
-    
-    // Apply filters
-    if (filters.value.startDate && b.travel_date < filters.value.startDate) return false
-    if (filters.value.endDate && b.travel_date > filters.value.endDate) return false
-    
-    // NEW: Filter on any of the car_hire_bookings
-    if (filters.value.city) {
-      const hasCity = b.car_hire_bookings.some(car => 
-        car.pickup_city?.toLowerCase().includes(filters.value.city.toLowerCase())
-      )
-      if (!hasCity) return false
-    }
-    
-    if (filters.value.rentalCompany) {
-      const hasCompany = b.car_hire_bookings.some(car => 
-        car.rental_company?.toLowerCase().includes(filters.value.rentalCompany.toLowerCase())
-      )
-      if (!hasCompany) return false
-    }
-    
-    if (filters.value.vehicleType) {
-      const hasType = b.car_hire_bookings.some(car => 
-        car.vehicle_type?.toLowerCase().includes(filters.value.vehicleType.toLowerCase())
-      )
-      if (!hasType) return false
-    }
-    
-    return true
-  })
+  return bookings.value.filter(b => b.car_hire_bookings && b.car_hire_bookings.length > 0)
 })
 
+// Summary stats from backend + view-specific calculations
 const summaryStats = computed(() => {
-  const total = carHireBookings.value.length
-  const totalSpend = carHireBookings.value.reduce((sum, b) => sum + parseFloat(b.total_amount || 0), 0)
-  const avgSpend = total > 0 ? totalSpend / total : 0
-  
-  // NEW: Sum rental days from ALL car_hire_bookings in each booking
+  // Sum rental days from car bookings (view-specific metric)
   const totalDays = carHireBookings.value.reduce((sum, b) => {
-    const bookingDays = b.car_hire_bookings.reduce((daySum, car) => 
+    const bookingDays = b.car_hire_bookings.reduce((daySum, car) =>
       daySum + (car.number_of_days || 0), 0)
     return sum + bookingDays
   }, 0)
-  
+
+  const totalSpend = summary.value.total_spend || 0
   const avgDailyRate = totalDays > 0 ? totalSpend / totalDays : 0
 
   return {
-    total_bookings: total,
+    total_bookings: summary.value.booking_count || carHireBookings.value.length,
     total_spend: totalSpend,
-    avg_spend: avgSpend,
+    avg_spend: summary.value.booking_count > 0 ? totalSpend / summary.value.booking_count : 0,
     total_days: totalDays,
     avg_daily_rate: avgDailyRate,
   }
 })
 
-// NEW: Get unique cities from all car_hire_bookings
-const availableCities = computed(() => {
-  const cities = new Set()
-  carHireBookings.value.forEach(b => {
-    b.car_hire_bookings.forEach(car => {
-      if (car.pickup_city) {
-        cities.add(car.pickup_city)
-      }
-    })
-  })
-  return Array.from(cities).sort()
-})
+// Removed availableCities, availableRentalCompanies, availableVehicleTypes - not needed with UniversalFilters
 
-// NEW: Get unique rental companies from all car_hire_bookings
-const availableRentalCompanies = computed(() => {
-  const companies = new Set()
-  carHireBookings.value.forEach(b => {
-    b.car_hire_bookings.forEach(car => {
-      if (car.rental_company) {
-        companies.add(car.rental_company)
-      }
-    })
-  })
-  return Array.from(companies).sort()
-})
-
-// NEW: Get unique vehicle types from all car_hire_bookings
-const availableVehicleTypes = computed(() => {
-  const types = new Set()
-  carHireBookings.value.forEach(b => {
-    b.car_hire_bookings.forEach(car => {
-      if (car.vehicle_type) {
-        types.add(car.vehicle_type)
-      }
-    })
-  })
-  return Array.from(types).sort()
-})
+// Handle filter changes from UniversalFilters
+const handleFiltersChanged = async (filters) => {
+  console.log('🚗 [CarHireView] Filters changed:', filters)
+  currentFilters.value = filters
+  await loadData(filters)
+}
 
 // Methods
-const loadData = async () => {
+const loadData = async (filters = {}) => {
   try {
     loading.value = true
     error.value = null
 
-    const params = {}
-    
-    if (filters.value.startDate) {
-      params.travel_date_after = filters.value.startDate
-    }
-    if (filters.value.endDate) {
-      params.travel_date_before = filters.value.endDate
+    console.log('🌐 [CarHireView] Loading car hire data with filters:', filters)
+
+    // bookingService handles filter transformation automatically
+    const data = await bookingService.getBookings(filters)
+    bookings.value = data.results || []
+
+    // Use backend summary statistics
+    if (data.summary) {
+      summary.value = data.summary
+      console.log('📊 [CarHireView] Backend summary:', summary.value)
     }
 
-    const response = await bookingService.getBookings(params)
-    bookings.value = response.results || response
+    console.log('✅ [CarHireView] Loaded', bookings.value.length, 'bookings,', carHireBookings.value.length, 'with car hires')
 
   } catch (err) {
-    console.error('Error loading booking data:', err)
+    console.error('❌ [CarHireView] Error loading data:', err)
     error.value = 'Failed to load booking data. Please try again.'
   } finally {
     loading.value = false
@@ -263,16 +201,7 @@ const renderCharts = () => {
   }
 }
 
-const clearFilters = () => {
-  filters.value = {
-    startDate: '',
-    endDate: '',
-    city: '',
-    rentalCompany: '',
-    vehicleType: '',
-  }
-  loadData()
-}
+// Removed clearFilters - UniversalFilters handles this now
 
 const formatCurrency = (amount) => {
   return new Intl.NumberFormat('en-AU', {
@@ -363,189 +292,151 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="car-hire-view">
+  <div class="space-y-6">
     <!-- Header -->
-    <div class="page-header">
-      <h1 class="text-3xl font-bold text-gray-800">Car Hire Analytics</h1>
-      <p class="text-gray-600 mt-2">Analyze car rental bookings, spending patterns, and vehicle preferences</p>
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Car Hire Analytics</h1>
+      <p class="mt-1 text-sm text-gray-500">Analyze car rental bookings, spending patterns, and vehicle preferences</p>
     </div>
 
-    <!-- Filters -->
-    <div class="filters-card">
-      <div class="filters-header">
-        <h3 class="text-lg font-semibold text-gray-700">Filters</h3>
-        <button @click="clearFilters" class="clear-filters-btn">
-          <span class="mdi mdi-filter-off"></span>
-          Clear All
-        </button>
-      </div>
-
-      <div class="filters-grid">
-        <div class="filter-group">
-          <label class="filter-label">Start Date</label>
-          <input v-model="filters.startDate" type="date" class="filter-input" />
-        </div>
-
-        <div class="filter-group">
-          <label class="filter-label">End Date</label>
-          <input v-model="filters.endDate" type="date" class="filter-input" />
-        </div>
-
-        <div class="filter-group">
-          <label class="filter-label">City</label>
-          <select v-model="filters.city" class="filter-input">
-            <option value="">All Cities</option>
-            <option v-for="city in availableCities" :key="city" :value="city">
-              {{ city }}
-            </option>
-          </select>
-        </div>
-
-        <div class="filter-group">
-          <label class="filter-label">Rental Company</label>
-          <select v-model="filters.rentalCompany" class="filter-input">
-            <option value="">All Companies</option>
-            <option v-for="company in availableRentalCompanies" :key="company" :value="company">
-              {{ company }}
-            </option>
-          </select>
-        </div>
-
-        <div class="filter-group">
-          <label class="filter-label">Vehicle Type</label>
-          <select v-model="filters.vehicleType" class="filter-input">
-            <option value="">All Types</option>
-            <option v-for="type in availableVehicleTypes" :key="type" :value="type">
-              {{ type }}
-            </option>
-          </select>
-        </div>
-
-        <div class="filter-group" style="display: flex; align-items: flex-end;">
-          <button @click="loadData" class="filter-input" style="background: #3b82f6; color: white; border: none; cursor: pointer; font-weight: 600;">
-            Apply Filters
-          </button>
-        </div>
-      </div>
-    </div>
+    <!-- Universal Filters -->
+    <UniversalFilters
+      :show-traveller="true"
+      :show-date-range="true"
+      :show-destinations="true"
+      :show-organization="false"
+      :show-status="true"
+      :show-supplier="false"
+      @filters-changed="handleFiltersChanged"
+    />
 
     <!-- Loading State -->
-    <div v-if="loading" class="loading-state">
-      <div class="loading-spinner"></div>
-      <p>Loading car hire data...</p>
+    <div v-if="loading" class="flex justify-center items-center py-12">
+      <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
     </div>
 
     <!-- Error State -->
-    <div v-if="error" class="error-state">
-      <span class="mdi mdi-alert-circle"></span>
-      <p>{{ error }}</p>
+    <div v-else-if="error" class="bg-red-50 border border-red-200 rounded-lg p-4">
+      <p class="text-red-800">{{ error }}</p>
+      <button @click="loadData" class="mt-2 text-sm text-red-600 hover:text-red-800 underline">Retry</button>
     </div>
 
-    <!-- Content -->
-    <div v-if="!loading && !error">
-      <!-- Summary Cards -->
-      <div class="summary-cards">
-        <div class="summary-card">
-          <div class="summary-card__icon bg-blue-100">
-            <span class="mdi mdi-car text-blue-600"></span>
+    <!-- Summary Cards -->
+    <div v-if="!loading && !error" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <!-- Total Bookings -->
+      <div class="bg-white rounded-xl shadow-sm p-6">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm font-medium text-gray-600">Total Bookings</p>
+            <p class="text-3xl font-bold text-gray-900 mt-2">{{ summaryStats.total_bookings }}</p>
           </div>
-          <div class="summary-card__content">
-            <p class="summary-card__label">Total Bookings</p>
-            <p class="summary-card__value">{{ summaryStats.total_bookings }}</p>
-          </div>
-        </div>
-
-        <div class="summary-card">
-          <div class="summary-card__icon bg-green-100">
-            <span class="mdi mdi-currency-usd text-green-600"></span>
-          </div>
-          <div class="summary-card__content">
-            <p class="summary-card__label">Total Spend</p>
-            <p class="summary-card__value">{{ formatCurrency(summaryStats.total_spend) }}</p>
-          </div>
-        </div>
-
-        <div class="summary-card">
-          <div class="summary-card__icon bg-purple-100">
-            <span class="mdi mdi-calendar-range text-purple-600"></span>
-          </div>
-          <div class="summary-card__content">
-            <p class="summary-card__label">Total Rental Days</p>
-            <p class="summary-card__value">{{ summaryStats.total_days }}</p>
-          </div>
-        </div>
-
-        <div class="summary-card">
-          <div class="summary-card__icon bg-orange-100">
-            <span class="mdi mdi-chart-line text-orange-600"></span>
-          </div>
-          <div class="summary-card__content">
-            <p class="summary-card__label">Avg Daily Rate</p>
-            <p class="summary-card__value">{{ formatCurrency(summaryStats.avg_daily_rate) }}</p>
+          <div class="bg-blue-100 p-3 rounded-full">
+            <span class="mdi mdi-car text-blue-600 text-2xl"></span>
           </div>
         </div>
       </div>
 
-      <!-- Charts -->
-      <div class="charts-section">
-        <div class="chart-container">
-          <div class="chart-header">
-            <h3 class="chart-title">Spend by Location</h3>
+      <!-- Total Spend -->
+      <div class="bg-white rounded-xl shadow-sm p-6">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm font-medium text-gray-600">Total Spend</p>
+            <p class="text-3xl font-bold text-gray-900 mt-2">{{ formatCurrency(summaryStats.total_spend) }}</p>
           </div>
-          <div class="chart-content">
-            <canvas ref="locationChartRef"></canvas>
-          </div>
-        </div>
-
-        <div class="chart-container">
-          <div class="chart-header">
-            <h3 class="chart-title">Spend by Rental Company</h3>
-          </div>
-          <div class="chart-content">
-            <canvas ref="rentalCompanyChartRef"></canvas>
+          <div class="bg-green-100 p-3 rounded-full">
+            <span class="mdi mdi-currency-usd text-green-600 text-2xl"></span>
           </div>
         </div>
       </div>
 
-      <!-- Bookings Table -->
-      <div class="table-section">
-        <div class="table-header">
-          <h3 class="text-xl font-semibold text-gray-800">Car Hire Bookings</h3>
-          <span class="text-sm text-gray-500">{{ carHireBookings.length }} bookings</span>
-        </div>
-
-        <div class="table-container">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Reference</th>
-                <th>Traveller</th>
-                <th>Rental Company</th>
-                <th>City</th>
-                <th>Vehicle</th>
-                <th>Pickup</th>
-                <th>Days</th>
-                <th>Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="booking in carHireBookings" :key="booking.id">
-                <td class="font-mono text-sm">{{ booking.agent_booking_reference }}</td>
-                <td>{{ booking.traveller_name }}</td>
-                <td>{{ getRentalInfo(booking) }}</td>
-                <td>{{ getCityInfo(booking) }}</td>
-                <td>{{ getVehicleInfo(booking) }}</td>
-                <td>{{ getPickupDate(booking) }}</td>
-                <td class="text-center">{{ getTotalDays(booking) }}</td>
-                <td class="font-semibold">{{ formatCurrency(booking.total_amount) }}</td>
-              </tr>
-            </tbody>
-          </table>
-
-          <div v-if="carHireBookings.length === 0" class="empty-state">
-            <span class="mdi mdi-car-off text-gray-300 text-6xl"></span>
-            <p class="text-gray-500 mt-4">No car hire bookings found</p>
+      <!-- Total Rental Days -->
+      <div class="bg-white rounded-xl shadow-sm p-6">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm font-medium text-gray-600">Total Rental Days</p>
+            <p class="text-3xl font-bold text-gray-900 mt-2">{{ summaryStats.total_days }}</p>
           </div>
+          <div class="bg-purple-100 p-3 rounded-full">
+            <span class="mdi mdi-calendar-range text-purple-600 text-2xl"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Avg Daily Rate -->
+      <div class="bg-white rounded-xl shadow-sm p-6">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm font-medium text-gray-600">Avg Daily Rate</p>
+            <p class="text-3xl font-bold text-gray-900 mt-2">{{ formatCurrency(summaryStats.avg_daily_rate) }}</p>
+          </div>
+          <div class="bg-orange-100 p-3 rounded-full">
+            <span class="mdi mdi-chart-line text-orange-600 text-2xl"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Charts -->
+    <div v-if="!loading && !error" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <!-- Location Chart -->
+      <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+        <div class="border-b border-gray-200 px-6 py-4">
+          <h3 class="text-lg font-semibold text-gray-900">Spend by Location</h3>
+        </div>
+        <div class="p-6" style="height: 400px;">
+          <canvas ref="locationChartRef"></canvas>
+        </div>
+      </div>
+
+      <!-- Rental Company Chart -->
+      <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+        <div class="border-b border-gray-200 px-6 py-4">
+          <h3 class="text-lg font-semibold text-gray-900">Spend by Rental Company</h3>
+        </div>
+        <div class="p-6" style="height: 400px;">
+          <canvas ref="rentalCompanyChartRef"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bookings Table -->
+    <div v-if="!loading && !error" class="bg-white rounded-xl shadow-sm overflow-hidden">
+      <div class="border-b border-gray-200 px-6 py-4 flex justify-between items-center">
+        <h3 class="text-lg font-semibold text-gray-900">Car Hire Bookings</h3>
+        <span class="text-sm text-gray-500">{{ carHireBookings.length }} bookings</span>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reference</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Traveller</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rental Company</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">City</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vehicle</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pickup</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Days</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+            </tr>
+          </thead>
+          <tbody class="bg-white divide-y divide-gray-200">
+            <tr v-for="booking in carHireBookings" :key="booking.id" class="hover:bg-gray-50">
+              <td class="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">{{ booking.agent_booking_reference }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ booking.traveller_name }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ getRentalInfo(booking) }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ getCityInfo(booking) }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ getVehicleInfo(booking) }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ getPickupDate(booking) }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">{{ getTotalDays(booking) }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{{ formatCurrency(booking.total_amount) }}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div v-if="carHireBookings.length === 0" class="text-center py-12">
+          <span class="mdi mdi-car-off text-gray-300 text-6xl"></span>
+          <p class="text-gray-500 mt-4">No car hire bookings found</p>
         </div>
       </div>
     </div>
@@ -553,261 +444,5 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-/* Same styles as other views */
-.car-hire-view {
-  padding: 2rem;
-  max-width: 1400px;
-  margin: 0 auto;
-}
-
-.page-header {
-  margin-bottom: 2rem;
-}
-
-.filters-card {
-  background: white;
-  border-radius: 12px;
-  padding: 1.5rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  margin-bottom: 2rem;
-}
-
-.filters-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
-}
-
-.clear-filters-btn {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  background: #f3f4f6;
-  border: none;
-  border-radius: 6px;
-  color: #6b7280;
-  font-size: 0.875rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.clear-filters-btn:hover {
-  background: #e5e7eb;
-  color: #374151;
-}
-
-.filters-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1rem;
-}
-
-.filter-group {
-  display: flex;
-  flex-direction: column;
-}
-
-.filter-label {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: #374151;
-  margin-bottom: 0.5rem;
-}
-
-.filter-input {
-  padding: 0.5rem 0.75rem;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  font-size: 0.875rem;
-}
-
-.filter-input:focus {
-  outline: none;
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-}
-
-.loading-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 4rem;
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-}
-
-.loading-spinner {
-  width: 40px;
-  height: 40px;
-  border: 4px solid #e5e7eb;
-  border-top-color: #3b82f6;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-  margin-bottom: 1rem;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.error-state {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 1rem 1.5rem;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  border-radius: 8px;
-  color: #dc2626;
-  margin-bottom: 2rem;
-}
-
-.error-state .mdi {
-  font-size: 1.5rem;
-}
-
-.summary-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 1.5rem;
-  margin-bottom: 2rem;
-}
-
-.summary-card {
-  background: white;
-  border-radius: 12px;
-  padding: 1.5rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
-.summary-card__icon {
-  width: 60px;
-  height: 60px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 28px;
-  flex-shrink: 0;
-}
-
-.summary-card__content {
-  flex: 1;
-}
-
-.summary-card__label {
-  color: #6b7280;
-  font-size: 0.875rem;
-  margin-bottom: 0.25rem;
-}
-
-.summary-card__value {
-  color: #111827;
-  font-size: 1.75rem;
-  font-weight: 700;
-  line-height: 1;
-}
-
-.charts-section {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-  gap: 1.5rem;
-  margin-bottom: 2rem;
-}
-
-.chart-container {
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  overflow: hidden;
-}
-
-.chart-header {
-  padding: 1.5rem;
-  border-bottom: 1px solid #e5e7eb;
-}
-
-.chart-title {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: #111827;
-}
-
-.chart-content {
-  padding: 1.5rem;
-  height: 400px;
-}
-
-.table-section {
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  overflow: hidden;
-}
-
-.table-header {
-  padding: 1.5rem;
-  border-bottom: 1px solid #e5e7eb;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.table-container {
-  overflow-x: auto;
-}
-
-.data-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.data-table th {
-  text-align: left;
-  padding: 1rem 1.5rem;
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: #6b7280;
-  background: #f9fafb;
-  border-bottom: 1px solid #e5e7eb;
-}
-
-.data-table td {
-  padding: 1rem 1.5rem;
-  border-bottom: 1px solid #e5e7eb;
-  font-size: 0.875rem;
-}
-
-.empty-state {
-  padding: 4rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-}
-
-@media (max-width: 768px) {
-  .car-hire-view {
-    padding: 1rem;
-  }
-
-  .summary-cards {
-    grid-template-columns: 1fr;
-  }
-
-  .charts-section {
-    grid-template-columns: 1fr;
-  }
-
-  .filters-grid {
-    grid-template-columns: 1fr;
-  }
-}
+/* Minimal scoped styles - most styling uses Tailwind classes */
 </style>

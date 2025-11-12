@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, nextTick } from 'vue'
 import bookingService from '@/services/bookingService'
 import { Chart, registerables } from 'chart.js'
+import UniversalFilters from '@/components/common/UniversalFilters.vue'
 
 // Register Chart.js components
 Chart.register(...registerables)
@@ -10,6 +11,13 @@ Chart.register(...registerables)
 const loading = ref(true)
 const error = ref(null)
 const bookings = ref([])
+const summary = ref({
+  total_spend: 0,
+  total_emissions: 0,
+  compliance_rate: 0,
+  booking_count: 0
+})
+const currentFilters = ref({})
 
 // Chart refs
 const airlineChartRef = ref(null)
@@ -19,124 +27,52 @@ let airlineChart = null
 let classChart = null
 let routeChart = null
 
-// Filters
-const filters = ref({
-  startDate: '',
-  endDate: '',
-  airline: '',
-  travelClass: '',
-  destination: '',
-})
-
-// Computed
+// Air bookings computed (backend filters, we just display air ones)
 const airBookings = computed(() => {
-  return bookings.value.filter(b => {
-    // A booking has air if it has air_bookings array with items
-    if (!b.air_bookings || b.air_bookings.length === 0) return false
-    
-    // Apply filters
-    if (filters.value.startDate && b.travel_date < filters.value.startDate) return false
-    if (filters.value.endDate && b.travel_date > filters.value.endDate) return false
-    
-    // Filter on any of the air_bookings
-    if (filters.value.airline) {
-      const hasAirline = b.air_bookings.some(air => 
-        air.primary_airline_name?.toLowerCase().includes(filters.value.airline.toLowerCase())
-      )
-      if (!hasAirline) return false
-    }
-    
-    if (filters.value.travelClass) {
-      const hasClass = b.air_bookings.some(air => 
-        air.travel_class === filters.value.travelClass
-      )
-      if (!hasClass) return false
-    }
-    
-    if (filters.value.destination) {
-      const hasDestination = b.air_bookings.some(air =>
-        air.destination_airport_iata_code?.includes(filters.value.destination.toUpperCase())
-      )
-      if (!hasDestination) return false
-    }
-    
-    return true
-  })
+  return bookings.value.filter(b => b.air_bookings && b.air_bookings.length > 0)
 })
 
+// Summary stats from backend
 const summaryStats = computed(() => {
-  const total = airBookings.value.length
-  const totalSpend = airBookings.value.reduce((sum, b) => sum + parseFloat(b.total_amount || 0), 0)
-  const avgSpend = total > 0 ? totalSpend / total : 0
-  
-  // Sum carbon from ALL air_bookings in each booking
-  const totalCarbon = airBookings.value.reduce((sum, b) => {
-    const bookingCarbon = (b.air_bookings || []).reduce((airSum, air) => {
-      const segmentCarbon = (air.segments || []).reduce((segSum, seg) => 
-        segSum + (parseFloat(seg.carbon_emissions_kg) || 0), 0)
-      return airSum + segmentCarbon
-    }, 0)
-    return sum + bookingCarbon
-  }, 0)
-
   return {
-    total_bookings: total,
-    total_spend: totalSpend,
-    avg_spend: avgSpend,
-    total_carbon_kg: totalCarbon,
+    total_bookings: summary.value.booking_count || airBookings.value.length,
+    total_spend: summary.value.total_spend || 0,
+    avg_spend: summary.value.booking_count > 0 ? summary.value.total_spend / summary.value.booking_count : 0,
+    total_carbon_kg: summary.value.total_emissions || 0,
   }
 })
 
-// Get unique airlines from all air_bookings
-const availableAirlines = computed(() => {
-  const airlines = new Set()
-  bookings.value.forEach(b => {
-    if (b.air_bookings) {
-      b.air_bookings.forEach(air => {
-        if (air.primary_airline_name) {
-          airlines.add(air.primary_airline_name)
-        }
-      })
-    }
-  })
-  return Array.from(airlines).sort()
-})
+// Removed availableAirlines and availableDestinations - not needed with UniversalFilters
 
-// Get unique destinations from all air_bookings
-const availableDestinations = computed(() => {
-  const destinations = new Set()
-  bookings.value.forEach(b => {
-    if (b.air_bookings) {
-      b.air_bookings.forEach(air => {
-        if (air.destination_airport_iata_code) {
-          destinations.add(air.destination_airport_iata_code)
-        }
-      })
-    }
-  })
-  return Array.from(destinations).sort()
-})
+// Handle filter changes from UniversalFilters
+const handleFiltersChanged = async (filters) => {
+  console.log('✈️ [AirView] Filters changed:', filters)
+  currentFilters.value = filters
+  await loadData(filters)
+}
 
 // Methods
-const loadData = async () => {
+const loadData = async (filters = {}) => {
   try {
     loading.value = true
     error.value = null
 
-    const params = {}
-    
-    if (filters.value.startDate) {
-      params.travel_date_after = filters.value.startDate
-    }
-    if (filters.value.endDate) {
-      params.travel_date_before = filters.value.endDate
+    console.log('🌐 [AirView] Loading air travel data with filters:', filters)
+
+    // bookingService handles filter transformation automatically
+    const data = await bookingService.getBookings(filters)
+    bookings.value = data.results || []
+
+    // Use backend summary statistics
+    if (data.summary) {
+      summary.value = data.summary
+      console.log('📊 [AirView] Backend summary:', summary.value)
     }
 
-    const response = await bookingService.getBookings(params)
-    bookings.value = response.results || response
+    console.log('✅ [AirView] Loaded', bookings.value.length, 'bookings,', airBookings.value.length, 'with flights')
 
   } catch (err) {
-    console.error('Error loading booking data:', err)
+    console.error('❌ [AirView] Error loading data:', err)
     error.value = 'Failed to load booking data. Please try again.'
   } finally {
     loading.value = false
@@ -308,16 +244,7 @@ const renderCharts = () => {
   }
 }
 
-const clearFilters = () => {
-  filters.value = {
-    startDate: '',
-    endDate: '',
-    airline: '',
-    travelClass: '',
-    destination: '',
-  }
-  loadData()
-}
+// Removed clearFilters - UniversalFilters handles this now
 
 const formatCurrency = (amount) => {
   return new Intl.NumberFormat('en-AU', {
@@ -393,195 +320,162 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="air-travel-view">
+  <div class="space-y-6">
     <!-- Header -->
-    <div class="page-header">
-      <h1 class="text-3xl font-bold text-gray-800">Air Travel Analytics</h1>
-      <p class="text-gray-600 mt-2">Analyze flight bookings, airline spending, and carbon emissions</p>
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Air Travel Analytics</h1>
+      <p class="mt-1 text-sm text-gray-500">Analyze flight bookings, airline spending, and carbon emissions</p>
     </div>
 
+    <!-- Universal Filters -->
+    <UniversalFilters
+      :show-traveller="true"
+      :show-date-range="true"
+      :show-destinations="true"
+      :show-organization="false"
+      :show-status="true"
+      :show-supplier="false"
+      @filters-changed="handleFiltersChanged"
+    />
+
     <!-- Loading State -->
-    <div v-if="loading" class="loading-state">
-      <div class="spinner"></div>
-      <p>Loading air travel data...</p>
+    <div v-if="loading" class="flex justify-center items-center py-12">
+      <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
     </div>
 
     <!-- Error State -->
-    <div v-else-if="error" class="error-state">
-      <span class="mdi mdi-alert-circle text-red-500 text-4xl"></span>
-      <p class="text-red-600 mt-2">{{ error }}</p>
-      <button @click="loadData" class="retry-btn">Retry</button>
+    <div v-else-if="error" class="bg-red-50 border border-red-200 rounded-lg p-4">
+      <p class="text-red-800">{{ error }}</p>
+      <button @click="loadData" class="mt-2 text-sm text-red-600 hover:text-red-800 underline">Retry</button>
     </div>
 
-    <!-- Content -->
-    <div v-else>
-      <!-- Filters -->
-      <div class="filters-card">
-        <div class="filters-header">
-          <h3 class="text-lg font-semibold text-gray-700">Filters</h3>
-          <button @click="clearFilters" class="clear-filters-btn">
-            <span class="mdi mdi-filter-off"></span>
-            Clear All
-          </button>
-        </div>
-
-        <div class="filters-grid">
-          <div class="filter-group">
-            <label class="filter-label">Start Date</label>
-            <input v-model="filters.startDate" @change="loadData" type="date" class="filter-input" />
+    <!-- Summary Cards -->
+    <div v-if="!loading && !error" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <!-- Total Flights -->
+      <div class="bg-white rounded-xl shadow-sm p-6">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm font-medium text-gray-600">Total Flights</p>
+            <p class="text-3xl font-bold text-gray-900 mt-2">{{ summaryStats.total_bookings }}</p>
           </div>
-
-          <div class="filter-group">
-            <label class="filter-label">End Date</label>
-            <input v-model="filters.endDate" @change="loadData" type="date" class="filter-input" />
-          </div>
-
-          <div class="filter-group">
-            <label class="filter-label">Airline</label>
-            <select v-model="filters.airline" class="filter-input">
-              <option value="">All Airlines</option>
-              <option v-for="airline in availableAirlines" :key="airline" :value="airline">
-                {{ airline }}
-              </option>
-            </select>
-          </div>
-
-          <div class="filter-group">
-            <label class="filter-label">Travel Class</label>
-            <select v-model="filters.travelClass" class="filter-input">
-              <option value="">All Classes</option>
-              <option value="ECONOMY">Economy</option>
-              <option value="PREMIUM_ECONOMY">Premium Economy</option>
-              <option value="BUSINESS">Business</option>
-              <option value="FIRST">First Class</option>
-            </select>
-          </div>
-
-          <div class="filter-group">
-            <label class="filter-label">Destination</label>
-            <select v-model="filters.destination" class="filter-input">
-              <option value="">All Destinations</option>
-              <option v-for="dest in availableDestinations" :key="dest" :value="dest">
-                {{ dest }}
-              </option>
-            </select>
+          <div class="bg-blue-100 p-3 rounded-full">
+            <span class="mdi mdi-airplane text-blue-600 text-2xl"></span>
           </div>
         </div>
       </div>
 
-      <!-- Summary Cards -->
-      <div class="summary-cards">
-        <div class="summary-card">
-          <div class="summary-card__icon bg-blue-100">
-            <span class="mdi mdi-airplane text-blue-600"></span>
+      <!-- Total Spend -->
+      <div class="bg-white rounded-xl shadow-sm p-6">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm font-medium text-gray-600">Total Spend</p>
+            <p class="text-3xl font-bold text-gray-900 mt-2">{{ formatCurrency(summaryStats.total_spend) }}</p>
           </div>
-          <div class="summary-card__content">
-            <p class="summary-card__label">Total Flights</p>
-            <p class="summary-card__value">{{ summaryStats.total_bookings }}</p>
-          </div>
-        </div>
-
-        <div class="summary-card">
-          <div class="summary-card__icon bg-green-100">
-            <span class="mdi mdi-currency-usd text-green-600"></span>
-          </div>
-          <div class="summary-card__content">
-            <p class="summary-card__label">Total Spend</p>
-            <p class="summary-card__value">{{ formatCurrency(summaryStats.total_spend) }}</p>
-          </div>
-        </div>
-
-        <div class="summary-card">
-          <div class="summary-card__icon bg-purple-100">
-            <span class="mdi mdi-chart-line text-purple-600"></span>
-          </div>
-          <div class="summary-card__content">
-            <p class="summary-card__label">Average Spend</p>
-            <p class="summary-card__value">{{ formatCurrency(summaryStats.avg_spend) }}</p>
-          </div>
-        </div>
-
-        <div class="summary-card">
-          <div class="summary-card__icon bg-orange-100">
-            <span class="mdi mdi-leaf text-orange-600"></span>
-          </div>
-          <div class="summary-card__content">
-            <p class="summary-card__label">Carbon Emissions</p>
-            <p class="summary-card__value">{{ summaryStats.total_carbon_kg.toFixed(0) }} kg</p>
-            <p class="summary-card__subtitle">CO₂ equivalent</p>
+          <div class="bg-green-100 p-3 rounded-full">
+            <span class="mdi mdi-currency-usd text-green-600 text-2xl"></span>
           </div>
         </div>
       </div>
 
-      <!-- Charts -->
-      <div class="charts-section">
-        <div class="chart-container">
-          <div class="chart-header">
-            <h3 class="chart-title">Spend by Airline</h3>
+      <!-- Average Spend -->
+      <div class="bg-white rounded-xl shadow-sm p-6">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm font-medium text-gray-600">Average Spend</p>
+            <p class="text-3xl font-bold text-gray-900 mt-2">{{ formatCurrency(summaryStats.avg_spend) }}</p>
           </div>
-          <div class="chart-content">
-            <canvas ref="airlineChartRef"></canvas>
-          </div>
-        </div>
-
-        <div class="chart-container">
-          <div class="chart-header">
-            <h3 class="chart-title">Cabin Class Distribution</h3>
-          </div>
-          <div class="chart-content">
-            <canvas ref="classChartRef"></canvas>
-          </div>
-        </div>
-
-        <div class="chart-container full-width">
-          <div class="chart-header">
-            <h3 class="chart-title">Top Routes by Spend</h3>
-          </div>
-          <div class="chart-content">
-            <canvas ref="routeChartRef"></canvas>
+          <div class="bg-purple-100 p-3 rounded-full">
+            <span class="mdi mdi-chart-line text-purple-600 text-2xl"></span>
           </div>
         </div>
       </div>
 
-      <!-- Bookings Table -->
-      <div class="table-section">
-        <div class="table-header">
-          <h3 class="text-xl font-semibold text-gray-800">Flight Bookings</h3>
-          <span class="text-sm text-gray-500">{{ airBookings.length }} bookings</span>
-        </div>
-
-        <div class="table-container">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Reference</th>
-                <th>Traveller</th>
-                <th>Route</th>
-                <th>Airline</th>
-                <th>Class</th>
-                <th>Travel Date</th>
-                <th>Amount</th>
-                <th>Carbon (kg)</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="booking in airBookings" :key="booking.id">
-                <td class="font-mono text-sm">{{ booking.agent_booking_reference }}</td>
-                <td>{{ booking.traveller_name }}</td>
-                <td>{{ getRoute(booking) }}</td>
-                <td>{{ getAirline(booking) }}</td>
-                <td>{{ getTravelClass(booking) }}</td>
-                <td>{{ formatDate(booking.travel_date) }}</td>
-                <td class="font-semibold">{{ formatCurrency(booking.total_amount) }}</td>
-                <td class="text-right">{{ getTotalCarbon(booking) }}</td>
-              </tr>
-            </tbody>
-          </table>
-
-          <div v-if="airBookings.length === 0" class="empty-state">
-            <span class="mdi mdi-airplane-off text-gray-300 text-6xl"></span>
-            <p class="text-gray-500 mt-4">No flight bookings found</p>
+      <!-- Carbon Emissions -->
+      <div class="bg-white rounded-xl shadow-sm p-6">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm font-medium text-gray-600">Carbon Emissions</p>
+            <p class="text-3xl font-bold text-gray-900 mt-2">{{ summaryStats.total_carbon_kg.toFixed(0) }}</p>
+            <p class="text-xs text-gray-500 mt-1">kg CO₂</p>
           </div>
+          <div class="bg-orange-100 p-3 rounded-full">
+            <span class="mdi mdi-leaf text-orange-600 text-2xl"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Charts -->
+    <div v-if="!loading && !error" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <!-- Airline Chart -->
+      <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+        <div class="border-b border-gray-200 px-6 py-4">
+          <h3 class="text-lg font-semibold text-gray-900">Spend by Airline</h3>
+        </div>
+        <div class="p-6" style="height: 400px;">
+          <canvas ref="airlineChartRef"></canvas>
+        </div>
+      </div>
+
+      <!-- Class Chart -->
+      <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+        <div class="border-b border-gray-200 px-6 py-4">
+          <h3 class="text-lg font-semibold text-gray-900">Cabin Class Distribution</h3>
+        </div>
+        <div class="p-6" style="height: 400px;">
+          <canvas ref="classChartRef"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Routes Chart (Full Width) -->
+    <div v-if="!loading && !error" class="bg-white rounded-xl shadow-sm overflow-hidden">
+      <div class="border-b border-gray-200 px-6 py-4">
+        <h3 class="text-lg font-semibold text-gray-900">Top Routes by Spend</h3>
+      </div>
+      <div class="p-6" style="height: 400px;">
+        <canvas ref="routeChartRef"></canvas>
+      </div>
+    </div>
+
+    <!-- Bookings Table -->
+    <div v-if="!loading && !error" class="bg-white rounded-xl shadow-sm overflow-hidden">
+      <div class="border-b border-gray-200 px-6 py-4 flex justify-between items-center">
+        <h3 class="text-lg font-semibold text-gray-900">Flight Bookings</h3>
+        <span class="text-sm text-gray-500">{{ airBookings.length }} bookings</span>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reference</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Traveller</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Route</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Airline</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Class</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Travel Date</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Carbon (kg)</th>
+            </tr>
+          </thead>
+          <tbody class="bg-white divide-y divide-gray-200">
+            <tr v-for="booking in airBookings" :key="booking.id" class="hover:bg-gray-50">
+              <td class="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">{{ booking.agent_booking_reference }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ booking.traveller_name }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ getRoute(booking) }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ getAirline(booking) }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ getTravelClass(booking) }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ formatDate(booking.travel_date) }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{{ formatCurrency(booking.total_amount) }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{{ getTotalCarbon(booking) }}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div v-if="airBookings.length === 0" class="text-center py-12">
+          <span class="mdi mdi-airplane-off text-gray-300 text-6xl"></span>
+          <p class="text-gray-500 mt-4">No flight bookings found</p>
         </div>
       </div>
     </div>
@@ -589,272 +483,5 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.air-travel-view {
-  padding: 2rem;
-  max-width: 1400px;
-  margin: 0 auto;
-}
-
-.page-header {
-  margin-bottom: 2rem;
-}
-
-.loading-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 4rem;
-}
-
-.spinner {
-  width: 50px;
-  height: 50px;
-  border: 4px solid #f3f4f6;
-  border-top-color: #3b82f6;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.error-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 4rem;
-}
-
-.retry-btn {
-  margin-top: 1rem;
-  padding: 0.5rem 1.5rem;
-  background: #3b82f6;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.retry-btn:hover {
-  background: #2563eb;
-}
-
-.filters-card {
-  background: white;
-  border-radius: 12px;
-  padding: 1.5rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  margin-bottom: 2rem;
-}
-
-.filters-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
-}
-
-.clear-filters-btn {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  background: #f3f4f6;
-  border: none;
-  border-radius: 6px;
-  color: #6b7280;
-  font-size: 0.875rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.clear-filters-btn:hover {
-  background: #e5e7eb;
-  color: #374151;
-}
-
-.filters-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1rem;
-}
-
-.filter-group {
-  display: flex;
-  flex-direction: column;
-}
-
-.filter-label {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: #374151;
-  margin-bottom: 0.5rem;
-}
-
-.filter-input {
-  padding: 0.5rem 0.75rem;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  font-size: 0.875rem;
-}
-
-.filter-input:focus {
-  outline: none;
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-}
-
-.summary-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 1.5rem;
-  margin-bottom: 2rem;
-}
-
-.summary-card {
-  background: white;
-  border-radius: 12px;
-  padding: 1.5rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
-.summary-card__icon {
-  width: 60px;
-  height: 60px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 28px;
-  flex-shrink: 0;
-}
-
-.summary-card__content {
-  flex: 1;
-}
-
-.summary-card__label {
-  color: #6b7280;
-  font-size: 0.875rem;
-  margin-bottom: 0.25rem;
-}
-
-.summary-card__value {
-  color: #111827;
-  font-size: 1.75rem;
-  font-weight: 700;
-  line-height: 1;
-}
-
-.summary-card__subtitle {
-  color: #9ca3af;
-  font-size: 0.75rem;
-  margin-top: 0.25rem;
-}
-
-.charts-section {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-  gap: 1.5rem;
-  margin-bottom: 2rem;
-}
-
-.chart-container {
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  overflow: hidden;
-}
-
-.chart-container.full-width {
-  grid-column: 1 / -1;
-}
-
-.chart-header {
-  padding: 1.5rem;
-  border-bottom: 1px solid #e5e7eb;
-}
-
-.chart-title {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: #111827;
-}
-
-.chart-content {
-  padding: 1.5rem;
-  height: 400px;
-}
-
-.table-section {
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  overflow: hidden;
-}
-
-.table-header {
-  padding: 1.5rem;
-  border-bottom: 1px solid #e5e7eb;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.table-container {
-  overflow-x: auto;
-}
-
-.data-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.data-table th {
-  text-align: left;
-  padding: 1rem 1.5rem;
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: #6b7280;
-  background: #f9fafb;
-  border-bottom: 1px solid #e5e7eb;
-}
-
-.data-table td {
-  padding: 1rem 1.5rem;
-  border-bottom: 1px solid #e5e7eb;
-  font-size: 0.875rem;
-}
-
-.empty-state {
-  padding: 4rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-}
-
-@media (max-width: 768px) {
-  .air-travel-view {
-    padding: 1rem;
-  }
-
-  .summary-cards {
-    grid-template-columns: 1fr;
-  }
-
-  .charts-section {
-    grid-template-columns: 1fr;
-  }
-
-  .filters-grid {
-    grid-template-columns: 1fr;
-  }
-}
+/* Minimal scoped styles - most styling uses Tailwind classes */
 </style>
