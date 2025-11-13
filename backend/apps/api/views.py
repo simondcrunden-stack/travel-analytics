@@ -728,8 +728,10 @@ class BookingViewSet(viewsets.ModelViewSet):
             from apps.reference_data.models import Airline
             airline_codes = AirBooking.objects.filter(
                 booking__in=base_queryset,
-                carrier_iata_code__isnull=False
-            ).values_list('carrier_iata_code', flat=True).distinct()
+                primary_airline_iata_code__isnull=False
+            ).exclude(
+                primary_airline_iata_code=''
+            ).values_list('primary_airline_iata_code', flat=True).distinct()
 
             airlines = Airline.objects.filter(iata_code__in=airline_codes)
 
