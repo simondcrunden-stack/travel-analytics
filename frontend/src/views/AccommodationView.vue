@@ -331,6 +331,7 @@ onMounted(async () => {
       :show-supplier="true"
       supplier-label="Hotel Chain"
       supplier-placeholder="Marriott, Hilton, Accor..."
+      supplier-type="hotel"
       @filters-changed="handleFiltersChanged"
     />
 

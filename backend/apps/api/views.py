@@ -689,8 +689,207 @@ class BookingViewSet(viewsets.ModelViewSet):
         
         # Sort by name
         country_data.sort(key=lambda x: x['name'])
-        
+
         return Response(country_data)
+
+    @action(detail=False, methods=['get'])
+    def supplier_autocomplete(self, request):
+        """
+        Get autocomplete suggestions for suppliers based on type.
+        Query params:
+        - type: 'airline', 'hotel', or 'car_rental'
+        - search: optional search query
+        - organization: optional organization filter
+        """
+        user = request.user
+        supplier_type = request.query_params.get('type', '')
+        search_query = request.query_params.get('search', '')
+        organization_id = request.query_params.get('organization')
+
+        # Build base queryset using same logic as get_queryset()
+        if user.user_type == 'ADMIN':
+            base_queryset = Booking.objects.all()
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            base_queryset = Booking.objects.filter(
+                Q(organization=user.organization) |
+                Q(organization__travel_agent=user.organization)
+            )
+        else:
+            base_queryset = Booking.objects.filter(organization=user.organization)
+
+        # Apply organization filter if provided
+        if organization_id:
+            base_queryset = base_queryset.filter(organization_id=organization_id)
+
+        results = []
+
+        if supplier_type == 'airline':
+            # Get airlines from air bookings
+            from apps.reference_data.models import Airline
+            airline_codes = AirBooking.objects.filter(
+                booking__in=base_queryset,
+                carrier_iata_code__isnull=False
+            ).values_list('carrier_iata_code', flat=True).distinct()
+
+            airlines = Airline.objects.filter(iata_code__in=airline_codes)
+
+            if search_query:
+                airlines = airlines.filter(
+                    Q(name__icontains=search_query) |
+                    Q(iata_code__icontains=search_query)
+                )
+
+            results = [
+                {
+                    'value': airline.name,
+                    'label': airline.name,
+                    'subtitle': airline.iata_code
+                }
+                for airline in airlines[:50]
+            ]
+
+        elif supplier_type == 'hotel':
+            # Get unique hotel names and chains
+            hotels = AccommodationBooking.objects.filter(
+                booking__in=base_queryset
+            ).values('hotel_name', 'hotel_chain').distinct()
+
+            if search_query:
+                hotels = hotels.filter(
+                    Q(hotel_name__icontains=search_query) |
+                    Q(hotel_chain__icontains=search_query)
+                )
+
+            # Prioritize hotel chains for cleaner filtering
+            hotel_chains = set()
+            hotel_names = set()
+
+            for hotel in hotels:
+                if hotel['hotel_chain']:
+                    hotel_chains.add(hotel['hotel_chain'])
+                if hotel['hotel_name']:
+                    hotel_names.add(hotel['hotel_name'])
+
+            # Return chains first, then individual hotels
+            results = []
+            for chain in sorted(hotel_chains):
+                results.append({
+                    'value': chain,
+                    'label': chain,
+                    'subtitle': 'Hotel Chain'
+                })
+
+            # Limit total results
+            results = results[:50]
+
+        elif supplier_type == 'car_rental':
+            # Get unique rental companies
+            companies = CarHireBooking.objects.filter(
+                booking__in=base_queryset,
+                rental_company__isnull=False
+            ).values_list('rental_company', flat=True).distinct()
+
+            if search_query:
+                companies = CarHireBooking.objects.filter(
+                    booking__in=base_queryset,
+                    rental_company__icontains=search_query
+                ).values_list('rental_company', flat=True).distinct()
+
+            results = [
+                {
+                    'value': company,
+                    'label': company,
+                    'subtitle': None
+                }
+                for company in sorted(companies)[:50]
+            ]
+
+        return Response(results)
+
+    @action(detail=False, methods=['get'])
+    def city_autocomplete(self, request):
+        """
+        Get autocomplete suggestions for cities.
+        Query params:
+        - search: optional search query
+        - organization: optional organization filter
+        """
+        user = request.user
+        search_query = request.query_params.get('search', '')
+        organization_id = request.query_params.get('organization')
+
+        # Build base queryset using same logic as get_queryset()
+        if user.user_type == 'ADMIN':
+            base_queryset = Booking.objects.all()
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            base_queryset = Booking.objects.filter(
+                Q(organization=user.organization) |
+                Q(organization__travel_agent=user.organization)
+            )
+        else:
+            base_queryset = Booking.objects.filter(organization=user.organization)
+
+        # Apply organization filter if provided
+        if organization_id:
+            base_queryset = base_queryset.filter(organization_id=organization_id)
+
+        cities = set()
+
+        # Get cities from air segments (via airports)
+        from apps.reference_data.models import Airport
+        air_segments = AirSegment.objects.filter(
+            air_booking__booking__in=base_queryset
+        ).values_list('origin_airport_iata_code', 'destination_airport_iata_code')
+
+        iata_codes = set()
+        for origin_code, dest_code in air_segments:
+            if origin_code:
+                iata_codes.add(origin_code)
+            if dest_code:
+                iata_codes.add(dest_code)
+
+        if iata_codes:
+            airport_cities = Airport.objects.filter(
+                iata_code__in=iata_codes
+            ).values_list('city', flat=True).distinct()
+            cities.update(airport_cities)
+
+        # Get cities from accommodation
+        accommodation_cities = AccommodationBooking.objects.filter(
+            booking__in=base_queryset,
+            city__isnull=False
+        ).values_list('city', flat=True).distinct()
+        cities.update(accommodation_cities)
+
+        # Get cities from car hire
+        car_pickup_cities = CarHireBooking.objects.filter(
+            booking__in=base_queryset,
+            pickup_city__isnull=False
+        ).values_list('pickup_city', flat=True).distinct()
+        cities.update(car_pickup_cities)
+
+        car_dropoff_cities = CarHireBooking.objects.filter(
+            booking__in=base_queryset,
+            dropoff_city__isnull=False
+        ).values_list('dropoff_city', flat=True).distinct()
+        cities.update(car_dropoff_cities)
+
+        # Filter by search query if provided
+        if search_query:
+            cities = [city for city in cities if search_query.lower() in city.lower()]
+
+        # Sort and format results
+        city_list = sorted(cities)[:50]
+        results = [
+            {
+                'value': city,
+                'label': city,
+                'subtitle': None
+            }
+            for city in city_list
+        ]
+
+        return Response(results)
 
 
 # ============================================================================

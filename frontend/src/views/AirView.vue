@@ -395,6 +395,7 @@ onMounted(async () => {
       :show-supplier="true"
       supplier-label="Airline"
       supplier-placeholder="Qantas Airways, Emirates..."
+      supplier-type="airline"
       @filters-changed="handleFiltersChanged"
     />
 

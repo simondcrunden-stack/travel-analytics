@@ -221,12 +221,14 @@
           <!-- City/Location Filter -->
           <div v-if="showDestinations">
             <label class="mb-2 block text-sm font-medium text-gray-700">City/Location</label>
-            <input
+            <Autocomplete
               v-model="localFilters.city"
-              type="text"
+              :options="cityOptions"
+              :loading="isLoadingCities"
               placeholder="Sydney, Melbourne..."
-              class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-              @input="emitFilters"
+              no-results-text="No cities found"
+              @search="handleCitySearch"
+              @update:model-value="handleCityChange"
             />
           </div>
 
@@ -248,12 +250,14 @@
           <!-- Supplier Filter -->
           <div v-if="showSupplier">
             <label class="mb-2 block text-sm font-medium text-gray-700">{{ supplierLabel || 'Supplier' }}</label>
-            <input
+            <Autocomplete
               v-model="localFilters.supplier"
-              type="text"
+              :options="supplierOptions"
+              :loading="isLoadingSuppliers"
               :placeholder="supplierPlaceholder || 'Supplier name...'"
-              class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-              @input="emitFilters"
+              no-results-text="No suppliers found"
+              @search="handleSupplierSearch"
+              @update:model-value="handleSupplierChange"
             />
           </div>
         </div>
@@ -330,6 +334,7 @@ import {
 import api from '@/services/api'
 import { bookingService, userService } from '@/services/api'
 import MultiSelect from './MultiSelect.vue'
+import Autocomplete from './Autocomplete.vue'
 
 // Props
 const props = defineProps({
@@ -365,6 +370,11 @@ const props = defineProps({
     type: String,
     default: 'Supplier name...',
   },
+  supplierType: {
+    type: String,
+    default: 'airline', // 'airline', 'hotel', or 'car_rental'
+    validator: (value) => ['airline', 'hotel', 'car_rental'].includes(value),
+  },
 })
 
 // Emits
@@ -376,6 +386,10 @@ const travellers = ref([])
 const organizations = ref([])
 const countries = ref([])
 const isLoadingCountries = ref(false)
+const supplierOptions = ref([])
+const isLoadingSuppliers = ref(false)
+const cityOptions = ref([])
+const isLoadingCities = ref(false)
 const showSaveButton = ref(false)
 const isSaving = ref(false)
 const homeCountry = ref('AU')
@@ -505,10 +519,22 @@ watch(
         console.log('🧹 Clearing countries due to organization change')
         localFilters.countries = []
       }
+      if (localFilters.supplier) {
+        console.log('🧹 Clearing supplier due to organization change')
+        localFilters.supplier = ''
+      }
+      if (localFilters.city) {
+        console.log('🧹 Clearing city due to organization change')
+        localFilters.city = ''
+      }
 
       // Reload filtered options
       if (props.showTraveller) loadTravellers()
-      if (props.showDestinations) loadAvailableCountries()
+      if (props.showDestinations) {
+        loadAvailableCountries()
+        loadCityAutocomplete()
+      }
+      if (props.showSupplier) loadSupplierAutocomplete()
     }
   }
 )
@@ -740,6 +766,87 @@ const loadAvailableCountries = async () => {
   }
 }
 
+// Load supplier autocomplete suggestions
+const loadSupplierAutocomplete = async (search = '') => {
+  if (!props.showSupplier) return
+
+  try {
+    isLoadingSuppliers.value = true
+
+    const params = {
+      type: props.supplierType,
+      search
+    }
+
+    // Filter by organization if selected
+    if (localFilters.organization) {
+      params.organization = localFilters.organization
+    }
+
+    console.log('🔍 Loading supplier autocomplete:', params)
+
+    const response = await api.get('/bookings/supplier_autocomplete/', { params })
+    supplierOptions.value = response.data || []
+
+    console.log(`✅ Loaded ${supplierOptions.value.length} supplier options`)
+  } catch (error) {
+    console.error('Failed to load supplier autocomplete:', error)
+    supplierOptions.value = []
+  } finally {
+    isLoadingSuppliers.value = false
+  }
+}
+
+// Load city autocomplete suggestions
+const loadCityAutocomplete = async (search = '') => {
+  if (!props.showDestinations) return
+
+  try {
+    isLoadingCities.value = true
+
+    const params = { search }
+
+    // Filter by organization if selected
+    if (localFilters.organization) {
+      params.organization = localFilters.organization
+    }
+
+    console.log('🏙️ Loading city autocomplete:', params)
+
+    const response = await api.get('/bookings/city_autocomplete/', { params })
+    cityOptions.value = response.data || []
+
+    console.log(`✅ Loaded ${cityOptions.value.length} city options`)
+  } catch (error) {
+    console.error('Failed to load city autocomplete:', error)
+    cityOptions.value = []
+  } finally {
+    isLoadingCities.value = false
+  }
+}
+
+// Handle supplier search
+const handleSupplierSearch = (query) => {
+  loadSupplierAutocomplete(query)
+}
+
+// Handle supplier change
+const handleSupplierChange = (value) => {
+  localFilters.supplier = value
+  emitFilters()
+}
+
+// Handle city search
+const handleCitySearch = (query) => {
+  loadCityAutocomplete(query)
+}
+
+// Handle city change
+const handleCityChange = (value) => {
+  localFilters.city = value
+  emitFilters()
+}
+
 // Load user's saved filter preferences
 const loadUserPreferences = async () => {
   try {
@@ -781,7 +888,11 @@ const saveAsDefault = async () => {
 onMounted(() => {
   if (props.showTraveller) loadTravellers()
   if (props.showOrganization) loadOrganizations()
-  loadAvailableCountries()
+  if (props.showDestinations) {
+    loadAvailableCountries()
+    loadCityAutocomplete()
+  }
+  if (props.showSupplier) loadSupplierAutocomplete()
   loadUserPreferences()
 })
 
