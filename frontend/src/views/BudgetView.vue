@@ -289,8 +289,10 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
+import api from '@/services/api'
 import UniversalFilters from '@/components/common/UniversalFilters.vue'
+import { transformFiltersForBackend } from '@/utils/filterTransformer'
 import {
   mdiCurrencyUsd,
   mdiChartLine,
@@ -328,11 +330,42 @@ const fetchBudgets = async () => {
     loading.value = true
     error.value = null
 
-    // Generate sample budget data
-    budgets.value = generateSampleBudgets()
+    const params = transformFiltersForBackend(universalFilters.value)
+
+    // Add view-specific params
+    if (viewFilters.value.search) params.search = viewFilters.value.search
+    if (selectedFiscalYear.value) params.fiscal_year__year_label = selectedFiscalYear.value
+
+    console.log('💰 [BudgetView] Fetching budgets with params:', params)
+
+    const response = await api.get('/budgets/', { params })
+    const budgetsData = response.data.results || []
+
+    console.log('✅ [BudgetView] Loaded budgets:', budgetsData.length)
+
+    // Transform backend data to frontend format
+    budgets.value = budgetsData.map(budget => ({
+      id: budget.id,
+      organization: budget.organization_name,
+      costCenter: budget.cost_center,
+      costCenterName: budget.cost_center_name,
+      total: parseFloat(budget.total_budget),
+      spent: budget.budget_status.spent,
+      remaining: budget.budget_status.remaining,
+      percentage: Math.round(budget.budget_status.percentage),
+      status: budget.budget_status.status,
+      airBudget: parseFloat(budget.air_budget),
+      airSpent: budget.category_spending.air,
+      hotelBudget: parseFloat(budget.accommodation_budget),
+      hotelSpent: budget.category_spending.accommodation,
+      carBudget: parseFloat(budget.car_hire_budget),
+      carSpent: budget.category_spending.car_hire,
+      otherBudget: parseFloat(budget.other_budget),
+      otherSpent: budget.category_spending.other,
+    }))
   } catch (err) {
     error.value = 'Failed to load budget data'
-    console.error(err)
+    console.error('Error loading budgets:', err)
   } finally {
     loading.value = false
   }
@@ -518,6 +551,15 @@ const clearFilters = () => {
     search: '',
   }
 }
+
+// Watchers for view-specific filters
+watch(selectedFiscalYear, () => {
+  fetchBudgets()
+})
+
+watch(() => viewFilters.value.search, () => {
+  fetchBudgets()
+})
 
 // Lifecycle
 onMounted(() => {

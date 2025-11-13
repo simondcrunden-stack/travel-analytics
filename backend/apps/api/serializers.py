@@ -229,7 +229,8 @@ class BudgetSerializer(serializers.ModelSerializer):
     organization_name = serializers.CharField(source='organization.name', read_only=True)
     fiscal_year_label = serializers.CharField(source='fiscal_year.year_label', read_only=True)
     budget_status = serializers.SerializerMethodField()
-    
+    category_spending = serializers.SerializerMethodField()
+
     class Meta:
         model = Budget
         fields = [
@@ -238,12 +239,23 @@ class BudgetSerializer(serializers.ModelSerializer):
             'total_budget', 'air_budget', 'accommodation_budget',
             'car_hire_budget', 'other_budget', 'currency',
             'warning_threshold', 'critical_threshold', 'budget_status',
-            'is_active', 'notes'
+            'category_spending', 'is_active', 'notes'
         ]
-    
+
     def get_budget_status(self, obj):
         """Get current budget utilization"""
         return obj.get_budget_status()
+
+    def get_category_spending(self, obj):
+        """Get spending breakdown by category"""
+        spending = obj.get_spent_by_category()
+        # Convert Decimal to float for JSON serialization
+        return {
+            'air': float(spending['air']),
+            'accommodation': float(spending['accommodation']),
+            'car_hire': float(spending['car_hire']),
+            'other': float(spending['other'])
+        }
 
 
 class BudgetAlertSerializer(serializers.ModelSerializer):
