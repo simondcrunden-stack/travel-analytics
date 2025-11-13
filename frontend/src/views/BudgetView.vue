@@ -181,10 +181,10 @@
               </span>
             </div>
 
-            <!-- Overall Progress -->
-            <div class="mb-4">
+            <!-- Budget Progress -->
+            <div>
               <div class="flex items-center justify-between mb-2">
-                <span class="text-sm font-medium text-gray-700">Overall Budget</span>
+                <span class="text-sm font-medium text-gray-700">Budget Utilization</span>
                 <span class="text-sm text-gray-600">
                   {{ formatCurrency(budget.spent) }} / {{ formatCurrency(budget.total) }}
                 </span>
@@ -201,85 +201,6 @@
                 <span class="text-sm font-medium text-gray-900">
                   {{ formatCurrency(budget.remaining) }} remaining
                 </span>
-              </div>
-            </div>
-
-            <!-- Category Breakdown -->
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 pt-4 border-t border-gray-200">
-              <!-- Air -->
-              <div>
-                <div class="flex items-center justify-between mb-2">
-                  <span class="text-xs text-gray-600">Air</span>
-                  <span class="text-xs font-medium text-gray-900">
-                    {{ Math.round((budget.airSpent / budget.airBudget) * 100) }}%
-                  </span>
-                </div>
-                <div class="w-full bg-gray-200 rounded-full h-2">
-                  <div
-                    class="bg-blue-600 h-2 rounded-full"
-                    :style="{ width: `${Math.min((budget.airSpent / budget.airBudget) * 100, 100)}%` }"
-                  ></div>
-                </div>
-                <p class="text-xs text-gray-600 mt-1">
-                  {{ formatCurrency(budget.airSpent) }} / {{ formatCurrency(budget.airBudget) }}
-                </p>
-              </div>
-
-              <!-- Accommodation -->
-              <div>
-                <div class="flex items-center justify-between mb-2">
-                  <span class="text-xs text-gray-600">Accommodation</span>
-                  <span class="text-xs font-medium text-gray-900">
-                    {{ Math.round((budget.hotelSpent / budget.hotelBudget) * 100) }}%
-                  </span>
-                </div>
-                <div class="w-full bg-gray-200 rounded-full h-2">
-                  <div
-                    class="bg-purple-600 h-2 rounded-full"
-                    :style="{ width: `${Math.min((budget.hotelSpent / budget.hotelBudget) * 100, 100)}%` }"
-                  ></div>
-                </div>
-                <p class="text-xs text-gray-600 mt-1">
-                  {{ formatCurrency(budget.hotelSpent) }} / {{ formatCurrency(budget.hotelBudget) }}
-                </p>
-              </div>
-
-              <!-- Car Hire -->
-              <div>
-                <div class="flex items-center justify-between mb-2">
-                  <span class="text-xs text-gray-600">Car Hire</span>
-                  <span class="text-xs font-medium text-gray-900">
-                    {{ Math.round((budget.carSpent / budget.carBudget) * 100) }}%
-                  </span>
-                </div>
-                <div class="w-full bg-gray-200 rounded-full h-2">
-                  <div
-                    class="bg-green-600 h-2 rounded-full"
-                    :style="{ width: `${Math.min((budget.carSpent / budget.carBudget) * 100, 100)}%` }"
-                  ></div>
-                </div>
-                <p class="text-xs text-gray-600 mt-1">
-                  {{ formatCurrency(budget.carSpent) }} / {{ formatCurrency(budget.carBudget) }}
-                </p>
-              </div>
-
-              <!-- Other -->
-              <div>
-                <div class="flex items-center justify-between mb-2">
-                  <span class="text-xs text-gray-600">Other</span>
-                  <span class="text-xs font-medium text-gray-900">
-                    {{ Math.round((budget.otherSpent / budget.otherBudget) * 100) }}%
-                  </span>
-                </div>
-                <div class="w-full bg-gray-200 rounded-full h-2">
-                  <div
-                    class="bg-orange-600 h-2 rounded-full"
-                    :style="{ width: `${Math.min((budget.otherSpent / budget.otherBudget) * 100, 100)}%` }"
-                  ></div>
-                </div>
-                <p class="text-xs text-gray-600 mt-1">
-                  {{ formatCurrency(budget.otherSpent) }} / {{ formatCurrency(budget.otherBudget) }}
-                </p>
               </div>
             </div>
           </div>
@@ -377,18 +298,10 @@ const fetchBudgets = async () => {
       costCenter: budget.cost_center,
       costCenterName: budget.cost_center_name,
       total: parseFloat(budget.total_budget),
-      spent: budget.budget_status.spent,
-      remaining: budget.budget_status.remaining,
+      spent: parseFloat(budget.budget_status.spent),
+      remaining: parseFloat(budget.budget_status.remaining),
       percentage: Math.round(budget.budget_status.percentage),
       status: budget.budget_status.status,
-      airBudget: parseFloat(budget.air_budget),
-      airSpent: budget.category_spending.air,
-      hotelBudget: parseFloat(budget.accommodation_budget),
-      hotelSpent: budget.category_spending.accommodation,
-      carBudget: parseFloat(budget.car_hire_budget),
-      carSpent: budget.category_spending.car_hire,
-      otherBudget: parseFloat(budget.other_budget),
-      otherSpent: budget.category_spending.other,
     }))
   } catch (err) {
     error.value = 'Failed to load budget data'
@@ -396,107 +309,6 @@ const fetchBudgets = async () => {
   } finally {
     loading.value = false
   }
-}
-
-// Generate sample budgets
-const generateSampleBudgets = () => {
-  return [
-    {
-      id: 1,
-      organization: 'TechCorp Australia',
-      costCenter: 'ENG-001',
-      costCenterName: 'Engineering Department',
-      total: 150000,
-      spent: 98500,
-      remaining: 51500,
-      percentage: 66,
-      status: 'OK',
-      airBudget: 100000,
-      airSpent: 68000,
-      hotelBudget: 35000,
-      hotelSpent: 22000,
-      carBudget: 10000,
-      carSpent: 6500,
-      otherBudget: 5000,
-      otherSpent: 2000,
-    },
-    {
-      id: 2,
-      organization: 'TechCorp Australia',
-      costCenter: 'SAL-001',
-      costCenterName: 'Sales Department',
-      total: 200000,
-      spent: 168000,
-      remaining: 32000,
-      percentage: 84,
-      status: 'WARNING',
-      airBudget: 140000,
-      airSpent: 115000,
-      hotelBudget: 45000,
-      hotelSpent: 38000,
-      carBudget: 12000,
-      carSpent: 11000,
-      otherBudget: 3000,
-      otherSpent: 4000,
-    },
-    {
-      id: 3,
-      organization: 'TechCorp Australia',
-      costCenter: 'MKT-001',
-      costCenterName: 'Marketing Department',
-      total: 80000,
-      spent: 78500,
-      remaining: 1500,
-      percentage: 98,
-      status: 'CRITICAL',
-      airBudget: 50000,
-      airSpent: 49000,
-      hotelBudget: 22000,
-      hotelSpent: 21500,
-      carBudget: 6000,
-      carSpent: 6000,
-      otherBudget: 2000,
-      otherSpent: 2000,
-    },
-    {
-      id: 4,
-      organization: 'Retail Solutions Group',
-      costCenter: 'STO-001',
-      costCenterName: 'Store Operations',
-      total: 80000,
-      spent: 45200,
-      remaining: 34800,
-      percentage: 57,
-      status: 'OK',
-      airBudget: 50000,
-      airSpent: 28000,
-      hotelBudget: 22000,
-      hotelSpent: 12000,
-      carBudget: 6000,
-      carSpent: 4000,
-      otherBudget: 2000,
-      otherSpent: 1200,
-    },
-    {
-      id: 5,
-      organization: 'Retail Solutions Group',
-      costCenter: 'SUP-001',
-      costCenterName: 'Supply Chain',
-      total: 120000,
-      spent: 102000,
-      remaining: 18000,
-      percentage: 85,
-      status: 'WARNING',
-      airBudget: 85000,
-      airSpent: 72000,
-      hotelBudget: 25000,
-      hotelSpent: 21000,
-      carBudget: 8000,
-      carSpent: 7000,
-      otherBudget: 2000,
-      otherSpent: 2000,
-    },
-  ]
 }
 
 // Summary statistics
