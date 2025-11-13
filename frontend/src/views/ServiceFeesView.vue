@@ -8,9 +8,9 @@
 
     <!-- Universal Filters -->
     <UniversalFilters
-      :show-traveller="true"
+      :show-traveller="false"
       :show-date-range="true"
-      :show-destinations="true"
+      :show-destinations="false"
       :show-organization="true"
       :show-status="false"
       :show-supplier="false"
@@ -30,15 +30,15 @@
             class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
           >
             <option value="">All Fee Types</option>
-            <option value="ONLINE_DOMESTIC">Online Domestic</option>
-            <option value="ONLINE_INTERNATIONAL">Online International</option>
-            <option value="OFFLINE_DOMESTIC">Offline Domestic</option>
-            <option value="OFFLINE_INTERNATIONAL">Offline International</option>
+            <option value="BOOKING_ONLINE_DOM">Online Booking - Domestic</option>
+            <option value="BOOKING_ONLINE_INTL">Online Booking - International</option>
+            <option value="BOOKING_OFFLINE_DOM">Offline Booking - Domestic</option>
+            <option value="BOOKING_OFFLINE_INTL">Offline Booking - International</option>
             <option value="CHANGE_FEE">Change Fee</option>
             <option value="REFUND_FEE">Refund Fee</option>
-            <option value="AFTER_HOURS">After Hours</option>
-            <option value="CONSULTATION">Consultation</option>
-            <option value="OTHER">Other</option>
+            <option value="AFTER_HOURS">After Hours Fee</option>
+            <option value="CONSULTATION">Consultation Fee</option>
+            <option value="OTHER">Other Fee</option>
           </select>
         </div>
 
@@ -51,8 +51,9 @@
             class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
           >
             <option value="">All Channels</option>
-            <option value="ONLINE">Online</option>
-            <option value="OFFLINE">Offline</option>
+            <option value="Online">Online</option>
+            <option value="Offline">Offline</option>
+            <option value="Mobile">Mobile</option>
           </select>
         </div>
 
@@ -194,15 +195,18 @@
                   {{ fee.description || 'N/A' }}
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  <span v-if="fee.fee_type && fee.fee_type.includes('ONLINE')" class="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800">
+                  <span v-if="fee.booking_channel === 'Online' || (fee.fee_type && fee.fee_type.includes('ONLINE'))" class="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800">
                     Online
+                  </span>
+                  <span v-else-if="fee.booking_channel === 'Mobile'" class="px-2 py-1 text-xs rounded-full bg-purple-100 text-purple-800">
+                    Mobile
                   </span>
                   <span v-else class="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-800">
                     Offline
                   </span>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900">
-                  {{ fee.currency || 'AUD' }} ${{ formatNumber(fee.amount) }}
+                  {{ fee.currency || 'AUD' }} ${{ formatNumber(fee.fee_amount) }}
                 </td>
               </tr>
               <tr v-if="paginatedFees.length === 0">
@@ -334,15 +338,15 @@ const formatFeeType = (feeType) => {
   if (!feeType) return 'N/A'
 
   const typeMap = {
-    'ONLINE_DOMESTIC': 'Online Domestic',
-    'ONLINE_INTERNATIONAL': 'Online International',
-    'OFFLINE_DOMESTIC': 'Offline Domestic',
-    'OFFLINE_INTERNATIONAL': 'Offline International',
+    'BOOKING_ONLINE_DOM': 'Online Booking - Domestic',
+    'BOOKING_ONLINE_INTL': 'Online Booking - International',
+    'BOOKING_OFFLINE_DOM': 'Offline Booking - Domestic',
+    'BOOKING_OFFLINE_INTL': 'Offline Booking - International',
     'CHANGE_FEE': 'Change Fee',
     'REFUND_FEE': 'Refund Fee',
-    'AFTER_HOURS': 'After Hours',
-    'CONSULTATION': 'Consultation',
-    'OTHER': 'Other'
+    'AFTER_HOURS': 'After Hours Fee',
+    'CONSULTATION': 'Consultation Fee',
+    'OTHER': 'Other Fee'
   }
 
   return typeMap[feeType] || feeType
@@ -355,7 +359,7 @@ const loadStats = async () => {
 
     // Add view-specific params
     if (viewFilters.feeType) params.fee_type = viewFilters.feeType
-    if (viewFilters.channel) params.channel = viewFilters.channel
+    if (viewFilters.channel) params.booking_channel = viewFilters.channel
     if (viewFilters.description) params.description = viewFilters.description
 
     console.log('🔍 [ServiceFeesView] Loading with params:', params)
@@ -371,12 +375,12 @@ const loadStats = async () => {
     currentPage.value = 1
 
     stats.totalTransactions = fees.length
-    stats.totalFees = fees.reduce((sum, f) => sum + parseFloat(f.amount || 0), 0)
+    stats.totalFees = fees.reduce((sum, f) => sum + parseFloat(f.fee_amount || 0), 0)
     stats.avgFee = stats.totalTransactions > 0 ? Math.round(stats.totalFees / stats.totalTransactions) : 0
 
     // Calculate online percentage
     const onlineFees = fees.filter(f =>
-      f.fee_type && f.fee_type.includes('ONLINE')
+      f.booking_channel === 'Online' || (f.fee_type && f.fee_type.includes('ONLINE'))
     ).length
     stats.onlinePercentage = stats.totalTransactions > 0
       ? Math.round((onlineFees / stats.totalTransactions) * 100)

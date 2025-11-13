@@ -362,20 +362,20 @@ class ServiceFeeSerializer(serializers.ModelSerializer):
     """Serializer for service fees"""
     traveller_name = serializers.SerializerMethodField()
     booking_reference = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = ServiceFee
         fields = [
             'id', 'booking', 'booking_reference', 'traveller', 'traveller_name',
-            'organization', 'fee_type', 'fee_date', 'currency', 'amount',
-            'gst_amount', 'description', 'created_at',
+            'organization', 'fee_type', 'fee_date', 'currency', 'fee_amount',
+            'booking_channel', 'description', 'created_at',
         ]
-    
+
     def get_traveller_name(self, obj):
         if obj.traveller:
             return f"{obj.traveller.first_name} {obj.traveller.last_name}"
         return None
-    
+
     def get_booking_reference(self, obj):
         if obj.booking:
             return obj.booking.agent_booking_reference
