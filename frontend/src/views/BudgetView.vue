@@ -162,6 +162,12 @@
 
       <!-- Budget Table -->
       <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+        <!-- Table Header -->
+        <div class="p-6 border-b border-gray-200">
+          <h2 class="text-lg font-semibold text-gray-900">Budget Records</h2>
+          <p class="text-sm text-gray-600 mt-1">{{ filteredBudgets.length }} cost centres found</p>
+        </div>
+
         <div class="overflow-x-auto">
           <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50">

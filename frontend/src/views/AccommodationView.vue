@@ -425,26 +425,10 @@ onMounted(async () => {
 
     <!-- Bookings Table -->
     <div v-if="!loading && !error" class="bg-white rounded-xl shadow-sm overflow-hidden">
-      <!-- Table Controls -->
-      <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-        <div class="flex items-center space-x-4">
-          <span class="text-sm text-gray-700">
-            Showing {{ startIndex + 1 }}-{{ Math.min(endIndex, accommodationBookings.length) }} of {{ accommodationBookings.length }} bookings
-          </span>
-        </div>
-        <div class="flex items-center space-x-2">
-          <label class="text-sm text-gray-700">Per page:</label>
-          <select
-            v-model="itemsPerPage"
-            class="border border-gray-300 rounded-md px-2 py-1 text-sm"
-          >
-            <option :value="10">10</option>
-            <option :value="20">20</option>
-            <option :value="30">30</option>
-            <option :value="40">40</option>
-            <option :value="50">50</option>
-          </select>
-        </div>
+      <!-- Table Header -->
+      <div class="p-6 border-b border-gray-200">
+        <h2 class="text-lg font-semibold text-gray-900">Accommodation Records</h2>
+        <p class="text-sm text-gray-600 mt-1">{{ accommodationBookings.length }} bookings found</p>
       </div>
 
       <div class="overflow-x-auto">
