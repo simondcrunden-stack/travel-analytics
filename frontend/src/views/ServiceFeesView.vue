@@ -148,7 +148,6 @@
       </div>
 
       <FeeTrendChart :filters="allFilters" />
-    </div>
   </div>
 </template>
 
