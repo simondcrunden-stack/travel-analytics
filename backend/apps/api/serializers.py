@@ -265,15 +265,21 @@ class BudgetAlertSerializer(serializers.ModelSerializer):
 class ComplianceViolationSerializer(serializers.ModelSerializer):
     booking_reference = serializers.CharField(source='booking.agent_booking_reference', read_only=True)
     traveller_name = serializers.CharField(source='traveller.__str__', read_only=True)
-    
+    organization_name = serializers.SerializerMethodField()
+
     class Meta:
         model = ComplianceViolation
         fields = [
             'id', 'booking', 'booking_reference', 'traveller', 'traveller_name',
-            'violation_type', 'violation_description', 'severity',
+            'organization', 'organization_name', 'violation_type', 'violation_description', 'severity',
             'expected_amount', 'actual_amount', 'variance_amount', 'currency',
             'is_waived', 'waived_by', 'waiver_reason', 'detected_at'
         ]
+
+    def get_organization_name(self, obj):
+        if obj.organization:
+            return obj.organization.name
+        return None
 
 
 class TravelRiskAlertSerializer(serializers.ModelSerializer):

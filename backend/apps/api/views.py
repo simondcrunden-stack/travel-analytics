@@ -815,6 +815,35 @@ class ServiceFeeViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(choices)
 
 # ============================================================================
+# COMPLIANCE VIEWSET
+# ============================================================================
+
+class ComplianceViolationViewSet(viewsets.ReadOnlyModelViewSet):
+    """ViewSet for compliance violations"""
+    serializer_class = ComplianceViolationSerializer
+    filterset_fields = ['organization', 'violation_type', 'severity', 'is_waived']
+    search_fields = ['booking__agent_booking_reference', 'traveller__first_name', 'traveller__last_name', 'violation_description']
+    ordering_fields = ['detected_at', 'variance_amount', 'severity']
+    ordering = ['-detected_at']
+
+    def get_queryset(self):
+        user = self.request.user
+
+        if user.user_type == 'ADMIN':
+            return ComplianceViolation.objects.all()
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            if user.organization:
+                return ComplianceViolation.objects.filter(
+                    Q(organization=user.organization) |
+                    Q(organization__travel_agent=user.organization)
+                )
+        elif user.user_type in ['CUSTOMER_ADMIN', 'CUSTOMER_RISK', 'CUSTOMER']:
+            if user.organization:
+                return ComplianceViolation.objects.filter(organization=user.organization)
+
+        return ComplianceViolation.objects.none()
+
+# ============================================================================
 # COUNTRY VIEWSET
 # ============================================================================
 

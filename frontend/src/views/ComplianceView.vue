@@ -387,6 +387,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
 import UniversalFilters from '@/components/common/UniversalFilters.vue'
+import { transformFiltersForBackend } from '@/utils/filterTransformer'
 import {
   mdiAlertCircle,
   mdiCurrencyUsd,
@@ -440,60 +441,26 @@ const fetchViolations = async () => {
     loading.value = true
     error.value = null
 
-    // In a real app, this would be an API call
-    // For now, we'll generate sample data
-    violations.value = generateSampleViolations()
+    const params = transformFiltersForBackend(universalFilters.value)
+
+    // Add view-specific params
+    if (viewFilters.value.severity) params.severity = viewFilters.value.severity
+    if (viewFilters.value.type) params.violation_type = viewFilters.value.type
+
+    console.log('🚨 [ComplianceView] Fetching violations with params:', params)
+
+    const response = await api.get('/compliance-violations/', { params })
+    violations.value = response.data.results || []
+
+    console.log('✅ [ComplianceView] Loaded violations:', violations.value.length)
+
     calculateStats()
   } catch (err) {
     error.value = 'Failed to load compliance data'
-    console.error(err)
+    console.error('Error loading compliance violations:', err)
   } finally {
     loading.value = false
   }
-}
-
-// Generate sample violations (replace with actual API call)
-const generateSampleViolations = () => {
-  const types = ['LOWEST_FARE', 'ADVANCE_BOOKING', 'TRAVEL_CLASS', 'PREFERRED_SUPPLIER']
-  const severities = ['INFO', 'WARNING', 'BREACH', 'CRITICAL']
-  const travellers = [
-    { name: 'Jennifer Wilson', org: 'TechCorp Australia' },
-    { name: 'David Anderson', org: 'TechCorp Australia' },
-    { name: 'Sophie Martinez', org: 'TechCorp Australia' },
-    { name: 'Emily White', org: 'Retail Solutions Group' },
-  ]
-
-  const sampleViolations = []
-  for (let i = 0; i < 50; i++) {
-    const traveller = travellers[Math.floor(Math.random() * travellers.length)]
-    const type = types[Math.floor(Math.random() * types.length)]
-    const severity = severities[Math.floor(Math.random() * severities.length)]
-    
-    sampleViolations.push({
-      id: i + 1,
-      detected_at: new Date(2025, 9, Math.floor(Math.random() * 20) + 1).toISOString(),
-      traveller_name: traveller.name,
-      organization_name: traveller.org,
-      booking_reference: `BK${1000 + i}`,
-      violation_type: type,
-      severity: severity,
-      expected_amount: Math.floor(Math.random() * 1000) + 500,
-      actual_amount: Math.floor(Math.random() * 1500) + 500,
-      variance_amount: severity === 'INFO' ? null : Math.floor(Math.random() * 500) + 50,
-      violation_description: getViolationDescription(type),
-    })
-  }
-  return sampleViolations
-}
-
-const getViolationDescription = (type) => {
-  const descriptions = {
-    LOWEST_FARE: 'Did not select the lowest available fare option',
-    ADVANCE_BOOKING: 'Booking made less than required advance notice period',
-    TRAVEL_CLASS: 'Higher class of travel booked than policy permits',
-    PREFERRED_SUPPLIER: 'Non-preferred supplier selected without approval',
-  }
-  return descriptions[type] || 'Policy violation detected'
 }
 
 // Calculate statistics
@@ -599,9 +566,10 @@ const exportReport = () => {
   // Implement CSV/PDF export
 }
 
-// Watch view-specific filters and reset pagination
+// Watch view-specific filters and refetch data
 watch(viewFilters, () => {
   currentPage.value = 1
+  fetchViolations()
 }, { deep: true })
 
 // Watch pagination changes

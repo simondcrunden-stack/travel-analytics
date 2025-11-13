@@ -27,6 +27,9 @@ router.register(r'commissions', views.CommissionViewSet, basename='commission')
 # Service Fee endpoint
 router.register(r'service-fees', views.ServiceFeeViewSet, basename='service-fee')
 
+# Compliance endpoints
+router.register(r'compliance-violations', views.ComplianceViolationViewSet, basename='compliance-violation')
+
 urlpatterns = [
     # JWT Authentication endpoints
     path('auth/login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
