@@ -151,7 +151,7 @@
         <!-- Table Header -->
         <div class="p-6 border-b border-gray-200">
           <h2 class="text-lg font-semibold text-gray-900">Service Fee Records</h2>
-          <p class="text-sm text-gray-600 mt-1">{{ paginatedServiceFees.length }} fees found</p>
+          <p class="text-sm text-gray-600 mt-1">{{ serviceFees.length }} fees found</p>
         </div>
 
         <div class="overflow-x-auto">
