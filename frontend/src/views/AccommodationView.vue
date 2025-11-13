@@ -18,6 +18,8 @@ const summary = ref({
   booking_count: 0
 })
 const currentFilters = ref({})
+const currentPage = ref(1)
+const itemsPerPage = ref(20)
 
 // Chart refs
 const cityChartRef = ref(null)
@@ -30,22 +32,27 @@ const accommodationBookings = computed(() => {
   return bookings.value.filter(b => b.accommodation_bookings && b.accommodation_bookings.length > 0)
 })
 
-// Summary stats from backend + view-specific calculations
+// Summary stats - Calculate from ACCOMMODATION ONLY (not total booking amount)
 const summaryStats = computed(() => {
-  // Sum nights from accommodation bookings (view-specific metric)
-  const totalNights = accommodationBookings.value.reduce((sum, b) => {
-    const bookingNights = b.accommodation_bookings.reduce((nightSum, hotel) =>
-      nightSum + (hotel.number_of_nights || 0), 0)
-    return sum + bookingNights
-  }, 0)
+  let totalAccommodationSpend = 0
+  let totalNights = 0
+  let totalAccommodationBookings = 0
 
-  const totalSpend = summary.value.total_spend || 0
-  const avgNightlyRate = totalNights > 0 ? totalSpend / totalNights : 0
+  accommodationBookings.value.forEach(booking => {
+    booking.accommodation_bookings.forEach(hotel => {
+      // Use hotel.total_amount_base for accommodation-specific spend
+      totalAccommodationSpend += parseFloat(hotel.total_amount_base || 0)
+      totalNights += hotel.number_of_nights || 0
+      totalAccommodationBookings++
+    })
+  })
+
+  const avgNightlyRate = totalNights > 0 ? totalAccommodationSpend / totalNights : 0
 
   return {
-    total_bookings: summary.value.booking_count || accommodationBookings.value.length,
-    total_spend: totalSpend,
-    avg_spend: summary.value.booking_count > 0 ? totalSpend / summary.value.booking_count : 0,
+    total_bookings: totalAccommodationBookings,
+    total_spend: totalAccommodationSpend,
+    avg_spend: totalAccommodationBookings > 0 ? totalAccommodationSpend / totalAccommodationBookings : 0,
     total_nights: totalNights,
     avg_nightly_rate: avgNightlyRate,
   }
@@ -96,7 +103,7 @@ const renderCharts = () => {
   if (cityChart) cityChart.destroy()
   if (hotelChainChart) hotelChainChart.destroy()
 
-  // City Chart Data
+  // City Chart Data - Calculate from ACCOMMODATION ONLY
   const cityChartData = {}
   accommodationBookings.value.forEach(booking => {
     booking.accommodation_bookings.forEach(hotel => {
@@ -104,7 +111,8 @@ const renderCharts = () => {
       if (!cityChartData[city]) {
         cityChartData[city] = 0
       }
-      const amount = parseFloat(booking.total_amount || 0) / booking.accommodation_bookings.length
+      // Use hotel.total_amount_base instead of booking.total_amount
+      const amount = parseFloat(hotel.total_amount_base || 0)
       cityChartData[city] += amount
     })
   })
@@ -148,7 +156,7 @@ const renderCharts = () => {
     })
   }
 
-  // Hotel Chain Chart Data
+  // Hotel Chain Chart Data - Calculate from ACCOMMODATION ONLY
   const hotelChainChartData = {}
   accommodationBookings.value.forEach(booking => {
     booking.accommodation_bookings.forEach(hotel => {
@@ -156,7 +164,8 @@ const renderCharts = () => {
       if (!hotelChainChartData[chain]) {
         hotelChainChartData[chain] = 0
       }
-      const amount = parseFloat(booking.total_amount || 0) / booking.accommodation_bookings.length
+      // Use hotel.total_amount_base instead of booking.total_amount
+      const amount = parseFloat(hotel.total_amount_base || 0)
       hotelChainChartData[chain] += amount
     })
   })
@@ -217,17 +226,43 @@ const formatDate = (dateString) => {
   })
 }
 
+// Pagination
+const totalPages = computed(() => {
+  return Math.ceil(accommodationBookings.value.length / itemsPerPage.value)
+})
+
+const startIndex = computed(() => {
+  return (currentPage.value - 1) * itemsPerPage.value
+})
+
+const endIndex = computed(() => {
+  return currentPage.value * itemsPerPage.value
+})
+
+const paginatedAccommodationBookings = computed(() => {
+  return accommodationBookings.value.slice(startIndex.value, endIndex.value)
+})
+
 // Helper functions for table display
 const getHotelInfo = (booking) => {
   if (!booking.accommodation_bookings || booking.accommodation_bookings.length === 0) {
     return 'N/A'
   }
-  
+
   if (booking.accommodation_bookings.length === 1) {
     return booking.accommodation_bookings[0].hotel_name || 'Unknown'
   } else {
     return `Multi-city (${booking.accommodation_bookings.length} hotels)`
   }
+}
+
+const getAccommodationAmount = (booking) => {
+  // Return total of all accommodation amounts for this booking
+  if (!booking.accommodation_bookings || booking.accommodation_bookings.length === 0) return 0
+
+  return booking.accommodation_bookings.reduce((total, hotel) => {
+    return total + parseFloat(hotel.total_amount_base || 0)
+  }, 0)
 }
 
 const getCityInfo = (booking) => {
@@ -289,8 +324,8 @@ onMounted(async () => {
       :show-traveller="true"
       :show-date-range="true"
       :show-destinations="true"
-      :show-organization="false"
-      :show-status="true"
+      :show-organization="true"
+      :show-status="false"
       :show-supplier="true"
       supplier-label="Hotel Chain"
       supplier-placeholder="Marriott, Hilton, Accor..."
@@ -388,9 +423,26 @@ onMounted(async () => {
 
     <!-- Bookings Table -->
     <div v-if="!loading && !error" class="bg-white rounded-xl shadow-sm overflow-hidden">
-      <div class="border-b border-gray-200 px-6 py-4 flex justify-between items-center">
-        <h3 class="text-lg font-semibold text-gray-900">Accommodation Bookings</h3>
-        <span class="text-sm text-gray-500">{{ accommodationBookings.length }} bookings</span>
+      <!-- Table Controls -->
+      <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+        <div class="flex items-center space-x-4">
+          <span class="text-sm text-gray-700">
+            Showing {{ startIndex + 1 }}-{{ Math.min(endIndex, accommodationBookings.length) }} of {{ accommodationBookings.length }} bookings
+          </span>
+        </div>
+        <div class="flex items-center space-x-2">
+          <label class="text-sm text-gray-700">Per page:</label>
+          <select
+            v-model="itemsPerPage"
+            class="border border-gray-300 rounded-md px-2 py-1 text-sm"
+          >
+            <option :value="10">10</option>
+            <option :value="20">20</option>
+            <option :value="30">30</option>
+            <option :value="40">40</option>
+            <option :value="50">50</option>
+          </select>
+        </div>
       </div>
 
       <div class="overflow-x-auto">
@@ -407,14 +459,14 @@ onMounted(async () => {
             </tr>
           </thead>
           <tbody class="bg-white divide-y divide-gray-200">
-            <tr v-for="booking in accommodationBookings" :key="booking.id" class="hover:bg-gray-50">
+            <tr v-for="booking in paginatedAccommodationBookings" :key="booking.id" class="hover:bg-gray-50">
               <td class="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">{{ booking.agent_booking_reference }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ booking.traveller_name }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ getHotelInfo(booking) }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ getCityInfo(booking) }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ getCheckInDate(booking) }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">{{ getTotalNights(booking) }}</td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{{ formatCurrency(booking.total_amount) }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{{ formatCurrency(getAccommodationAmount(booking)) }}</td>
             </tr>
           </tbody>
         </table>
@@ -423,6 +475,27 @@ onMounted(async () => {
           <span class="mdi mdi-bed-empty text-gray-300 text-6xl"></span>
           <p class="text-gray-500 mt-4">No accommodation bookings found</p>
         </div>
+      </div>
+
+      <!-- Pagination -->
+      <div class="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
+        <button
+          @click="currentPage > 1 && currentPage--"
+          :disabled="currentPage === 1"
+          class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Previous
+        </button>
+        <span class="text-sm text-gray-700">
+          Page {{ currentPage }} of {{ totalPages }}
+        </span>
+        <button
+          @click="currentPage < totalPages && currentPage++"
+          :disabled="currentPage === totalPages"
+          class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Next
+        </button>
       </div>
     </div>
   </div>
