@@ -30,15 +30,9 @@
             class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
           >
             <option value="">All Fee Types</option>
-            <option value="BOOKING_ONLINE_DOM">Online Booking - Domestic</option>
-            <option value="BOOKING_ONLINE_INTL">Online Booking - International</option>
-            <option value="BOOKING_OFFLINE_DOM">Offline Booking - Domestic</option>
-            <option value="BOOKING_OFFLINE_INTL">Offline Booking - International</option>
-            <option value="CHANGE_FEE">Change Fee</option>
-            <option value="REFUND_FEE">Refund Fee</option>
-            <option value="AFTER_HOURS">After Hours Fee</option>
-            <option value="CONSULTATION">Consultation Fee</option>
-            <option value="OTHER">Other Fee</option>
+            <option v-for="feeType in feeTypes" :key="feeType.value" :value="feeType.value">
+              {{ feeType.label }}
+            </option>
           </select>
         </div>
 
@@ -295,6 +289,9 @@ const stats = reactive({
 // Service fees data
 const serviceFees = ref([])
 
+// Fee types (loaded dynamically)
+const feeTypes = ref([])
+
 // Pagination
 const currentPage = ref(1)
 const itemsPerPage = ref(20)
@@ -333,10 +330,38 @@ const formatNumber = (num) => {
   return new Intl.NumberFormat('en-AU').format(Math.round(num || 0))
 }
 
+// Load fee types from API
+const loadFeeTypes = async () => {
+  try {
+    const response = await api.get('/service-fees/fee_type_choices/')
+    feeTypes.value = response.data
+    console.log('✅ Loaded fee types:', feeTypes.value)
+  } catch (error) {
+    console.error('Error loading fee types:', error)
+    // Fallback to hardcoded values if API fails
+    feeTypes.value = [
+      { value: 'BOOKING_ONLINE_DOM', label: 'Online Booking - Domestic' },
+      { value: 'BOOKING_ONLINE_INTL', label: 'Online Booking - International' },
+      { value: 'BOOKING_OFFLINE_DOM', label: 'Offline Booking - Domestic' },
+      { value: 'BOOKING_OFFLINE_INTL', label: 'Offline Booking - International' },
+      { value: 'CHANGE_FEE', label: 'Change Fee' },
+      { value: 'REFUND_FEE', label: 'Refund Fee' },
+      { value: 'AFTER_HOURS', label: 'After Hours Fee' },
+      { value: 'CONSULTATION', label: 'Consultation Fee' },
+      { value: 'OTHER', label: 'Other Fee' }
+    ]
+  }
+}
+
 // Format fee type helper
 const formatFeeType = (feeType) => {
   if (!feeType) return 'N/A'
 
+  // Try to find the label from loaded fee types
+  const feeTypeObj = feeTypes.value.find(ft => ft.value === feeType)
+  if (feeTypeObj) return feeTypeObj.label
+
+  // Fallback to hardcoded mapping
   const typeMap = {
     'BOOKING_ONLINE_DOM': 'Online Booking - Domestic',
     'BOOKING_ONLINE_INTL': 'Online Booking - International',
@@ -397,6 +422,7 @@ watch(viewFilters, () => {
 
 // Load data on mount
 onMounted(() => {
+  loadFeeTypes()
   loadStats()
 })
 </script>

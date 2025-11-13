@@ -780,14 +780,14 @@ class CommissionViewSet(viewsets.ReadOnlyModelViewSet):
 class ServiceFeeViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet for service fees"""
     serializer_class = ServiceFeeSerializer
-    filterset_fields = ['organization', 'fee_type', 'traveller']
+    filterset_fields = ['organization', 'fee_type', 'traveller', 'booking_channel']
     search_fields = ['description']
-    ordering_fields = ['fee_date', 'amount']
+    ordering_fields = ['fee_date', 'fee_amount']
     ordering = ['-fee_date']
-    
+
     def get_queryset(self):
         user = self.request.user
-        
+
         if user.user_type == 'ADMIN':
             return ServiceFee.objects.all()
         elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
@@ -799,8 +799,20 @@ class ServiceFeeViewSet(viewsets.ReadOnlyModelViewSet):
         elif user.user_type in ['CUSTOMER_ADMIN', 'CUSTOMER_RISK', 'CUSTOMER']:
             if user.organization:
                 return ServiceFee.objects.filter(organization=user.organization)
-        
+
         return ServiceFee.objects.none()
+
+    @action(detail=False, methods=['get'])
+    def fee_type_choices(self, request):
+        """
+        Get available fee type choices from the model.
+        Returns dynamic list so new fee types can be added without frontend changes.
+        """
+        choices = [
+            {'value': choice[0], 'label': choice[1]}
+            for choice in ServiceFee.FEE_TYPES
+        ]
+        return Response(choices)
 
 # ============================================================================
 # COUNTRY VIEWSET
