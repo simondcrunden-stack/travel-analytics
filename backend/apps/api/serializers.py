@@ -362,14 +362,14 @@ class ServiceFeeSerializer(serializers.ModelSerializer):
     """Serializer for service fees"""
     traveller_name = serializers.SerializerMethodField()
     booking_reference = serializers.SerializerMethodField()
-    gst_amount = serializers.SerializerMethodField()
+    organization_name = serializers.SerializerMethodField()
 
     class Meta:
         model = ServiceFee
         fields = [
             'id', 'booking', 'booking_reference', 'traveller', 'traveller_name',
-            'organization', 'fee_type', 'fee_date', 'currency', 'fee_amount',
-            'gst_amount', 'booking_channel', 'description', 'created_at',
+            'organization', 'organization_name', 'fee_type', 'fee_date', 'invoice_number',
+            'currency', 'fee_amount', 'gst_amount', 'booking_channel', 'description', 'created_at',
         ]
 
     def get_traveller_name(self, obj):
@@ -382,12 +382,10 @@ class ServiceFeeSerializer(serializers.ModelSerializer):
             return obj.booking.agent_booking_reference
         return None
 
-    def get_gst_amount(self, obj):
-        """Calculate GST as 10% of fee_amount (assuming fee_amount includes GST)"""
-        if obj.fee_amount:
-            # GST = fee_amount * (10/110) to extract GST from GST-inclusive amount
-            return round(float(obj.fee_amount) * 10 / 110, 2)
-        return 0
+    def get_organization_name(self, obj):
+        if obj.organization:
+            return obj.organization.name
+        return None
 
 # ============================================================================
 # COUNTRY SERIALIZERS

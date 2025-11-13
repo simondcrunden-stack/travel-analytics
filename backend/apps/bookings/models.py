@@ -980,9 +980,11 @@ class ServiceFee(models.Model):
     # Fee details
     fee_type = models.CharField(max_length=30, choices=FEE_TYPES)
     fee_date = models.DateField()
+    invoice_number = models.CharField(max_length=100, blank=True)
     fee_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    gst_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     currency = models.CharField(max_length=3, default='AUD')
-    
+
     # Channel
     booking_channel = models.CharField(max_length=20, blank=True)  # Online, Offline, Mobile
     

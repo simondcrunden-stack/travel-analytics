@@ -155,10 +155,16 @@
             <thead class="bg-gray-50">
               <tr>
                 <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Booking Reference
+                  Invoice Date
+                </th>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Organization
                 </th>
                 <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Traveller
+                </th>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Booking Reference
                 </th>
                 <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Fee Type
@@ -176,11 +182,17 @@
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
               <tr v-for="fee in paginatedFees" :key="fee.id" class="hover:bg-gray-50">
-                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                  {{ fee.booking?.booking_reference || 'N/A' }}
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  {{ formatDate(fee.fee_date) }}
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {{ fee.booking?.traveller_name || 'N/A' }}
+                  {{ fee.organization_name || 'N/A' }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  {{ fee.traveller_name || 'N/A' }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  {{ fee.booking_reference || 'N/A' }}
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   {{ formatFeeType(fee.fee_type) }}
@@ -204,7 +216,7 @@
                 </td>
               </tr>
               <tr v-if="paginatedFees.length === 0">
-                <td colspan="6" class="px-6 py-8 text-center text-sm text-gray-500">
+                <td colspan="8" class="px-6 py-8 text-center text-sm text-gray-500">
                   No service fees found
                 </td>
               </tr>
@@ -328,6 +340,13 @@ const handleFiltersChanged = async (filters) => {
 // Format number helper
 const formatNumber = (num) => {
   return new Intl.NumberFormat('en-AU').format(Math.round(num || 0))
+}
+
+// Format date helper
+const formatDate = (dateString) => {
+  if (!dateString) return 'N/A'
+  const date = new Date(dateString)
+  return date.toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
 // Load fee types from API
