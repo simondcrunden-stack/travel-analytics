@@ -378,9 +378,11 @@ onMounted(async () => {
 <template>
   <div class="space-y-6">
     <!-- Header -->
-    <div>
-      <h1 class="text-2xl font-bold text-gray-900">Air Travel Analytics</h1>
-      <p class="mt-1 text-sm text-gray-500">Analyze flight bookings, airline spending, and carbon emissions</p>
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl font-bold text-gray-900">Air Booking Records</h1>
+        <p class="mt-1 text-sm text-gray-500">Analyze flight bookings, airline spending, and carbon emissions</p>
+      </div>
     </div>
 
     <!-- Universal Filters -->

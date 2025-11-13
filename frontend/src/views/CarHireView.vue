@@ -329,9 +329,11 @@ onMounted(async () => {
 <template>
   <div class="space-y-6">
     <!-- Header -->
-    <div>
-      <h1 class="text-2xl font-bold text-gray-900">Car Hire Analytics</h1>
-      <p class="mt-1 text-sm text-gray-500">Analyze car rental bookings, spending patterns, and vehicle preferences</p>
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl font-bold text-gray-900">Car Hire Records</h1>
+        <p class="mt-1 text-sm text-gray-500">Analyze car rental bookings, spending patterns, and vehicle preferences</p>
+      </div>
     </div>
 
     <!-- Universal Filters -->

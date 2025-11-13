@@ -1,9 +1,11 @@
 <template>
   <div class="space-y-6">
     <!-- Header -->
-    <div>
-      <h1 class="text-2xl font-bold text-gray-900">Service Fees Analytics</h1>
-      <p class="mt-1 text-sm text-gray-500">Analyze booking fees, channels, and trends</p>
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl font-bold text-gray-900">Service Fees Analytics</h1>
+        <p class="mt-1 text-sm text-gray-500">Analyze booking fees, channels, and trends</p>
+      </div>
     </div>
 
     <!-- Universal Filters -->
