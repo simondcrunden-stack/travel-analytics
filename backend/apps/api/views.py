@@ -751,9 +751,12 @@ class BookingViewSet(viewsets.ModelViewSet):
             ]
 
         elif supplier_type == 'hotel':
-            # Get unique hotel names and chains
+            # Get unique hotel names with their chains
             hotels = AccommodationBooking.objects.filter(
-                booking__in=base_queryset
+                booking__in=base_queryset,
+                hotel_name__isnull=False
+            ).exclude(
+                hotel_name=''
             ).values('hotel_name', 'hotel_chain').distinct()
 
             if search_query:
@@ -762,23 +765,27 @@ class BookingViewSet(viewsets.ModelViewSet):
                     Q(hotel_chain__icontains=search_query)
                 )
 
-            # Prioritize hotel chains for cleaner filtering
-            hotel_chains = set()
-            hotel_names = set()
-
+            # Build a dict to track hotel names and their associated chains
+            hotel_dict = {}
             for hotel in hotels:
-                if hotel['hotel_chain']:
-                    hotel_chains.add(hotel['hotel_chain'])
-                if hotel['hotel_name']:
-                    hotel_names.add(hotel['hotel_name'])
+                name = hotel['hotel_name']
+                chain = hotel['hotel_chain'] or None
 
-            # Return chains first, then individual hotels
+                # If we already have this hotel name, keep the one with a chain if available
+                if name in hotel_dict:
+                    if chain and not hotel_dict[name]:
+                        hotel_dict[name] = chain
+                else:
+                    hotel_dict[name] = chain
+
+            # Return hotel names sorted alphabetically
             results = []
-            for chain in sorted(hotel_chains):
+            for hotel_name in sorted(hotel_dict.keys()):
+                chain = hotel_dict[hotel_name]
                 results.append({
-                    'value': chain,
-                    'label': chain,
-                    'subtitle': 'Hotel Chain'
+                    'value': hotel_name,
+                    'label': hotel_name,
+                    'subtitle': chain if chain else None
                 })
 
             # Limit total results
