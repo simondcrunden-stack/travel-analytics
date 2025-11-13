@@ -1,22 +1,20 @@
 <template>
-  <div class="min-h-screen bg-gray-50 p-6">
+  <div class="space-y-6">
     <!-- Header -->
-    <div class="mb-6">
-      <div class="flex items-center justify-between">
-        <div>
-          <h1 class="text-3xl font-bold text-gray-900">Compliance Dashboard</h1>
-          <p class="text-gray-600 mt-1">Policy violations and compliance tracking</p>
-        </div>
-        
-        <!-- Export Button -->
-        <button
-          @click="exportReport"
-          class="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <svg class="w-5 h-5" :d="mdiDownload" />
-          <span>Export Report</span>
-        </button>
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl font-bold text-gray-900">Compliance Dashboard</h1>
+        <p class="mt-1 text-sm text-gray-500">Policy violations and compliance tracking</p>
       </div>
+
+      <!-- Export Button -->
+      <button
+        @click="exportReport"
+        class="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+      >
+        <svg class="w-5 h-5" :d="mdiDownload" />
+        <span>Export Report</span>
+      </button>
     </div>
 
     <!-- Violation Detail Modal -->
@@ -144,10 +142,20 @@
       </div>
     </div>
 
+    <!-- Universal Filters -->
+    <UniversalFilters
+      :show-traveller="true"
+      :show-date-range="true"
+      :show-destinations="false"
+      :show-organization="false"
+      :show-status="false"
+      :show-supplier="false"
+      @filters-changed="handleFiltersChanged"
+    />
+
     <!-- Loading State -->
-    <div v-if="loading" class="text-center py-12">
-      <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      <p class="mt-4 text-gray-600">Loading compliance data...</p>
+    <div v-if="loading" class="flex justify-center items-center py-12">
+      <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
     </div>
 
     <!-- Error State -->
@@ -156,10 +164,10 @@
     </div>
 
     <!-- Main Content -->
-    <div v-else>
+    <div v-else class="space-y-6">
       <!-- Summary Cards -->
-      <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-        <div class="bg-white rounded-2xl shadow-sm p-6">
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div class="bg-white rounded-xl shadow-sm p-6">
           <div class="flex items-center justify-between">
             <div>
               <p class="text-gray-600 text-sm">Total Violations</p>
@@ -171,7 +179,7 @@
           </div>
         </div>
 
-        <div class="bg-white rounded-2xl shadow-sm p-6">
+        <div class="bg-white rounded-xl shadow-sm p-6">
           <div class="flex items-center justify-between">
             <div>
               <p class="text-gray-600 text-sm">Financial Impact</p>
@@ -185,7 +193,7 @@
           </div>
         </div>
 
-        <div class="bg-white rounded-2xl shadow-sm p-6">
+        <div class="bg-white rounded-xl shadow-sm p-6">
           <div class="flex items-center justify-between">
             <div>
               <p class="text-gray-600 text-sm">Compliance Rate</p>
@@ -197,7 +205,7 @@
           </div>
         </div>
 
-        <div class="bg-white rounded-2xl shadow-sm p-6">
+        <div class="bg-white rounded-xl shadow-sm p-6">
           <div class="flex items-center justify-between">
             <div>
               <p class="text-gray-600 text-sm">Critical Violations</p>
@@ -210,25 +218,17 @@
         </div>
       </div>
 
-      <!-- Filters -->
-      <div class="bg-white rounded-2xl shadow-sm p-6 mb-6">
-        <div class="flex items-center justify-between mb-4">
-          <h2 class="text-lg font-semibold text-gray-900">Filters</h2>
-          <button
-            @click="clearFilters"
-            class="text-sm text-blue-600 hover:text-blue-700"
-          >
-            Clear All
-          </button>
-        </div>
+      <!-- View-Specific Filters -->
+      <div class="bg-white rounded-xl shadow-sm p-6">
+        <h3 class="text-lg font-semibold text-gray-900 mb-4">Compliance Filters</h3>
 
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
           <!-- Severity Filter -->
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2">Severity</label>
             <select
-              v-model="filters.severity"
-              class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              v-model="viewFilters.severity"
+              class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             >
               <option value="">All Severities</option>
               <option value="INFO">Info</option>
@@ -238,12 +238,12 @@
             </select>
           </div>
 
-          <!-- Type Filter -->
+          <!-- Issue Type Filter -->
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Violation Type</label>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Issue Type</label>
             <select
-              v-model="filters.type"
-              class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              v-model="viewFilters.type"
+              class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             >
               <option value="">All Types</option>
               <option value="LOWEST_FARE">Lowest Fare</option>
@@ -254,41 +254,21 @@
             </select>
           </div>
 
-          <!-- Date From -->
+          <!-- Table Search -->
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">From Date</label>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Search</label>
             <input
-              type="date"
-              v-model="filters.dateFrom"
-              class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              type="text"
+              v-model="viewFilters.search"
+              placeholder="Search by traveller, booking ref..."
+              class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             />
           </div>
-
-          <!-- Date To -->
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">To Date</label>
-            <input
-              type="date"
-              v-model="filters.dateTo"
-              class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-        </div>
-
-        <!-- Search -->
-        <div class="mt-4">
-          <label class="block text-sm font-medium text-gray-700 mb-2">Search</label>
-          <input
-            type="text"
-            v-model="filters.search"
-            placeholder="Search by traveller name, booking reference..."
-            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
         </div>
       </div>
 
       <!-- Violations Table -->
-      <div class="bg-white rounded-2xl shadow-sm overflow-hidden">
+      <div class="bg-white rounded-xl shadow-sm overflow-hidden">
         <div class="p-6 border-b border-gray-200">
           <h2 class="text-lg font-semibold text-gray-900">Policy Violations</h2>
           <p class="text-sm text-gray-600 mt-1">{{ filteredViolations.length }} violations found</p>
@@ -395,6 +375,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
+import UniversalFilters from '@/components/common/UniversalFilters.vue'
 import {
   mdiAlertCircle,
   mdiCurrencyUsd,
@@ -420,18 +401,27 @@ const stats = ref({
   criticalCount: 0,
 })
 
-// Filters
-const filters = ref({
+// Universal filters from UniversalFilters component
+const universalFilters = ref({})
+
+// View-specific filters
+const viewFilters = ref({
   severity: '',
   type: '',
-  dateFrom: '',
-  dateTo: '',
   search: '',
 })
 
 // Pagination
 const currentPage = ref(1)
 const itemsPerPage = ref(20)
+
+// Handle UniversalFilters changes
+const handleFiltersChanged = async (filters) => {
+  console.log('🚨 [ComplianceView] Universal filters changed:', filters)
+  universalFilters.value = filters
+  currentPage.value = 1
+  await fetchViolations()
+}
 
 // Fetch data
 const fetchViolations = async () => {
@@ -510,10 +500,10 @@ const calculateStats = () => {
 // Filtered violations
 const filteredViolations = computed(() => {
   return violations.value.filter(v => {
-    if (filters.value.severity && v.severity !== filters.value.severity) return false
-    if (filters.value.type && v.violation_type !== filters.value.type) return false
-    if (filters.value.search) {
-      const search = filters.value.search.toLowerCase()
+    if (viewFilters.value.severity && v.severity !== viewFilters.value.severity) return false
+    if (viewFilters.value.type && v.violation_type !== viewFilters.value.type) return false
+    if (viewFilters.value.search) {
+      const search = viewFilters.value.search.toLowerCase()
       if (!v.traveller_name.toLowerCase().includes(search) &&
           !v.booking_reference.toLowerCase().includes(search)) {
         return false
@@ -563,11 +553,9 @@ const getSeverityBadgeClass = (severity) => {
 }
 
 const clearFilters = () => {
-  filters.value = {
+  viewFilters.value = {
     severity: '',
     type: '',
-    dateFrom: '',
-    dateTo: '',
     search: '',
   }
   currentPage.value = 1
@@ -600,8 +588,8 @@ const exportReport = () => {
   // Implement CSV/PDF export
 }
 
-// Watch filters and reset pagination
-watch(filters, () => {
+// Watch view-specific filters and reset pagination
+watch(viewFilters, () => {
   currentPage.value = 1
 }, { deep: true })
 

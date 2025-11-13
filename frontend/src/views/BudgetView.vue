@@ -1,28 +1,36 @@
 <template>
-  <div class="min-h-screen bg-gray-50 p-6">
+  <div class="space-y-6">
     <!-- Header -->
-    <div class="mb-6">
-      <div class="flex items-center justify-between">
-        <div>
-          <h1 class="text-3xl font-bold text-gray-900">Budget Dashboard</h1>
-          <p class="text-gray-600 mt-1">Track spending against allocated budgets</p>
-        </div>
-        
-        <!-- Fiscal Year Selector -->
-        <select
-          v-model="selectedFiscalYear"
-          class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        >
-          <option value="FY2024-25">FY 2024-25</option>
-          <option value="FY2023-24">FY 2023-24</option>
-        </select>
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl font-bold text-gray-900">Budget Dashboard</h1>
+        <p class="mt-1 text-sm text-gray-500">Track spending against allocated budgets</p>
       </div>
+
+      <!-- Fiscal Year Selector -->
+      <select
+        v-model="selectedFiscalYear"
+        class="px-4 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+      >
+        <option value="FY2024-25">FY 2024-25</option>
+        <option value="FY2023-24">FY 2023-24</option>
+      </select>
     </div>
 
+    <!-- Universal Filters -->
+    <UniversalFilters
+      :show-traveller="true"
+      :show-date-range="true"
+      :show-destinations="false"
+      :show-organization="false"
+      :show-status="false"
+      :show-supplier="false"
+      @filters-changed="handleFiltersChanged"
+    />
+
     <!-- Loading State -->
-    <div v-if="loading" class="text-center py-12">
-      <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      <p class="mt-4 text-gray-600">Loading budget data...</p>
+    <div v-if="loading" class="flex justify-center items-center py-12">
+      <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
     </div>
 
     <!-- Error State -->
@@ -31,10 +39,10 @@
     </div>
 
     <!-- Main Content -->
-    <div v-else>
+    <div v-else class="space-y-6">
       <!-- Summary Cards -->
-      <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-        <div class="bg-white rounded-2xl shadow-sm p-6">
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div class="bg-white rounded-xl shadow-sm p-6">
           <div class="flex items-center justify-between">
             <div>
               <p class="text-gray-600 text-sm">Total Budget</p>
@@ -48,7 +56,7 @@
           </div>
         </div>
 
-        <div class="bg-white rounded-2xl shadow-sm p-6">
+        <div class="bg-white rounded-xl shadow-sm p-6">
           <div class="flex items-center justify-between">
             <div>
               <p class="text-gray-600 text-sm">Total Spent</p>
@@ -62,7 +70,7 @@
           </div>
         </div>
 
-        <div class="bg-white rounded-2xl shadow-sm p-6">
+        <div class="bg-white rounded-xl shadow-sm p-6">
           <div class="flex items-center justify-between">
             <div>
               <p class="text-gray-600 text-sm">Remaining</p>
@@ -76,7 +84,7 @@
           </div>
         </div>
 
-        <div class="bg-white rounded-2xl shadow-sm p-6">
+        <div class="bg-white rounded-xl shadow-sm p-6">
           <div class="flex items-center justify-between">
             <div>
               <p class="text-gray-600 text-sm">Avg. Utilization</p>
@@ -92,7 +100,7 @@
       </div>
 
       <!-- Active Alerts -->
-      <div v-if="activeAlerts.length > 0" class="bg-red-50 border border-red-200 rounded-2xl p-6 mb-6">
+      <div v-if="activeAlerts.length > 0" class="bg-red-50 border border-red-200 rounded-xl p-6">
         <div class="flex items-center gap-2 mb-4">
           <svg class="w-6 h-6 text-red-600" :d="mdiAlertCircle" />
           <h2 class="text-lg font-semibold text-red-900">Budget Alerts</h2>
@@ -119,25 +127,17 @@
         </div>
       </div>
 
-      <!-- Filters -->
-      <div class="bg-white rounded-2xl shadow-sm p-6 mb-6">
-        <div class="flex items-center justify-between mb-4">
-          <h2 class="text-lg font-semibold text-gray-900">Filters</h2>
-          <button
-            @click="clearFilters"
-            class="text-sm text-blue-600 hover:text-blue-700"
-          >
-            Clear All
-          </button>
-        </div>
+      <!-- View-Specific Filters -->
+      <div class="bg-white rounded-xl shadow-sm p-6">
+        <h3 class="text-lg font-semibold text-gray-900 mb-4">Budget Filters</h3>
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
           <!-- Organization Filter -->
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2">Organization</label>
             <select
-              v-model="filters.organization"
-              class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              v-model="viewFilters.organization"
+              class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             >
               <option value="">All Organizations</option>
               <option value="TechCorp Australia">TechCorp Australia</option>
@@ -145,12 +145,12 @@
             </select>
           </div>
 
-          <!-- Status Filter -->
+          <!-- Budget Status Filter -->
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Status</label>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Budget Status</label>
             <select
-              v-model="filters.status"
-              class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              v-model="viewFilters.status"
+              class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             >
               <option value="">All Statuses</option>
               <option value="OK">OK (&lt;80%)</option>
@@ -159,14 +159,14 @@
             </select>
           </div>
 
-          <!-- Search -->
+          <!-- Cost Centre Search -->
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Search</label>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Search Cost Centre</label>
             <input
               type="text"
-              v-model="filters.search"
-              placeholder="Search cost centers..."
-              class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              v-model="viewFilters.search"
+              placeholder="Search cost centres..."
+              class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             />
           </div>
         </div>
@@ -177,7 +177,7 @@
         <div
           v-for="budget in filteredBudgets"
           :key="budget.id"
-          class="bg-white rounded-2xl shadow-sm overflow-hidden hover:shadow-md transition-shadow"
+          class="bg-white rounded-xl shadow-sm overflow-hidden hover:shadow-md transition-shadow"
         >
           <div class="p-6">
             <!-- Header -->
@@ -303,6 +303,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import UniversalFilters from '@/components/common/UniversalFilters.vue'
 import {
   mdiCurrencyUsd,
   mdiChartLine,
@@ -317,12 +318,22 @@ const error = ref(null)
 const budgets = ref([])
 const selectedFiscalYear = ref('FY2024-25')
 
-// Filters
-const filters = ref({
+// Universal filters from UniversalFilters component
+const universalFilters = ref({})
+
+// View-specific filters
+const viewFilters = ref({
   organization: '',
   status: '',
   search: '',
 })
+
+// Handle UniversalFilters changes
+const handleFiltersChanged = async (filters) => {
+  console.log('💰 [BudgetView] Universal filters changed:', filters)
+  universalFilters.value = filters
+  await fetchBudgets()
+}
 
 // Fetch data
 const fetchBudgets = async () => {
@@ -475,10 +486,10 @@ const activeAlerts = computed(() => {
 // Filtered budgets
 const filteredBudgets = computed(() => {
   return budgets.value.filter(b => {
-    if (filters.value.organization && b.organization !== filters.value.organization) return false
-    if (filters.value.status && b.status !== filters.value.status) return false
-    if (filters.value.search) {
-      const search = filters.value.search.toLowerCase()
+    if (viewFilters.value.organization && b.organization !== viewFilters.value.organization) return false
+    if (viewFilters.value.status && b.status !== viewFilters.value.status) return false
+    if (viewFilters.value.search) {
+      const search = viewFilters.value.search.toLowerCase()
       if (!b.costCenter.toLowerCase().includes(search) &&
           !b.costCenterName.toLowerCase().includes(search)) {
         return false
@@ -514,7 +525,7 @@ const getProgressBarClass = (percentage) => {
 }
 
 const clearFilters = () => {
-  filters.value = {
+  viewFilters.value = {
     organization: '',
     status: '',
     search: '',
