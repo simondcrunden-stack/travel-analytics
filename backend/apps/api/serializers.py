@@ -10,7 +10,7 @@ from apps.compliance.models import (
     ComplianceRule, ComplianceViolation,
     HighRiskDestination, TravelRiskAlert
 )
-from apps.reference_data.models import Airport, Airline, CurrencyExchangeRate, Country
+from apps.reference_data.models import Airport, Airline, CurrencyExchangeRate, Country, Hotel
 from apps.commissions.models import Commission
 
 
@@ -310,6 +310,18 @@ class AirlineSerializer(serializers.ModelSerializer):
     class Meta:
         model = Airline
         fields = ['iata_code', 'name', 'country', 'alliance']
+
+
+class HotelSerializer(serializers.ModelSerializer):
+    """Serializer for Hotel master data"""
+    aliases = serializers.StringRelatedField(many=True, read_only=True)
+
+    class Meta:
+        model = Hotel
+        fields = [
+            'id', 'canonical_name', 'hotel_chain', 'city', 'country',
+            'is_active', 'aliases', 'created_at', 'updated_at'
+        ]
 
 
 class CurrencyExchangeRateSerializer(serializers.ModelSerializer):

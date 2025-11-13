@@ -364,6 +364,141 @@ class CarRentalCompany(models.Model):
     class Meta:
         db_table = 'car_rental_companies'
         ordering = ['name']
-    
+
     def __str__(self):
         return self.name
+
+
+# ============================================================================
+# HOTEL MASTER DATA MANAGEMENT
+# ============================================================================
+
+class Hotel(models.Model):
+    """
+    Master data for hotels with canonical names.
+
+    This is the canonical/official hotel record. When hotels rebrand, change
+    ownership, or have multiple names, this stores the current/preferred name.
+    All alternate names are stored in HotelAlias.
+
+    Pattern can be replicated for other entity types requiring master data
+    management (travellers, airlines, car rental companies, etc.)
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # Canonical name - this is the "official" name shown everywhere
+    canonical_name = models.CharField(
+        max_length=200,
+        unique=True,
+        help_text="Current/official hotel name"
+    )
+
+    # Hotel chain association
+    hotel_chain = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Hotel chain/brand (Marriott, Hilton, Accor, etc.)"
+    )
+
+    # Location info
+    city = models.CharField(max_length=100, blank=True)
+    country = models.CharField(max_length=100, blank=True)
+
+    # Status
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Inactive if hotel closed or merged into another record"
+    )
+
+    # Metadata
+    notes = models.TextField(
+        blank=True,
+        help_text="Notes about merges, rebrands, or other relevant info"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'hotels'
+        ordering = ['canonical_name']
+        indexes = [
+            models.Index(fields=['canonical_name']),
+            models.Index(fields=['hotel_chain']),
+            models.Index(fields=['is_active']),
+        ]
+
+    def __str__(self):
+        if self.hotel_chain:
+            return f"{self.canonical_name} ({self.hotel_chain})"
+        return self.canonical_name
+
+    def get_all_names(self):
+        """Get canonical name plus all aliases as a list"""
+        names = [self.canonical_name]
+        names.extend(self.aliases.filter(is_active=True).values_list('alias_name', flat=True))
+        return names
+
+
+class HotelAlias(models.Model):
+    """
+    Alternate names for hotels (previous names, rebrands, typos, etc.)
+
+    When a hotel is merged or rebranded:
+    1. Create/update the canonical Hotel record
+    2. Create HotelAlias records for all previous names
+    3. Update AccommodationBooking.hotel FK to point to canonical record
+
+    This preserves historical data while allowing clean filtering/reporting.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # Link to canonical hotel
+    hotel = models.ForeignKey(
+        Hotel,
+        on_delete=models.CASCADE,
+        related_name='aliases',
+        help_text="The canonical hotel this alias refers to"
+    )
+
+    # The alternate name
+    alias_name = models.CharField(
+        max_length=200,
+        help_text="Previous name, alternate spelling, or common abbreviation"
+    )
+
+    # Status
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Set to False to stop using this alias"
+    )
+
+    # Reason for alias
+    reason = models.CharField(
+        max_length=50,
+        choices=[
+            ('REBRAND', 'Hotel rebranded'),
+            ('ACQUISITION', 'Acquired by another chain'),
+            ('TYPO', 'Common misspelling or typo'),
+            ('ABBREVIATION', 'Abbreviation or short name'),
+            ('OTHER', 'Other reason'),
+        ],
+        default='OTHER',
+        blank=True
+    )
+
+    # Metadata
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'hotel_aliases'
+        ordering = ['alias_name']
+        indexes = [
+            models.Index(fields=['hotel', 'is_active']),
+            models.Index(fields=['alias_name']),
+        ]
+        unique_together = [['hotel', 'alias_name']]
+
+    def __str__(self):
+        return f"{self.alias_name} → {self.hotel.canonical_name}"

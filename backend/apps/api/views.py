@@ -751,45 +751,36 @@ class BookingViewSet(viewsets.ModelViewSet):
             ]
 
         elif supplier_type == 'hotel':
-            # Get unique hotel names with their chains
-            hotels = AccommodationBooking.objects.filter(
+            # Get hotels from master data (Hotel model)
+            from apps.reference_data.models import Hotel, HotelAlias
+
+            # Start with hotels that have bookings in the base queryset
+            hotel_ids = AccommodationBooking.objects.filter(
                 booking__in=base_queryset,
-                hotel_name__isnull=False
-            ).exclude(
-                hotel_name=''
-            ).values('hotel_name', 'hotel_chain').distinct()
+                hotel__isnull=False
+            ).values_list('hotel_id', flat=True).distinct()
+
+            hotels = Hotel.objects.filter(
+                id__in=hotel_ids,
+                is_active=True
+            )
 
             if search_query:
+                # Search both canonical name and aliases
                 hotels = hotels.filter(
-                    Q(hotel_name__icontains=search_query) |
-                    Q(hotel_chain__icontains=search_query)
-                )
+                    Q(canonical_name__icontains=search_query) |
+                    Q(hotel_chain__icontains=search_query) |
+                    Q(aliases__alias_name__icontains=search_query, aliases__is_active=True)
+                ).distinct()
 
-            # Build a dict to track hotel names and their associated chains
-            hotel_dict = {}
-            for hotel in hotels:
-                name = hotel['hotel_name']
-                chain = hotel['hotel_chain'] or None
-
-                # If we already have this hotel name, keep the one with a chain if available
-                if name in hotel_dict:
-                    if chain and not hotel_dict[name]:
-                        hotel_dict[name] = chain
-                else:
-                    hotel_dict[name] = chain
-
-            # Return hotel names sorted alphabetically
-            results = []
-            for hotel_name in sorted(hotel_dict.keys()):
-                chain = hotel_dict[hotel_name]
-                results.append({
-                    'value': hotel_name,
-                    'label': hotel_name,
-                    'subtitle': chain if chain else None
-                })
-
-            # Limit total results
-            results = results[:50]
+            results = [
+                {
+                    'value': hotel.canonical_name,
+                    'label': hotel.canonical_name,
+                    'subtitle': hotel.hotel_chain if hotel.hotel_chain else None
+                }
+                for hotel in hotels[:50]
+            ]
 
         elif supplier_type == 'car_rental':
             # Get unique rental companies

@@ -627,13 +627,14 @@ class AirSegment(models.Model):
 class AccommodationBooking(models.Model):
     """
     Extended details for hotel bookings
-    
+
     IMPORTANT CHANGES:
     - Session 26: Changed from OneToOneField to ForeignKey
     - Session 34: Added automatic currency conversion
+    - Session 43: Added Hotel FK for master data management
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    
+
     # CHANGED: ForeignKey instead of OneToOneField
     booking = models.ForeignKey(
         Booking,
@@ -641,9 +642,22 @@ class AccommodationBooking(models.Model):
         related_name='accommodation_bookings',  # Changed from 'accommodation_details'
         help_text="Parent booking - one booking can have multiple hotel stays"
     )
-    
-    # Hotel details
-    hotel_name = models.CharField(max_length=200)
+
+    # Hotel reference (master data)
+    hotel = models.ForeignKey(
+        'reference_data.Hotel',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='bookings',
+        help_text="Link to canonical hotel record (for master data management)"
+    )
+
+    # Hotel details (preserved for historical data and unmapped hotels)
+    hotel_name = models.CharField(
+        max_length=200,
+        help_text="Original hotel name from booking (preserved for history)"
+    )
     hotel_chain = models.CharField(max_length=100, blank=True)
     
     # Location
@@ -670,6 +684,7 @@ class AccommodationBooking(models.Model):
         db_table = 'accommodation_bookings'
         indexes = [
             models.Index(fields=['booking']),
+            models.Index(fields=['hotel']),
             models.Index(fields=['city', 'check_in_date']),
             models.Index(fields=['hotel_chain']),
         ]
