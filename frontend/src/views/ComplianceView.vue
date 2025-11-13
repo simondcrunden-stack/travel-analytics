@@ -466,9 +466,12 @@ const fetchViolations = async () => {
 // Calculate statistics
 const calculateStats = () => {
   stats.value.totalViolations = violations.value.length
-  stats.value.totalImpact = violations.value.reduce((sum, v) => sum + (v.variance_amount || 0), 0)
+  stats.value.totalImpact = violations.value.reduce((sum, v) => {
+    const variance = parseFloat(v.variance_amount) || 0
+    return sum + variance
+  }, 0)
   stats.value.criticalCount = violations.value.filter(v => v.severity === 'CRITICAL').length
-  
+
   // Compliance rate (assuming total bookings = violations * 5 for demo)
   const totalBookings = violations.value.length * 5
   const compliantBookings = totalBookings - violations.value.length
@@ -500,10 +503,11 @@ const paginatedViolations = computed(() => {
 
 // Utility functions
 const formatCurrency = (value) => {
+  const numValue = parseFloat(value) || 0
   return new Intl.NumberFormat('en-AU', {
     style: 'currency',
     currency: 'AUD',
-  }).format(value)
+  }).format(numValue)
 }
 
 const formatDate = (dateString) => {
