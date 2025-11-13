@@ -13,7 +13,7 @@
       :show-traveller="true"
       :show-date-range="true"
       :show-destinations="true"
-      :show-organization="false"
+      :show-organization="true"
       :show-status="true"
       :show-supplier="false"
       @filters-changed="handleFiltersChanged"
