@@ -18,6 +18,8 @@ const summary = ref({
   booking_count: 0
 })
 const currentFilters = ref({})
+const currentPage = ref(1)
+const itemsPerPage = ref(20)
 
 // Chart refs
 const airlineChartRef = ref(null)
@@ -32,13 +34,26 @@ const airBookings = computed(() => {
   return bookings.value.filter(b => b.air_bookings && b.air_bookings.length > 0)
 })
 
-// Summary stats from backend
+// Summary stats - Calculate from AIR FARE ONLY (not total booking amount)
 const summaryStats = computed(() => {
+  let totalAirSpend = 0
+  let totalFlights = 0
+  let totalCarbon = 0
+
+  airBookings.value.forEach(booking => {
+    (booking.air_bookings || []).forEach(air => {
+      // Use air.total_fare for air-specific spend
+      totalAirSpend += parseFloat(air.total_fare || 0)
+      totalFlights++
+      totalCarbon += parseFloat(air.total_carbon_kg || 0)
+    })
+  })
+
   return {
-    total_bookings: summary.value.booking_count || airBookings.value.length,
-    total_spend: summary.value.total_spend || 0,
-    avg_spend: summary.value.booking_count > 0 ? summary.value.total_spend / summary.value.booking_count : 0,
-    total_carbon_kg: summary.value.total_emissions || 0,
+    total_bookings: totalFlights,
+    total_spend: totalAirSpend,
+    avg_spend: totalFlights > 0 ? totalAirSpend / totalFlights : 0,
+    total_carbon_kg: totalCarbon,
   }
 })
 
@@ -88,7 +103,7 @@ const renderCharts = () => {
   if (classChart) classChart.destroy()
   if (routeChart) routeChart.destroy()
 
-  // Airline Distribution Chart
+  // Airline Distribution Chart - Calculate from AIR FARE ONLY
   const airlineData = {}
   airBookings.value.forEach(booking => {
     (booking.air_bookings || []).forEach(air => {
@@ -96,7 +111,8 @@ const renderCharts = () => {
       if (!airlineData[airline]) {
         airlineData[airline] = 0
       }
-      const amount = parseFloat(booking.total_amount || 0) / booking.air_bookings.length
+      // Use air.total_fare instead of booking.total_amount
+      const amount = parseFloat(air.total_fare || 0)
       airlineData[airline] += amount
     })
   })
@@ -140,7 +156,7 @@ const renderCharts = () => {
     })
   }
 
-  // Travel Class Distribution Chart
+  // Travel Class Distribution Chart - Calculate from AIR FARE ONLY
   const classData = {}
   airBookings.value.forEach(booking => {
     (booking.air_bookings || []).forEach(air => {
@@ -148,17 +164,30 @@ const renderCharts = () => {
       if (!classData[travelClass]) {
         classData[travelClass] = 0
       }
-      const amount = parseFloat(booking.total_amount || 0) / booking.air_bookings.length
+      // Use air.total_fare instead of booking.total_amount
+      const amount = parseFloat(air.total_fare || 0)
       classData[travelClass] += amount
     })
   })
+
+  // Format cabin class labels to Camel Case
+  const formatCabinClass = (className) => {
+    const classMap = {
+      'ECONOMY': 'Economy',
+      'PREMIUM_ECONOMY': 'Premium Economy',
+      'BUSINESS': 'Business',
+      'FIRST': 'First Class',
+      'RESTRICTED_ECONOMY': 'Restricted Economy'
+    }
+    return classMap[className] || className
+  }
 
   if (classChartRef.value) {
     const ctx = classChartRef.value.getContext('2d')
     classChart = new Chart(ctx, {
       type: 'doughnut',
       data: {
-        labels: Object.keys(classData),
+        labels: Object.keys(classData).map(formatCabinClass),
         datasets: [{
           data: Object.values(classData),
           backgroundColor: [
@@ -190,7 +219,7 @@ const renderCharts = () => {
     })
   }
 
-  // Top Routes Chart
+  // Top Routes Chart - Calculate from AIR FARE ONLY, limit to 10
   const routeData = {}
   airBookings.value.forEach(booking => {
     (booking.air_bookings || []).forEach(air => {
@@ -198,14 +227,15 @@ const renderCharts = () => {
       if (!routeData[route]) {
         routeData[route] = 0
       }
-      const amount = parseFloat(booking.total_amount || 0) / booking.air_bookings.length
+      // Use air.total_fare instead of booking.total_amount
+      const amount = parseFloat(air.total_fare || 0)
       routeData[route] += amount
     })
   })
 
   const topRoutes = Object.entries(routeData)
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 10)
+    .slice(0, 10)  // Already limited to 10
 
   if (routeChartRef.value) {
     const ctx = routeChartRef.value.getContext('2d')
@@ -261,16 +291,42 @@ const formatDate = (dateString) => {
   })
 }
 
+// Pagination
+const totalPages = computed(() => {
+  return Math.ceil(airBookings.value.length / itemsPerPage.value)
+})
+
+const startIndex = computed(() => {
+  return (currentPage.value - 1) * itemsPerPage.value
+})
+
+const endIndex = computed(() => {
+  return currentPage.value * itemsPerPage.value
+})
+
+const paginatedAirBookings = computed(() => {
+  return airBookings.value.slice(startIndex.value, endIndex.value)
+})
+
 // Helper functions for table display
 const getRoute = (booking) => {
   if (!booking.air_bookings || booking.air_bookings.length === 0) return 'N/A → N/A'
-  
+
   if (booking.air_bookings.length === 1) {
     const air = booking.air_bookings[0]
     return `${air.origin_airport_iata_code || 'N/A'} → ${air.destination_airport_iata_code || 'N/A'}`
   } else {
     return `Multi-city (${booking.air_bookings.length} flights)`
   }
+}
+
+const getAirFare = (booking) => {
+  // Return total of all air fares for this booking
+  if (!booking.air_bookings || booking.air_bookings.length === 0) return 0
+
+  return booking.air_bookings.reduce((total, air) => {
+    return total + parseFloat(air.total_fare || 0)
+  }, 0)
 }
 
 const getAirline = (booking) => {
@@ -442,9 +498,26 @@ onMounted(async () => {
 
     <!-- Bookings Table -->
     <div v-if="!loading && !error" class="bg-white rounded-xl shadow-sm overflow-hidden">
-      <div class="border-b border-gray-200 px-6 py-4 flex justify-between items-center">
-        <h3 class="text-lg font-semibold text-gray-900">Flight Bookings</h3>
-        <span class="text-sm text-gray-500">{{ airBookings.length }} bookings</span>
+      <!-- Table Controls -->
+      <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+        <div class="flex items-center space-x-4">
+          <span class="text-sm text-gray-700">
+            Showing {{ startIndex + 1 }}-{{ Math.min(endIndex, airBookings.length) }} of {{ airBookings.length }} bookings
+          </span>
+        </div>
+        <div class="flex items-center space-x-2">
+          <label class="text-sm text-gray-700">Per page:</label>
+          <select
+            v-model="itemsPerPage"
+            class="border border-gray-300 rounded-md px-2 py-1 text-sm"
+          >
+            <option :value="10">10</option>
+            <option :value="20">20</option>
+            <option :value="30">30</option>
+            <option :value="40">40</option>
+            <option :value="50">50</option>
+          </select>
+        </div>
       </div>
 
       <div class="overflow-x-auto">
@@ -462,14 +535,14 @@ onMounted(async () => {
             </tr>
           </thead>
           <tbody class="bg-white divide-y divide-gray-200">
-            <tr v-for="booking in airBookings" :key="booking.id" class="hover:bg-gray-50">
+            <tr v-for="booking in paginatedAirBookings" :key="booking.id" class="hover:bg-gray-50">
               <td class="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">{{ booking.agent_booking_reference }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ booking.traveller_name }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ getRoute(booking) }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ getAirline(booking) }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ getTravelClass(booking) }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ formatDate(booking.travel_date) }}</td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{{ formatCurrency(booking.total_amount) }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{{ formatCurrency(getAirFare(booking)) }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{{ getTotalCarbon(booking) }}</td>
             </tr>
           </tbody>
@@ -479,6 +552,27 @@ onMounted(async () => {
           <span class="mdi mdi-airplane-off text-gray-300 text-6xl"></span>
           <p class="text-gray-500 mt-4">No flight bookings found</p>
         </div>
+      </div>
+
+      <!-- Pagination -->
+      <div class="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
+        <button
+          @click="currentPage > 1 && currentPage--"
+          :disabled="currentPage === 1"
+          class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Previous
+        </button>
+        <span class="text-sm text-gray-700">
+          Page {{ currentPage }} of {{ totalPages }}
+        </span>
+        <button
+          @click="currentPage < totalPages && currentPage++"
+          :disabled="currentPage === totalPages"
+          class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Next
+        </button>
       </div>
     </div>
   </div>
