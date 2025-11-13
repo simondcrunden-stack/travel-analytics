@@ -18,6 +18,8 @@ const summary = ref({
   booking_count: 0
 })
 const currentFilters = ref({})
+const currentPage = ref(1)
+const itemsPerPage = ref(20)
 
 // Chart refs
 const locationChartRef = ref(null)
@@ -30,22 +32,27 @@ const carHireBookings = computed(() => {
   return bookings.value.filter(b => b.car_hire_bookings && b.car_hire_bookings.length > 0)
 })
 
-// Summary stats from backend + view-specific calculations
+// Summary stats - Calculate from CAR HIRE ONLY (not total booking amount)
 const summaryStats = computed(() => {
-  // Sum rental days from car bookings (view-specific metric)
-  const totalDays = carHireBookings.value.reduce((sum, b) => {
-    const bookingDays = b.car_hire_bookings.reduce((daySum, car) =>
-      daySum + (car.number_of_days || 0), 0)
-    return sum + bookingDays
-  }, 0)
+  let totalCarHireSpend = 0
+  let totalDays = 0
+  let totalCarHireBookings = 0
 
-  const totalSpend = summary.value.total_spend || 0
-  const avgDailyRate = totalDays > 0 ? totalSpend / totalDays : 0
+  carHireBookings.value.forEach(booking => {
+    booking.car_hire_bookings.forEach(car => {
+      // Use car.total_amount_base for car hire-specific spend
+      totalCarHireSpend += parseFloat(car.total_amount_base || 0)
+      totalDays += car.number_of_days || 0
+      totalCarHireBookings++
+    })
+  })
+
+  const avgDailyRate = totalDays > 0 ? totalCarHireSpend / totalDays : 0
 
   return {
-    total_bookings: summary.value.booking_count || carHireBookings.value.length,
-    total_spend: totalSpend,
-    avg_spend: summary.value.booking_count > 0 ? totalSpend / summary.value.booking_count : 0,
+    total_bookings: totalCarHireBookings,
+    total_spend: totalCarHireSpend,
+    avg_spend: totalCarHireBookings > 0 ? totalCarHireSpend / totalCarHireBookings : 0,
     total_days: totalDays,
     avg_daily_rate: avgDailyRate,
   }
@@ -96,7 +103,7 @@ const renderCharts = () => {
   if (locationChart) locationChart.destroy()
   if (rentalCompanyChart) rentalCompanyChart.destroy()
 
-  // Location Chart Data
+  // Location Chart Data - Calculate from CAR HIRE ONLY
   const locationChartData = {}
   carHireBookings.value.forEach(booking => {
     booking.car_hire_bookings.forEach(car => {
@@ -104,7 +111,8 @@ const renderCharts = () => {
       if (!locationChartData[city]) {
         locationChartData[city] = 0
       }
-      const amount = parseFloat(booking.total_amount || 0) / booking.car_hire_bookings.length
+      // Use car.total_amount_base instead of booking.total_amount
+      const amount = parseFloat(car.total_amount_base || 0)
       locationChartData[city] += amount
     })
   })
@@ -148,7 +156,7 @@ const renderCharts = () => {
     })
   }
 
-  // Rental Company Chart Data
+  // Rental Company Chart Data - Calculate from CAR HIRE ONLY
   const rentalCompanyChartData = {}
   carHireBookings.value.forEach(booking => {
     booking.car_hire_bookings.forEach(car => {
@@ -156,7 +164,8 @@ const renderCharts = () => {
       if (!rentalCompanyChartData[company]) {
         rentalCompanyChartData[company] = 0
       }
-      const amount = parseFloat(booking.total_amount || 0) / booking.car_hire_bookings.length
+      // Use car.total_amount_base instead of booking.total_amount
+      const amount = parseFloat(car.total_amount_base || 0)
       rentalCompanyChartData[company] += amount
     })
   })
@@ -218,17 +227,43 @@ const formatDate = (dateString) => {
   })
 }
 
-// NEW: Helper functions updated for array handling
+// Pagination
+const totalPages = computed(() => {
+  return Math.ceil(carHireBookings.value.length / itemsPerPage.value)
+})
+
+const startIndex = computed(() => {
+  return (currentPage.value - 1) * itemsPerPage.value
+})
+
+const endIndex = computed(() => {
+  return currentPage.value * itemsPerPage.value
+})
+
+const paginatedCarHireBookings = computed(() => {
+  return carHireBookings.value.slice(startIndex.value, endIndex.value)
+})
+
+// Helper functions updated for array handling
 const getRentalInfo = (booking) => {
   if (!booking.car_hire_bookings || booking.car_hire_bookings.length === 0) {
     return 'N/A'
   }
-  
+
   if (booking.car_hire_bookings.length === 1) {
     return booking.car_hire_bookings[0].rental_company || 'Unknown'
   } else {
     return `Multi-city (${booking.car_hire_bookings.length} rentals)`
   }
+}
+
+const getCarHireAmount = (booking) => {
+  // Return total of all car hire amounts for this booking
+  if (!booking.car_hire_bookings || booking.car_hire_bookings.length === 0) return 0
+
+  return booking.car_hire_bookings.reduce((total, car) => {
+    return total + parseFloat(car.total_amount_base || 0)
+  }, 0)
 }
 
 const getCityInfo = (booking) => {
@@ -304,8 +339,8 @@ onMounted(async () => {
       :show-traveller="true"
       :show-date-range="true"
       :show-destinations="true"
-      :show-organization="false"
-      :show-status="true"
+      :show-organization="true"
+      :show-status="false"
       :show-supplier="true"
       supplier-label="Rental Company"
       supplier-placeholder="Hertz, Avis, Budget..."
@@ -403,9 +438,26 @@ onMounted(async () => {
 
     <!-- Bookings Table -->
     <div v-if="!loading && !error" class="bg-white rounded-xl shadow-sm overflow-hidden">
-      <div class="border-b border-gray-200 px-6 py-4 flex justify-between items-center">
-        <h3 class="text-lg font-semibold text-gray-900">Car Hire Bookings</h3>
-        <span class="text-sm text-gray-500">{{ carHireBookings.length }} bookings</span>
+      <!-- Table Controls -->
+      <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+        <div class="flex items-center space-x-4">
+          <span class="text-sm text-gray-700">
+            Showing {{ startIndex + 1 }}-{{ Math.min(endIndex, carHireBookings.length) }} of {{ carHireBookings.length }} bookings
+          </span>
+        </div>
+        <div class="flex items-center space-x-2">
+          <label class="text-sm text-gray-700">Per page:</label>
+          <select
+            v-model="itemsPerPage"
+            class="border border-gray-300 rounded-md px-2 py-1 text-sm"
+          >
+            <option :value="10">10</option>
+            <option :value="20">20</option>
+            <option :value="30">30</option>
+            <option :value="40">40</option>
+            <option :value="50">50</option>
+          </select>
+        </div>
       </div>
 
       <div class="overflow-x-auto">
@@ -423,7 +475,7 @@ onMounted(async () => {
             </tr>
           </thead>
           <tbody class="bg-white divide-y divide-gray-200">
-            <tr v-for="booking in carHireBookings" :key="booking.id" class="hover:bg-gray-50">
+            <tr v-for="booking in paginatedCarHireBookings" :key="booking.id" class="hover:bg-gray-50">
               <td class="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">{{ booking.agent_booking_reference }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ booking.traveller_name }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ getRentalInfo(booking) }}</td>
@@ -431,7 +483,7 @@ onMounted(async () => {
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ getVehicleInfo(booking) }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ getPickupDate(booking) }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">{{ getTotalDays(booking) }}</td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{{ formatCurrency(booking.total_amount) }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{{ formatCurrency(getCarHireAmount(booking)) }}</td>
             </tr>
           </tbody>
         </table>
@@ -440,6 +492,27 @@ onMounted(async () => {
           <span class="mdi mdi-car-off text-gray-300 text-6xl"></span>
           <p class="text-gray-500 mt-4">No car hire bookings found</p>
         </div>
+      </div>
+
+      <!-- Pagination -->
+      <div class="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
+        <button
+          @click="currentPage > 1 && currentPage--"
+          :disabled="currentPage === 1"
+          class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Previous
+        </button>
+        <span class="text-sm text-gray-700">
+          Page {{ currentPage }} of {{ totalPages }}
+        </span>
+        <button
+          @click="currentPage < totalPages && currentPage++"
+          :disabled="currentPage === totalPages"
+          class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Next
+        </button>
       </div>
     </div>
   </div>
