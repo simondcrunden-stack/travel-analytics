@@ -100,8 +100,8 @@ export const bookingService = {
     return response.data
   },
 
-  async getAvailableCountries() {
-    const response = await api.get('/bookings/available_countries/')
+  async getAvailableCountries(params = {}) {
+    const response = await api.get('/bookings/available_countries/', { params })
     return response.data
   },
 }
