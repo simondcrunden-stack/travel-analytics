@@ -697,6 +697,31 @@ class BookingViewSet(viewsets.ModelViewSet):
 # BUDGET VIEWSETS
 # ============================================================================
 
+class FiscalYearViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    API endpoint for fiscal years.
+    """
+    serializer_class = FiscalYearSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filterset_fields = ['organization', 'is_active', 'is_current']
+
+    def get_queryset(self):
+        user = self.request.user
+
+        if user.user_type == 'ADMIN':
+            return FiscalYear.objects.all().order_by('-start_date')
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            return FiscalYear.objects.filter(
+                Q(organization=user.organization) |
+                Q(organization__travel_agent=user.organization)
+            ).order_by('-start_date')
+        else:
+            return FiscalYear.objects.filter(
+                organization=user.organization
+            ).order_by('-start_date')
+
+
 class BudgetViewSet(viewsets.ReadOnlyModelViewSet):
     """
     API endpoint for budgets with spend tracking.

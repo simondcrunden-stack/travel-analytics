@@ -12,8 +12,9 @@
         v-model="selectedFiscalYear"
         class="px-4 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
       >
-        <option value="FY2024-25">FY 2024-25</option>
-        <option value="FY2023-24">FY 2023-24</option>
+        <option v-for="fy in fiscalYears" :key="fy.id" :value="fy.year_label">
+          {{ fy.year_label }}
+        </option>
       </select>
     </div>
 
@@ -305,7 +306,8 @@ import {
 const loading = ref(true)
 const error = ref(null)
 const budgets = ref([])
-const selectedFiscalYear = ref('FY2024-25')
+const fiscalYears = ref([])
+const selectedFiscalYear = ref('')
 
 // Universal filters from UniversalFilters component
 const universalFilters = ref({})
@@ -322,6 +324,31 @@ const handleFiltersChanged = async (filters) => {
   console.log('💰 [BudgetView] Universal filters changed:', filters)
   universalFilters.value = filters
   await fetchBudgets()
+}
+
+// Fetch fiscal years
+const fetchFiscalYears = async () => {
+  try {
+    console.log('📅 [BudgetView] Fetching fiscal years')
+    const response = await api.get('/fiscal-years/', {
+      params: {
+        is_active: true
+      }
+    })
+    fiscalYears.value = response.data.results || []
+    console.log('✅ [BudgetView] Loaded fiscal years:', fiscalYears.value.length)
+
+    // Set default to current fiscal year if available
+    const currentFY = fiscalYears.value.find(fy => fy.is_current)
+    if (currentFY) {
+      selectedFiscalYear.value = currentFY.year_label
+    } else if (fiscalYears.value.length > 0) {
+      // Default to first fiscal year if no current one is set
+      selectedFiscalYear.value = fiscalYears.value[0].year_label
+    }
+  } catch (err) {
+    console.error('Error loading fiscal years:', err)
+  }
 }
 
 // Fetch data
@@ -562,7 +589,8 @@ watch(() => viewFilters.value.search, () => {
 })
 
 // Lifecycle
-onMounted(() => {
-  fetchBudgets()
+onMounted(async () => {
+  await fetchFiscalYears()
+  await fetchBudgets()
 })
 </script>

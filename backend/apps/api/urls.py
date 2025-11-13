@@ -14,6 +14,7 @@ router.register(r'travellers', views.TravellerViewSet, basename='traveller')
 router.register(r'bookings', views.BookingViewSet, basename='booking')
 
 # Budget endpoints
+router.register(r'fiscal-years', views.FiscalYearViewSet, basename='fiscal-year')
 router.register(r'budgets', views.BudgetViewSet, basename='budget')
 
 # Reference data endpoints
