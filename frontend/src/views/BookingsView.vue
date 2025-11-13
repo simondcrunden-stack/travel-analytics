@@ -110,14 +110,15 @@
         </div>
         <div class="flex items-center space-x-2">
           <label class="text-sm text-gray-700">Per page:</label>
-          <select 
-            v-model="itemsPerPage" 
+          <select
+            v-model="itemsPerPage"
             class="border border-gray-300 rounded-md px-2 py-1 text-sm"
           >
             <option :value="10">10</option>
-            <option :value="25">25</option>
+            <option :value="20">20</option>
+            <option :value="30">30</option>
+            <option :value="40">40</option>
             <option :value="50">50</option>
-            <option :value="100">100</option>
           </select>
         </div>
       </div>
@@ -268,7 +269,7 @@ const summary = ref({
 const loading = ref(true)
 const error = ref(null)
 const currentPage = ref(1)
-const itemsPerPage = ref(25)
+const itemsPerPage = ref(20)
 const sortField = ref('travel_date')
 const sortDirection = ref('desc')
 const currentFilters = ref({})

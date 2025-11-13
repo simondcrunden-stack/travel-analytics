@@ -625,21 +625,29 @@ const applyDatePreset = (preset) => {
       dateFrom = dateTo = today
       break
     case 'week':
+      // Start of week (Sunday)
       dateFrom = new Date(today.getFullYear(), today.getMonth(), today.getDate() - today.getDay())
+      // End of week (Saturday)
       dateTo = new Date(today.getFullYear(), today.getMonth(), today.getDate() + (6 - today.getDay()))
       break
     case 'month':
+      // First day of current month
       dateFrom = new Date(today.getFullYear(), today.getMonth(), 1)
+      // Last day of current month
       dateTo = new Date(today.getFullYear(), today.getMonth() + 1, 0)
       break
     case 'quarter':
+      // First day of current quarter
       const quarter = Math.floor(today.getMonth() / 3)
       dateFrom = new Date(today.getFullYear(), quarter * 3, 1)
+      // Last day of current quarter
       dateTo = new Date(today.getFullYear(), quarter * 3 + 3, 0)
       break
     case 'year':
+      // First day of current year
       dateFrom = new Date(today.getFullYear(), 0, 1)
-      dateTo = new Date(today.getFullYear(), 11, 31)
+      // Last day of current year
+      dateTo = new Date(today.getFullYear(), 12, 0)
       break
     case 'last30':
       dateFrom = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 30)
@@ -652,10 +660,19 @@ const applyDatePreset = (preset) => {
   }
 
   if (dateFrom && dateTo) {
-    localFilters.dateFrom = dateFrom.toISOString().split('T')[0]
-    localFilters.dateTo = dateTo.toISOString().split('T')[0]
+    // Format dates as YYYY-MM-DD without timezone conversion issues
+    localFilters.dateFrom = formatDateForInput(dateFrom)
+    localFilters.dateTo = formatDateForInput(dateTo)
     emitFilters()
   }
+}
+
+// Helper function to format date as YYYY-MM-DD without timezone issues
+const formatDateForInput = (date) => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 const applyDestinationPreset = (preset) => {
