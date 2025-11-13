@@ -489,6 +489,30 @@ const countryOptions = computed(() => {
   }))
 })
 
+// Watch for organization changes to cascade filter options
+watch(
+  () => localFilters.organization,
+  (newOrg, oldOrg) => {
+    if (newOrg !== oldOrg) {
+      console.log('🏢 Organization changed from', oldOrg, 'to', newOrg)
+
+      // Clear dependent filters when organization changes
+      if (localFilters.travellers.length > 0) {
+        console.log('🧹 Clearing travellers due to organization change')
+        localFilters.travellers = []
+      }
+      if (localFilters.countries.length > 0) {
+        console.log('🧹 Clearing countries due to organization change')
+        localFilters.countries = []
+      }
+
+      // Reload filtered options
+      if (props.showTraveller) loadTravellers()
+      if (props.showDestinations) loadAvailableCountries()
+    }
+  }
+)
+
 // Watch for filter changes to show "Save as Default" button
 watch(
   localFilters,
@@ -642,9 +666,17 @@ const applyDestinationPreset = (preset) => {
 // Load travellers for dropdown
 const loadTravellers = async () => {
   try {
-    const response = await api.get('/travellers/')
+    const params = {}
+
+    // Filter by organization if selected
+    if (localFilters.organization) {
+      params.organization = localFilters.organization
+      console.log('🏢 Loading travellers for organization:', localFilters.organization)
+    }
+
+    const response = await api.get('/travellers/', { params })
     const travellerData = response.data.results || response.data
-    console.log('✅ Loaded travellers:', travellerData)
+    console.log(`✅ Loaded ${travellerData.length} travellers`, params.organization ? `for organization ${params.organization}` : '')
     travellers.value = Array.isArray(travellerData) ? travellerData : []
   } catch (error) {
     console.error('Failed to load travellers:', error)
@@ -671,9 +703,18 @@ const loadAvailableCountries = async () => {
 
   try {
     isLoadingCountries.value = true
-    const data = await bookingService.getAvailableCountries()
+
+    const filters = {}
+
+    // Filter by organization if selected
+    if (localFilters.organization) {
+      filters.organization = localFilters.organization
+      console.log('🏢 Loading countries for organization:', localFilters.organization)
+    }
+
+    const data = await bookingService.getAvailableCountries(filters)
     countries.value = data
-    console.log(`✅ Loaded ${data.length} countries with booking data`)
+    console.log(`✅ Loaded ${data.length} countries`, filters.organization ? `for organization ${filters.organization}` : 'with booking data')
   } catch (error) {
     console.error('Failed to load countries:', error)
     countries.value = []

@@ -612,9 +612,10 @@ class BookingViewSet(viewsets.ModelViewSet):
         """
         Get list of countries that appear in the user's accessible bookings.
         Uses the same queryset logic as get_queryset() for consistency.
+        Supports filtering by organization via query params.
         """
         user = request.user
-        
+
         # Build base queryset using same logic as get_queryset()
         if user.user_type == 'ADMIN':
             base_queryset = Booking.objects.all()
@@ -627,6 +628,11 @@ class BookingViewSet(viewsets.ModelViewSet):
         else:
             # Customer users see only their organization
             base_queryset = Booking.objects.filter(organization=user.organization)
+
+        # Apply organization filter if provided in query params
+        organization_id = request.query_params.get('organization')
+        if organization_id:
+            base_queryset = base_queryset.filter(organization_id=organization_id)
         
         # Collect unique country names
         countries_set = set()
