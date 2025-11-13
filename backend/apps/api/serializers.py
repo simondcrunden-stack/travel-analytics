@@ -102,21 +102,21 @@ class AirSegmentSerializer(serializers.ModelSerializer):
 class AirBookingSerializer(serializers.ModelSerializer):
     segments = AirSegmentSerializer(many=True, read_only=True)
     total_carbon_kg = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = AirBooking
         fields = [
             'id', 'trip_type', 'travel_class', 'ticket_number',
-            'primary_airline_iata_code', 'primary_airline_name', 
-            'origin_airport_iata_code', 'destination_airport_iata_code', 
-            'lowest_fare_available', 'lowest_fare_currency', 'potential_savings', 
-            'segments', 'total_carbon_kg', 'base_fare', 'taxes', 'gst_amount'
+            'primary_airline_iata_code', 'primary_airline_name',
+            'origin_airport_iata_code', 'destination_airport_iata_code',
+            'lowest_fare_available', 'lowest_fare_currency', 'potential_savings',
+            'segments', 'total_carbon_kg', 'base_fare', 'taxes', 'fees', 'gst_amount', 'total_fare', 'currency'
         ]
-    
+
     def get_total_carbon_kg(self, obj):
         """Sum carbon emissions across all segments"""
         total = sum(
-            segment.carbon_emissions_kg or 0 
+            segment.carbon_emissions_kg or 0
             for segment in obj.segments.all()
         )
         return round(total, 2)
