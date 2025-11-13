@@ -10,7 +10,7 @@
     <UniversalFilters
       :show-traveller="false"
       :show-date-range="true"
-      :show-destinations="false"
+      :show-destinations="true"
       :show-organization="true"
       :show-status="false"
       :show-supplier="false"

@@ -19,10 +19,10 @@
 
     <!-- Universal Filters -->
     <UniversalFilters
-      :show-traveller="true"
+      :show-traveller="false"
       :show-date-range="true"
       :show-destinations="false"
-      :show-organization="false"
+      :show-organization="true"
       :show-status="false"
       :show-supplier="false"
       @filters-changed="handleFiltersChanged"
@@ -131,20 +131,7 @@
       <div class="bg-white rounded-xl shadow-sm p-6">
         <h3 class="text-lg font-semibold text-gray-900 mb-4">Budget Filters</h3>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <!-- Organization Filter -->
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Organization</label>
-            <select
-              v-model="viewFilters.organization"
-              class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-            >
-              <option value="">All Organizations</option>
-              <option value="TechCorp Australia">TechCorp Australia</option>
-              <option value="Retail Solutions Group">Retail Solutions Group</option>
-            </select>
-          </div>
-
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <!-- Budget Status Filter -->
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2">Budget Status</label>
