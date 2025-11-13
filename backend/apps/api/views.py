@@ -744,8 +744,8 @@ class BookingViewSet(viewsets.ModelViewSet):
             results = [
                 {
                     'value': airline.name,
-                    'label': airline.name,
-                    'subtitle': airline.iata_code
+                    'label': f"{airline.name} ({airline.iata_code})",
+                    'subtitle': None
                 }
                 for airline in airlines[:50]
             ]
