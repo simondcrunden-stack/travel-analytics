@@ -496,23 +496,40 @@ onMounted(async () => {
 
       <!-- Pagination -->
       <div class="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
-        <button
-          @click="currentPage > 1 && currentPage--"
-          :disabled="currentPage === 1"
-          class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          Previous
-        </button>
-        <span class="text-sm text-gray-700">
-          Page {{ currentPage }} of {{ totalPages }}
-        </span>
-        <button
-          @click="currentPage < totalPages && currentPage++"
-          :disabled="currentPage === totalPages"
-          class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          Next
-        </button>
+        <div class="flex items-center gap-2">
+          <span class="text-sm text-gray-700">Rows per page:</span>
+          <select v-model="itemsPerPage" class="border border-gray-300 rounded-md px-2 py-1 text-sm">
+            <option :value="10">10</option>
+            <option :value="20">20</option>
+            <option :value="30">30</option>
+            <option :value="40">40</option>
+            <option :value="50">50</option>
+          </select>
+        </div>
+
+        <div class="flex items-center gap-4">
+          <span class="text-sm text-gray-700">
+            {{ (currentPage - 1) * itemsPerPage + 1 }}-{{ Math.min(currentPage * itemsPerPage, carHireBookings.length) }}
+            of {{ carHireBookings.length }}
+          </span>
+
+          <div class="flex gap-2">
+            <button
+              @click="currentPage > 1 && currentPage--"
+              :disabled="currentPage === 1"
+              class="px-3 py-1 border border-gray-300 rounded-md text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+            >
+              Previous
+            </button>
+            <button
+              @click="currentPage < totalPages && currentPage++"
+              :disabled="currentPage === totalPages"
+              class="px-3 py-1 border border-gray-300 rounded-md text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+            >
+              Next
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
