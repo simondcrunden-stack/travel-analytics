@@ -686,13 +686,237 @@ class BookingViewSet(viewsets.ModelViewSet):
         
         # Sort by name
         country_data.sort(key=lambda x: x['name'])
-        
+
         return Response(country_data)
+
+    @action(detail=False, methods=['get'])
+    def supplier_autocomplete(self, request):
+        """
+        Get autocomplete suggestions for suppliers based on type.
+        Query params:
+        - type: 'airline', 'hotel', or 'car_rental'
+        - search: optional search query
+        - organization: optional organization filter
+        """
+        user = request.user
+        supplier_type = request.query_params.get('type', '')
+        search_query = request.query_params.get('search', '')
+        organization_id = request.query_params.get('organization')
+
+        # Build base queryset using same logic as get_queryset()
+        if user.user_type == 'ADMIN':
+            base_queryset = Booking.objects.all()
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            base_queryset = Booking.objects.filter(
+                Q(organization=user.organization) |
+                Q(organization__travel_agent=user.organization)
+            )
+        else:
+            base_queryset = Booking.objects.filter(organization=user.organization)
+
+        # Apply organization filter if provided
+        if organization_id:
+            base_queryset = base_queryset.filter(organization_id=organization_id)
+
+        results = []
+
+        if supplier_type == 'airline':
+            # Get airlines from air bookings
+            from apps.reference_data.models import Airline
+            airline_codes = AirBooking.objects.filter(
+                booking__in=base_queryset,
+                primary_airline_iata_code__isnull=False
+            ).exclude(
+                primary_airline_iata_code=''
+            ).values_list('primary_airline_iata_code', flat=True).distinct()
+
+            airlines = Airline.objects.filter(iata_code__in=airline_codes)
+
+            if search_query:
+                airlines = airlines.filter(
+                    Q(name__icontains=search_query) |
+                    Q(iata_code__icontains=search_query)
+                )
+
+            results = [
+                {
+                    'value': airline.name,
+                    'label': f"{airline.name} ({airline.iata_code})",
+                    'subtitle': None
+                }
+                for airline in airlines[:50]
+            ]
+
+        elif supplier_type == 'hotel':
+            # Get hotels from master data (Hotel model)
+            from apps.reference_data.models import Hotel, HotelAlias
+
+            # Start with hotels that have bookings in the base queryset
+            hotel_ids = AccommodationBooking.objects.filter(
+                booking__in=base_queryset,
+                hotel__isnull=False
+            ).values_list('hotel_id', flat=True).distinct()
+
+            hotels = Hotel.objects.filter(
+                id__in=hotel_ids,
+                is_active=True
+            )
+
+            if search_query:
+                # Search both canonical name and aliases
+                hotels = hotels.filter(
+                    Q(canonical_name__icontains=search_query) |
+                    Q(hotel_chain__icontains=search_query) |
+                    Q(aliases__alias_name__icontains=search_query, aliases__is_active=True)
+                ).distinct()
+
+            results = [
+                {
+                    'value': hotel.canonical_name,
+                    'label': hotel.canonical_name,
+                    'subtitle': hotel.hotel_chain if hotel.hotel_chain else None
+                }
+                for hotel in hotels[:50]
+            ]
+
+        elif supplier_type == 'car_rental':
+            # Get unique rental companies
+            companies = CarHireBooking.objects.filter(
+                booking__in=base_queryset,
+                rental_company__isnull=False
+            ).values_list('rental_company', flat=True).distinct()
+
+            if search_query:
+                companies = CarHireBooking.objects.filter(
+                    booking__in=base_queryset,
+                    rental_company__icontains=search_query
+                ).values_list('rental_company', flat=True).distinct()
+
+            results = [
+                {
+                    'value': company,
+                    'label': company,
+                    'subtitle': None
+                }
+                for company in sorted(companies)[:50]
+            ]
+
+        return Response(results)
+
+    @action(detail=False, methods=['get'])
+    def city_autocomplete(self, request):
+        """
+        Get autocomplete suggestions for cities.
+        Query params:
+        - search: optional search query
+        - organization: optional organization filter
+        """
+        user = request.user
+        search_query = request.query_params.get('search', '')
+        organization_id = request.query_params.get('organization')
+
+        # Build base queryset using same logic as get_queryset()
+        if user.user_type == 'ADMIN':
+            base_queryset = Booking.objects.all()
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            base_queryset = Booking.objects.filter(
+                Q(organization=user.organization) |
+                Q(organization__travel_agent=user.organization)
+            )
+        else:
+            base_queryset = Booking.objects.filter(organization=user.organization)
+
+        # Apply organization filter if provided
+        if organization_id:
+            base_queryset = base_queryset.filter(organization_id=organization_id)
+
+        cities = set()
+
+        # Get cities from air segments (via airports)
+        from apps.reference_data.models import Airport
+        air_segments = AirSegment.objects.filter(
+            air_booking__booking__in=base_queryset
+        ).values_list('origin_airport_iata_code', 'destination_airport_iata_code')
+
+        iata_codes = set()
+        for origin_code, dest_code in air_segments:
+            if origin_code:
+                iata_codes.add(origin_code)
+            if dest_code:
+                iata_codes.add(dest_code)
+
+        if iata_codes:
+            airport_cities = Airport.objects.filter(
+                iata_code__in=iata_codes
+            ).values_list('city', flat=True).distinct()
+            cities.update(airport_cities)
+
+        # Get cities from accommodation
+        accommodation_cities = AccommodationBooking.objects.filter(
+            booking__in=base_queryset,
+            city__isnull=False
+        ).values_list('city', flat=True).distinct()
+        cities.update(accommodation_cities)
+
+        # Get cities from car hire
+        car_pickup_cities = CarHireBooking.objects.filter(
+            booking__in=base_queryset,
+            pickup_city__isnull=False
+        ).values_list('pickup_city', flat=True).distinct()
+        cities.update(car_pickup_cities)
+
+        car_dropoff_cities = CarHireBooking.objects.filter(
+            booking__in=base_queryset,
+            dropoff_city__isnull=False
+        ).values_list('dropoff_city', flat=True).distinct()
+        cities.update(car_dropoff_cities)
+
+        # Filter by search query if provided
+        if search_query:
+            cities = [city for city in cities if search_query.lower() in city.lower()]
+
+        # Sort and format results
+        city_list = sorted(cities)[:50]
+        results = [
+            {
+                'value': city,
+                'label': city,
+                'subtitle': None
+            }
+            for city in city_list
+        ]
+
+        return Response(results)
 
 
 # ============================================================================
 # BUDGET VIEWSETS
 # ============================================================================
+
+class FiscalYearViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    API endpoint for fiscal years.
+    """
+    serializer_class = FiscalYearSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filterset_fields = ['organization', 'is_active', 'is_current']
+
+    def get_queryset(self):
+        user = self.request.user
+
+        if user.user_type == 'ADMIN':
+            return FiscalYear.objects.all().order_by('-start_date')
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            return FiscalYear.objects.filter(
+                Q(organization=user.organization) |
+                Q(organization__travel_agent=user.organization)
+            ).order_by('-start_date')
+        else:
+            return FiscalYear.objects.filter(
+                organization=user.organization
+            ).order_by('-start_date')
+
 
 class BudgetViewSet(viewsets.ReadOnlyModelViewSet):
     """
@@ -777,14 +1001,14 @@ class CommissionViewSet(viewsets.ReadOnlyModelViewSet):
 class ServiceFeeViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet for service fees"""
     serializer_class = ServiceFeeSerializer
-    filterset_fields = ['organization', 'fee_type', 'traveller']
+    filterset_fields = ['organization', 'fee_type', 'traveller', 'booking_channel']
     search_fields = ['description']
-    ordering_fields = ['fee_date', 'amount']
+    ordering_fields = ['fee_date', 'fee_amount']
     ordering = ['-fee_date']
-    
+
     def get_queryset(self):
         user = self.request.user
-        
+
         if user.user_type == 'ADMIN':
             return ServiceFee.objects.all()
         elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
@@ -796,8 +1020,49 @@ class ServiceFeeViewSet(viewsets.ReadOnlyModelViewSet):
         elif user.user_type in ['CUSTOMER_ADMIN', 'CUSTOMER_RISK', 'CUSTOMER']:
             if user.organization:
                 return ServiceFee.objects.filter(organization=user.organization)
-        
+
         return ServiceFee.objects.none()
+
+    @action(detail=False, methods=['get'])
+    def fee_type_choices(self, request):
+        """
+        Get available fee type choices from the model.
+        Returns dynamic list so new fee types can be added without frontend changes.
+        """
+        choices = [
+            {'value': choice[0], 'label': choice[1]}
+            for choice in ServiceFee.FEE_TYPES
+        ]
+        return Response(choices)
+
+# ============================================================================
+# COMPLIANCE VIEWSET
+# ============================================================================
+
+class ComplianceViolationViewSet(viewsets.ReadOnlyModelViewSet):
+    """ViewSet for compliance violations"""
+    serializer_class = ComplianceViolationSerializer
+    filterset_fields = ['organization', 'violation_type', 'severity', 'is_waived']
+    search_fields = ['booking__agent_booking_reference', 'traveller__first_name', 'traveller__last_name', 'violation_description']
+    ordering_fields = ['detected_at', 'variance_amount', 'severity']
+    ordering = ['-detected_at']
+
+    def get_queryset(self):
+        user = self.request.user
+
+        if user.user_type == 'ADMIN':
+            return ComplianceViolation.objects.all()
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            if user.organization:
+                return ComplianceViolation.objects.filter(
+                    Q(organization=user.organization) |
+                    Q(organization__travel_agent=user.organization)
+                )
+        elif user.user_type in ['CUSTOMER_ADMIN', 'CUSTOMER_RISK', 'CUSTOMER']:
+            if user.organization:
+                return ComplianceViolation.objects.filter(organization=user.organization)
+
+        return ComplianceViolation.objects.none()
 
 # ============================================================================
 # COUNTRY VIEWSET

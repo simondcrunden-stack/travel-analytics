@@ -1198,16 +1198,15 @@ class InvoiceAdmin(admin.ModelAdmin):
 
 @admin.register(ServiceFee)
 class ServiceFeeAdmin(admin.ModelAdmin):
-    # FIXED: Changed 'amount' to 'fee_amount'
-    list_display = ['fee_type', 'organization', 'traveller', 
-                    'fee_date', 'fee_amount', 'booking_channel']
+    list_display = ['fee_type', 'organization', 'traveller',
+                    'fee_date', 'invoice_number', 'fee_amount', 'gst_amount', 'booking_channel']
     list_filter = ['fee_type', 'organization', 'booking_channel', 'fee_date']
-    search_fields = ['organization__name', 'traveller__first_name', 'traveller__last_name']
+    search_fields = ['organization__name', 'traveller__first_name', 'traveller__last_name', 'invoice_number']
     date_hierarchy = 'fee_date'
-    
+
     fieldsets = (
         ('Fee Details', {
-            'fields': ('fee_type', 'fee_date', 'fee_amount', 'currency')
+            'fields': ('fee_type', 'fee_date', 'invoice_number', 'gst_amount', 'fee_amount', 'currency')
         }),
         ('Related', {
             'fields': ('booking', 'organization', 'traveller')

@@ -10,7 +10,7 @@ from apps.compliance.models import (
     ComplianceRule, ComplianceViolation,
     HighRiskDestination, TravelRiskAlert
 )
-from apps.reference_data.models import Airport, Airline, CurrencyExchangeRate, Country
+from apps.reference_data.models import Airport, Airline, CurrencyExchangeRate, Country, Hotel
 from apps.commissions.models import Commission
 
 
@@ -229,18 +229,17 @@ class BudgetSerializer(serializers.ModelSerializer):
     organization_name = serializers.CharField(source='organization.name', read_only=True)
     fiscal_year_label = serializers.CharField(source='fiscal_year.year_label', read_only=True)
     budget_status = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = Budget
         fields = [
             'id', 'organization', 'organization_name', 'fiscal_year',
             'fiscal_year_label', 'cost_center', 'cost_center_name',
-            'total_budget', 'air_budget', 'accommodation_budget',
-            'car_hire_budget', 'other_budget', 'currency',
+            'total_budget', 'currency',
             'warning_threshold', 'critical_threshold', 'budget_status',
             'is_active', 'notes'
         ]
-    
+
     def get_budget_status(self, obj):
         """Get current budget utilization"""
         return obj.get_budget_status()
@@ -265,15 +264,21 @@ class BudgetAlertSerializer(serializers.ModelSerializer):
 class ComplianceViolationSerializer(serializers.ModelSerializer):
     booking_reference = serializers.CharField(source='booking.agent_booking_reference', read_only=True)
     traveller_name = serializers.CharField(source='traveller.__str__', read_only=True)
-    
+    organization_name = serializers.SerializerMethodField()
+
     class Meta:
         model = ComplianceViolation
         fields = [
             'id', 'booking', 'booking_reference', 'traveller', 'traveller_name',
-            'violation_type', 'violation_description', 'severity',
+            'organization', 'organization_name', 'violation_type', 'violation_description', 'severity',
             'expected_amount', 'actual_amount', 'variance_amount', 'currency',
             'is_waived', 'waived_by', 'waiver_reason', 'detected_at'
         ]
+
+    def get_organization_name(self, obj):
+        if obj.organization:
+            return obj.organization.name
+        return None
 
 
 class TravelRiskAlertSerializer(serializers.ModelSerializer):
@@ -305,6 +310,18 @@ class AirlineSerializer(serializers.ModelSerializer):
     class Meta:
         model = Airline
         fields = ['iata_code', 'name', 'country', 'alliance']
+
+
+class HotelSerializer(serializers.ModelSerializer):
+    """Serializer for Hotel master data"""
+    aliases = serializers.StringRelatedField(many=True, read_only=True)
+
+    class Meta:
+        model = Hotel
+        fields = [
+            'id', 'canonical_name', 'hotel_chain', 'city', 'country',
+            'is_active', 'aliases', 'created_at', 'updated_at'
+        ]
 
 
 class CurrencyExchangeRateSerializer(serializers.ModelSerializer):
@@ -362,23 +379,29 @@ class ServiceFeeSerializer(serializers.ModelSerializer):
     """Serializer for service fees"""
     traveller_name = serializers.SerializerMethodField()
     booking_reference = serializers.SerializerMethodField()
-    
+    organization_name = serializers.SerializerMethodField()
+
     class Meta:
         model = ServiceFee
         fields = [
             'id', 'booking', 'booking_reference', 'traveller', 'traveller_name',
-            'organization', 'fee_type', 'fee_date', 'currency', 'amount',
-            'gst_amount', 'description', 'created_at',
+            'organization', 'organization_name', 'fee_type', 'fee_date', 'invoice_number',
+            'currency', 'fee_amount', 'gst_amount', 'booking_channel', 'description', 'created_at',
         ]
-    
+
     def get_traveller_name(self, obj):
         if obj.traveller:
             return f"{obj.traveller.first_name} {obj.traveller.last_name}"
         return None
-    
+
     def get_booking_reference(self, obj):
         if obj.booking:
             return obj.booking.agent_booking_reference
+        return None
+
+    def get_organization_name(self, obj):
+        if obj.organization:
+            return obj.organization.name
         return None
 
 # ============================================================================
