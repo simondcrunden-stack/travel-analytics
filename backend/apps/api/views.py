@@ -773,8 +773,8 @@ class BookingViewSet(viewsets.ModelViewSet):
             results = [
                 {
                     'value': hotel.canonical_name,
-                    'label': hotel.canonical_name,
-                    'subtitle': hotel.hotel_chain if hotel.hotel_chain else None
+                    'label': f"{hotel.canonical_name} ({hotel.hotel_chain})" if hotel.hotel_chain else hotel.canonical_name,
+                    'subtitle': None
                 }
                 for hotel in hotels[:50]
             ]
