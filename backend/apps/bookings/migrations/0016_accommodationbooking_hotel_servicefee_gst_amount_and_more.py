@@ -24,20 +24,6 @@ class Migration(migrations.Migration):
                 to="reference_data.hotel",
             ),
         ),
-        migrations.AddField(
-            model_name="servicefee",
-            name="gst_amount",
-            field=models.DecimalField(
-                decimal_places=2, default=0, max_digits=10, verbose_name="GST Amount"
-            ),
-        ),
-        migrations.AddField(
-            model_name="servicefee",
-            name="invoice_number",
-            field=models.CharField(
-                blank=True, max_length=100, verbose_name="Invoice Number"
-            ),
-        ),
         migrations.AlterField(
             model_name="accommodationbooking",
             name="hotel_name",
@@ -45,18 +31,6 @@ class Migration(migrations.Migration):
                 help_text="Original hotel name from booking (preserved for history)",
                 max_length=200,
             ),
-        ),
-        migrations.AlterField(
-            model_name="servicefee",
-            name="fee_amount",
-            field=models.DecimalField(
-                decimal_places=2, max_digits=10, verbose_name="Fee Amount"
-            ),
-        ),
-        migrations.AlterField(
-            model_name="servicefee",
-            name="fee_date",
-            field=models.DateField(verbose_name="Invoice Date"),
         ),
         migrations.AddIndex(
             model_name="accommodationbooking",
