@@ -327,8 +327,8 @@ onMounted(async () => {
       :show-organization="true"
       :show-status="false"
       :show-supplier="true"
-      supplier-label="Hotel Chain"
-      supplier-placeholder="Marriott, Hilton, Accor..."
+      supplier-label="Hotel Name"
+      supplier-placeholder="Hyatt Regency, InterContinental, Novotel..."
       @filters-changed="handleFiltersChanged"
     />
 

@@ -523,14 +523,11 @@ class BookingViewSet(viewsets.ModelViewSet):
         if supplier:
             supplier_search = supplier.strip()
             supplier_q = Q()
-            
+
             supplier_q |= Q(air_bookings__primary_airline_name__icontains=supplier_search)
-            supplier_q |= Q(
-                Q(accommodation_bookings__hotel_name__icontains=supplier_search) |
-                Q(accommodation_bookings__hotel_chain__icontains=supplier_search)
-            )
+            supplier_q |= Q(accommodation_bookings__hotel_name__icontains=supplier_search)
             supplier_q |= Q(car_hire_bookings__rental_company__icontains=supplier_search)
-            
+
             queryset = queryset.filter(supplier_q).distinct()
         
         return queryset
