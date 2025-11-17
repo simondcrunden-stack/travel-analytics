@@ -161,6 +161,9 @@ class BookingListSerializer(serializers.ModelSerializer):
     # Computed field for total amount including transactions
     total_amount_with_transactions = serializers.SerializerMethodField()
 
+    # Computed field for trip type (DOMESTIC or INTERNATIONAL)
+    trip_type = serializers.SerializerMethodField()
+
     class Meta:
         model = Booking
         fields = [
@@ -170,7 +173,7 @@ class BookingListSerializer(serializers.ModelSerializer):
             'currency', 'total_amount', 'total_amount_with_transactions',
             'policy_compliant', 'air_bookings', 'accommodation_bookings',
             'car_hire_bookings',
-            'primary_booking_type'
+            'primary_booking_type', 'trip_type'
         ]
 
     def get_primary_booking_type(self, obj):
@@ -184,6 +187,79 @@ class BookingListSerializer(serializers.ModelSerializer):
             return 'CAR'
         else:
             return 'OTHER'
+
+    def get_trip_type(self, obj):
+        """
+        Determine if booking is DOMESTIC or INTERNATIONAL based on organization's home country.
+        Priority: AIR > ACCOMMODATION > CAR
+        """
+        from apps.reference_data.models import Country, Airport
+
+        # Get home country from request context
+        request = self.context.get('request')
+        if not request or not hasattr(request, 'user') or not request.user.organization:
+            home_country = 'AUS'  # Default
+        else:
+            home_country = request.user.organization.home_country or 'AUS'
+
+        # Check air bookings first
+        if obj.air_bookings.exists():
+            for air in obj.air_bookings.all():
+                if air.segments.exists():
+                    all_domestic = True
+                    for segment in air.segments.all():
+                        # Get country codes from airports
+                        try:
+                            origin_airport = Airport.objects.get(iata_code=segment.origin_airport_iata_code)
+                            dest_airport = Airport.objects.get(iata_code=segment.destination_airport_iata_code)
+
+                            origin_country = Country.objects.get(name=origin_airport.country)
+                            dest_country = Country.objects.get(name=dest_airport.country)
+
+                            if origin_country.alpha_3 != home_country or dest_country.alpha_3 != home_country:
+                                all_domestic = False
+                                break
+                        except (Airport.DoesNotExist, Country.DoesNotExist):
+                            # If we can't determine, assume international to be safe
+                            all_domestic = False
+                            break
+
+                    return 'DOMESTIC' if all_domestic else 'INTERNATIONAL'
+
+        # Check accommodation bookings
+        elif obj.accommodation_bookings.exists():
+            for accom in obj.accommodation_bookings.all():
+                if accom.country:
+                    try:
+                        country = Country.objects.get(name__iexact=accom.country)
+                        if country.alpha_3 == home_country:
+                            return 'DOMESTIC'
+                        else:
+                            return 'INTERNATIONAL'
+                    except Country.DoesNotExist:
+                        # Check fallback for Australia
+                        if accom.country.upper() in ['AUSTRALIA', 'AUS'] and home_country == 'AUS':
+                            return 'DOMESTIC'
+                        return 'INTERNATIONAL'
+
+        # Check car hire bookings
+        elif obj.car_hire_bookings.exists():
+            for car in obj.car_hire_bookings.all():
+                if car.country:
+                    try:
+                        country = Country.objects.get(name__iexact=car.country)
+                        if country.alpha_3 == home_country:
+                            return 'DOMESTIC'
+                        else:
+                            return 'INTERNATIONAL'
+                    except Country.DoesNotExist:
+                        # Check fallback for Australia
+                        if car.country.upper() in ['AUSTRALIA', 'AUS'] and home_country == 'AUS':
+                            return 'DOMESTIC'
+                        return 'INTERNATIONAL'
+
+        # Default to DOMESTIC if we can't determine
+        return 'DOMESTIC'
 
     def get_total_amount_with_transactions(self, obj):
         """

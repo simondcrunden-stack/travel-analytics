@@ -79,9 +79,7 @@
               </p>
             </div>
             <div class="bg-sky-100 p-3 rounded-full">
-              <svg class="w-6 h-6 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-              </svg>
+              <span class="mdi mdi-airplane text-sky-600 text-2xl"></span>
             </div>
           </div>
           <div class="mt-3 flex items-center justify-between text-xs">
@@ -109,9 +107,7 @@
               </p>
             </div>
             <div class="bg-amber-100 p-3 rounded-full">
-              <svg class="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-              </svg>
+              <span class="mdi mdi-bed text-amber-600 text-2xl"></span>
             </div>
           </div>
           <div class="mt-3 flex items-center justify-between text-xs">
@@ -139,9 +135,7 @@
               </p>
             </div>
             <div class="bg-emerald-100 p-3 rounded-full">
-              <svg class="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-              </svg>
+              <span class="mdi mdi-car text-emerald-600 text-2xl"></span>
             </div>
           </div>
           <div class="mt-3 flex items-center justify-between text-xs">
@@ -529,7 +523,7 @@
                   Traveller
                 </th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Type
+                  Trip Type
                 </th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Date
@@ -551,44 +545,12 @@
                   {{ booking.traveller_name }}
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap">
-                  <div class="flex items-center">
-                    <!-- Air Travel Icon -->
-                    <div v-if="booking.primary_booking_type === 'AIR'" class="flex items-center">
-                      <div class="bg-sky-100 p-2 rounded-full mr-2">
-                        <svg class="w-4 h-4 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                        </svg>
-                      </div>
-                      <span class="text-sm text-gray-900">Air</span>
-                    </div>
-                    <!-- Accommodation Icon -->
-                    <div v-else-if="booking.primary_booking_type === 'ACCOMMODATION'" class="flex items-center">
-                      <div class="bg-amber-100 p-2 rounded-full mr-2">
-                        <svg class="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                        </svg>
-                      </div>
-                      <span class="text-sm text-gray-900">Accommodation</span>
-                    </div>
-                    <!-- Car Hire Icon -->
-                    <div v-else-if="booking.primary_booking_type === 'CAR'" class="flex items-center">
-                      <div class="bg-emerald-100 p-2 rounded-full mr-2">
-                        <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-                        </svg>
-                      </div>
-                      <span class="text-sm text-gray-900">Car Hire</span>
-                    </div>
-                    <!-- Other Icon -->
-                    <div v-else class="flex items-center">
-                      <div class="bg-gray-100 p-2 rounded-full mr-2">
-                        <svg class="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                        </svg>
-                      </div>
-                      <span class="text-sm text-gray-900">Other</span>
-                    </div>
-                  </div>
+                  <span
+                    class="px-2 py-1 text-xs rounded-full font-medium"
+                    :class="booking.trip_type === 'DOMESTIC' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'"
+                  >
+                    {{ booking.trip_type === 'DOMESTIC' ? 'Domestic' : 'International' }}
+                  </span>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   {{ formatDate(booking.travel_date) }}
