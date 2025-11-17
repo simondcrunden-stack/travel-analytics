@@ -405,6 +405,7 @@
               <option value="carbon">Highest Carbon</option>
               <option value="compliance">Best Compliance</option>
               <option value="lost_savings">Most Lost Savings</option>
+              <option value="cost_of_change">Highest Cost of Change</option>
             </select>
           </div>
         </div>
@@ -421,6 +422,7 @@
                 <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Trips</th>
                 <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total Spend</th>
                 <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Lost Savings</th>
+                <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Cost of Change</th>
                 <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Carbon (kg)</th>
                 <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Compliance</th>
               </tr>
@@ -458,6 +460,14 @@
                     -
                   </span>
                 </td>
+                <td class="px-6 py-4 whitespace-nowrap text-right text-sm">
+                  <span v-if="item.cost_of_change > 0" class="text-orange-600 font-semibold">
+                    {{ formatCurrency(item.cost_of_change) }}
+                  </span>
+                  <span v-else class="text-gray-400">
+                    -
+                  </span>
+                </td>
                 <td class="px-6 py-4 whitespace-nowrap text-right text-sm text-gray-900">
                   {{ item.total_carbon_kg.toFixed(0) }}
                 </td>
@@ -471,7 +481,7 @@
                 </td>
               </tr>
               <tr v-if="rankings[selectedRankingCategory][`by_${selectedRankingType}`].length === 0">
-                <td colspan="7" class="px-6 py-8 text-center text-sm text-gray-500">
+                <td colspan="8" class="px-6 py-8 text-center text-sm text-gray-500">
                   No data available
                 </td>
               </tr>
@@ -614,14 +624,16 @@ const rankings = ref({
     by_spend: [],
     by_carbon: [],
     by_compliance: [],
-    by_lost_savings: []
+    by_lost_savings: [],
+    by_cost_of_change: []
   },
   travellers: {
     by_trips: [],
     by_spend: [],
     by_carbon: [],
     by_compliance: [],
-    by_lost_savings: []
+    by_lost_savings: [],
+    by_cost_of_change: []
   }
 })
 const selectedRankingType = ref('trips')  // trips, spend, carbon, compliance
