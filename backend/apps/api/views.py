@@ -888,6 +888,167 @@ class BookingViewSet(viewsets.ModelViewSet):
 
         return Response(results)
 
+    @action(detail=False, methods=['get'])
+    def dashboard_summary(self, request):
+        """
+        Get executive dashboard summary with domestic/international breakdown.
+        Returns comprehensive metrics for the dashboard view.
+        """
+        user = request.user
+
+        # Build base queryset using same logic as get_queryset()
+        if user.user_type == 'ADMIN':
+            base_queryset = Booking.objects.all()
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            base_queryset = Booking.objects.filter(
+                Q(organization=user.organization) |
+                Q(organization__travel_agent=user.organization)
+            )
+        else:
+            base_queryset = Booking.objects.filter(organization=user.organization)
+
+        # Apply filters from query params (reuse existing filter logic)
+        organization_id = request.query_params.get('organization')
+        if organization_id:
+            base_queryset = base_queryset.filter(organization_id=organization_id)
+
+        # Get organization's home country for domestic/international classification
+        home_country = 'AUS'  # Default
+        if organization_id:
+            try:
+                org = Organization.objects.get(id=organization_id)
+                home_country = org.home_country
+            except Organization.DoesNotExist:
+                pass
+        elif user.organization:
+            home_country = user.organization.home_country
+
+        # Initialize summary data
+        summary = {
+            'total_bookings': 0,
+            'total_spend': 0,
+            'total_spend_domestic': 0,
+            'total_spend_international': 0,
+            'air_bookings': 0,
+            'air_spend': 0,
+            'air_spend_domestic': 0,
+            'air_spend_international': 0,
+            'accommodation_bookings': 0,
+            'accommodation_spend': 0,
+            'accommodation_spend_domestic': 0,
+            'accommodation_spend_international': 0,
+            'car_hire_bookings': 0,
+            'car_hire_spend': 0,
+            'car_hire_spend_domestic': 0,
+            'car_hire_spend_international': 0,
+            'total_carbon_kg': 0,
+            'compliance_rate': 0,
+            'violation_count': 0,
+            'critical_violations': 0,
+        }
+
+        bookings = base_queryset.select_related('organization', 'traveller').prefetch_related(
+            'air_bookings__segments',
+            'accommodation_bookings',
+            'car_hire_bookings',
+            'violations'
+        )
+
+        summary['total_bookings'] = bookings.count()
+
+        # Process each booking
+        for booking in bookings:
+            # AIR BOOKINGS
+            if booking.air_bookings.exists():
+                for air in booking.air_bookings.all():
+                    # Calculate air spend
+                    air_amount = float(air.total_fare or 0)
+                    summary['air_spend'] += air_amount
+                    summary['air_bookings'] += 1
+
+                    # Classify as domestic or international
+                    is_domestic = False
+                    if air.segments.exists():
+                        # Check if all segments are domestic
+                        all_domestic = True
+                        for segment in air.segments.all():
+                            if segment.origin_airport and segment.destination_airport:
+                                origin_country = segment.origin_airport.country_code if hasattr(segment.origin_airport, 'country_code') else None
+                                dest_country = segment.destination_airport.country_code if hasattr(segment.destination_airport, 'country_code') else None
+                                if origin_country != home_country or dest_country != home_country:
+                                    all_domestic = False
+                                    break
+                        is_domestic = all_domestic
+
+                    if is_domestic:
+                        summary['air_spend_domestic'] += air_amount
+                    else:
+                        summary['air_spend_international'] += air_amount
+
+                    # Add carbon emissions
+                    summary['total_carbon_kg'] += float(air.total_carbon_kg or 0)
+
+            # ACCOMMODATION BOOKINGS
+            if booking.accommodation_bookings.exists():
+                for accom in booking.accommodation_bookings.all():
+                    accom_amount = float(accom.total_amount_base or accom.nightly_rate or 0) * accom.number_of_nights
+                    summary['accommodation_spend'] += accom_amount
+                    summary['accommodation_bookings'] += 1
+
+                    # Classify as domestic or international based on country
+                    # Get country code from reference data if available
+                    is_domestic = False
+                    if accom.country:
+                        try:
+                            country = Country.objects.get(name__iexact=accom.country)
+                            is_domestic = (country.alpha_3 == home_country)
+                        except Country.DoesNotExist:
+                            # Fallback: check if country name matches home country name
+                            is_domestic = (accom.country.upper() in ['AUSTRALIA', 'AUS']) if home_country == 'AUS' else False
+
+                    if is_domestic:
+                        summary['accommodation_spend_domestic'] += accom_amount
+                    else:
+                        summary['accommodation_spend_international'] += accom_amount
+
+            # CAR HIRE BOOKINGS
+            if booking.car_hire_bookings.exists():
+                for car in booking.car_hire_bookings.all():
+                    car_amount = float(car.total_amount_base or car.total_cost or 0)
+                    summary['car_hire_spend'] += car_amount
+                    summary['car_hire_bookings'] += 1
+
+                    # Classify as domestic or international
+                    is_domestic = False
+                    if car.country:
+                        try:
+                            country = Country.objects.get(name__iexact=car.country)
+                            is_domestic = (country.alpha_3 == home_country)
+                        except Country.DoesNotExist:
+                            is_domestic = (car.country.upper() in ['AUSTRALIA', 'AUS']) if home_country == 'AUS' else False
+
+                    if is_domestic:
+                        summary['car_hire_spend_domestic'] += car_amount
+                    else:
+                        summary['car_hire_spend_international'] += car_amount
+
+        # Calculate total spend
+        summary['total_spend'] = summary['air_spend'] + summary['accommodation_spend'] + summary['car_hire_spend']
+        summary['total_spend_domestic'] = summary['air_spend_domestic'] + summary['accommodation_spend_domestic'] + summary['car_hire_spend_domestic']
+        summary['total_spend_international'] = summary['air_spend_international'] + summary['accommodation_spend_international'] + summary['car_hire_spend_international']
+
+        # Get compliance data
+        violations = ComplianceViolation.objects.filter(booking__in=bookings)
+        summary['violation_count'] = violations.count()
+        summary['critical_violations'] = violations.filter(severity='CRITICAL').count()
+
+        # Calculate compliance rate
+        if summary['total_bookings'] > 0:
+            compliant_bookings = summary['total_bookings'] - bookings.filter(violations__isnull=False).distinct().count()
+            summary['compliance_rate'] = round((compliant_bookings / summary['total_bookings']) * 100, 1)
+
+        return Response(summary)
+
 
 # ============================================================================
 # BUDGET VIEWSETS

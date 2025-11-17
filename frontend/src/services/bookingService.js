@@ -33,6 +33,13 @@ export default {
     return response.data
   },
 
+  // Executive dashboard summary with domestic/international breakdown
+  async getDashboardSummary(params = {}) {
+    const backendParams = transformFiltersForBackend(params)
+    const response = await api.get('/bookings/dashboard_summary/', { params: backendParams })
+    return response.data
+  },
+
   // Carbon emissions report
   async getCarbonReport(params = {}) {
     const response = await api.get('/bookings/carbon_report/', { params })

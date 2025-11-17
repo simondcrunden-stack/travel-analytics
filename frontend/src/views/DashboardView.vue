@@ -42,7 +42,7 @@
         <!-- Total Spend -->
         <div class="bg-white rounded-lg shadow p-6">
           <div class="flex items-center justify-between">
-            <div>
+            <div class="flex-1">
               <p class="text-sm font-medium text-gray-600">Total Spend</p>
               <p class="text-2xl font-bold text-gray-900 mt-2">
                 {{ formatCurrency(summary.total_spend) }}
@@ -54,7 +54,17 @@
               </svg>
             </div>
           </div>
-          <p class="text-xs text-gray-500 mt-2">
+          <div class="mt-3 flex items-center justify-between text-xs">
+            <div>
+              <span class="text-gray-500">Domestic:</span>
+              <span class="font-semibold text-gray-700 ml-1">{{ formatCurrency(summary.total_spend_domestic) }}</span>
+            </div>
+            <div>
+              <span class="text-gray-500">International:</span>
+              <span class="font-semibold text-gray-700 ml-1">{{ formatCurrency(summary.total_spend_international) }}</span>
+            </div>
+          </div>
+          <p class="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-100">
             {{ summary.total_bookings }} bookings
           </p>
         </div>
@@ -62,7 +72,7 @@
         <!-- Air Travel -->
         <div class="bg-white rounded-lg shadow p-6">
           <div class="flex items-center justify-between">
-            <div>
+            <div class="flex-1">
               <p class="text-sm font-medium text-gray-600">Air Travel</p>
               <p class="text-2xl font-bold text-gray-900 mt-2">
                 {{ formatCurrency(summary.air_spend) }}
@@ -74,7 +84,17 @@
               </svg>
             </div>
           </div>
-          <p class="text-xs text-gray-500 mt-2">
+          <div class="mt-3 flex items-center justify-between text-xs">
+            <div>
+              <span class="text-gray-500">Domestic:</span>
+              <span class="font-semibold text-gray-700 ml-1">{{ formatCurrency(summary.air_spend_domestic) }}</span>
+            </div>
+            <div>
+              <span class="text-gray-500">International:</span>
+              <span class="font-semibold text-gray-700 ml-1">{{ formatCurrency(summary.air_spend_international) }}</span>
+            </div>
+          </div>
+          <p class="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-100">
             {{ summary.air_bookings }} bookings
           </p>
         </div>
@@ -82,7 +102,7 @@
         <!-- Accommodation -->
         <div class="bg-white rounded-lg shadow p-6">
           <div class="flex items-center justify-between">
-            <div>
+            <div class="flex-1">
               <p class="text-sm font-medium text-gray-600">Accommodation</p>
               <p class="text-2xl font-bold text-gray-900 mt-2">
                 {{ formatCurrency(summary.accommodation_spend) }}
@@ -94,7 +114,17 @@
               </svg>
             </div>
           </div>
-          <p class="text-xs text-gray-500 mt-2">
+          <div class="mt-3 flex items-center justify-between text-xs">
+            <div>
+              <span class="text-gray-500">Domestic:</span>
+              <span class="font-semibold text-gray-700 ml-1">{{ formatCurrency(summary.accommodation_spend_domestic) }}</span>
+            </div>
+            <div>
+              <span class="text-gray-500">International:</span>
+              <span class="font-semibold text-gray-700 ml-1">{{ formatCurrency(summary.accommodation_spend_international) }}</span>
+            </div>
+          </div>
+          <p class="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-100">
             {{ summary.accommodation_bookings }} bookings
           </p>
         </div>
@@ -102,7 +132,7 @@
         <!-- Car Hire -->
         <div class="bg-white rounded-lg shadow p-6">
           <div class="flex items-center justify-between">
-            <div>
+            <div class="flex-1">
               <p class="text-sm font-medium text-gray-600">Car Hire</p>
               <p class="text-2xl font-bold text-gray-900 mt-2">
                 {{ formatCurrency(summary.car_hire_spend) }}
@@ -114,9 +144,95 @@
               </svg>
             </div>
           </div>
-          <p class="text-xs text-gray-500 mt-2">
+          <div class="mt-3 flex items-center justify-between text-xs">
+            <div>
+              <span class="text-gray-500">Domestic:</span>
+              <span class="font-semibold text-gray-700 ml-1">{{ formatCurrency(summary.car_hire_spend_domestic) }}</span>
+            </div>
+            <div>
+              <span class="text-gray-500">International:</span>
+              <span class="font-semibold text-gray-700 ml-1">{{ formatCurrency(summary.car_hire_spend_international) }}</span>
+            </div>
+          </div>
+          <p class="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-100">
             {{ summary.car_hire_bookings }} bookings
           </p>
+        </div>
+      </div>
+
+      <!-- Compliance & Emissions Summary -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
+        <!-- Compliance Rate -->
+        <div class="bg-white rounded-lg shadow p-6">
+          <div class="flex items-center justify-between">
+            <div class="flex-1">
+              <p class="text-sm font-medium text-gray-600">Compliance Rate</p>
+              <p class="text-3xl font-bold mt-2" :class="summary.compliance_rate >= 80 ? 'text-green-600' : summary.compliance_rate >= 60 ? 'text-amber-600' : 'text-red-600'">
+                {{ summary.compliance_rate.toFixed(1) }}%
+              </p>
+            </div>
+            <div :class="summary.compliance_rate >= 80 ? 'bg-green-100' : summary.compliance_rate >= 60 ? 'bg-amber-100' : 'bg-red-100'" class="p-3 rounded-full">
+              <svg class="w-6 h-6" :class="summary.compliance_rate >= 80 ? 'text-green-600' : summary.compliance_rate >= 60 ? 'text-amber-600' : 'text-red-600'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+          </div>
+          <div class="mt-3 pt-3 border-t border-gray-100">
+            <div class="flex items-center justify-between text-xs">
+              <span class="text-gray-500">Total Violations:</span>
+              <span class="font-semibold text-gray-700">{{ summary.violation_count }}</span>
+            </div>
+            <div class="flex items-center justify-between text-xs mt-1" v-if="summary.critical_violations > 0">
+              <span class="text-red-600">Critical:</span>
+              <span class="font-semibold text-red-700">{{ summary.critical_violations }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Carbon Emissions -->
+        <div class="bg-white rounded-lg shadow p-6">
+          <div class="flex items-center justify-between">
+            <div class="flex-1">
+              <p class="text-sm font-medium text-gray-600">Carbon Emissions</p>
+              <p class="text-3xl font-bold text-gray-900 mt-2">
+                {{ (summary.total_carbon_kg / 1000).toFixed(1) }}
+              </p>
+              <p class="text-xs text-gray-500 mt-1">tonnes CO₂</p>
+            </div>
+            <div class="bg-green-100 p-3 rounded-full">
+              <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+          </div>
+          <div class="mt-3 pt-3 border-t border-gray-100">
+            <div class="text-xs text-gray-500">
+              {{ summary.air_bookings > 0 ? (summary.total_carbon_kg / summary.air_bookings).toFixed(0) : 0 }} kg per flight
+            </div>
+          </div>
+        </div>
+
+        <!-- Policy Compliance Status -->
+        <div class="bg-white rounded-lg shadow p-6">
+          <div class="flex items-center justify-between">
+            <div class="flex-1">
+              <p class="text-sm font-medium text-gray-600">Policy Status</p>
+              <p class="text-lg font-bold mt-2" :class="summary.compliance_rate >= 90 ? 'text-green-600' : summary.compliance_rate >= 75 ? 'text-amber-600' : 'text-red-600'">
+                {{ summary.compliance_rate >= 90 ? 'Excellent' : summary.compliance_rate >= 75 ? 'Good' : summary.compliance_rate >= 60 ? 'Fair' : 'Needs Attention' }}
+              </p>
+            </div>
+            <div :class="summary.compliance_rate >= 90 ? 'bg-green-100' : summary.compliance_rate >= 75 ? 'bg-amber-100' : 'bg-red-100'" class="p-3 rounded-full">
+              <svg class="w-6 h-6" :class="summary.compliance_rate >= 90 ? 'text-green-600' : summary.compliance_rate >= 75 ? 'text-amber-600' : 'text-red-600'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+            </div>
+          </div>
+          <div class="mt-3 pt-3 border-t border-gray-100">
+            <div class="text-xs">
+              <span class="text-gray-500">Compliant Bookings:</span>
+              <span class="font-semibold text-gray-700 ml-1">{{ summary.total_bookings - summary.violation_count }}/{{ summary.total_bookings }}</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -216,13 +332,25 @@ const loading = ref(true)
 const error = ref(null)
 const summary = ref({
   total_spend: 0,
+  total_spend_domestic: 0,
+  total_spend_international: 0,
   total_bookings: 0,
   air_spend: 0,
+  air_spend_domestic: 0,
+  air_spend_international: 0,
   air_bookings: 0,
   accommodation_spend: 0,
+  accommodation_spend_domestic: 0,
+  accommodation_spend_international: 0,
   accommodation_bookings: 0,
   car_hire_spend: 0,
-  car_hire_bookings: 0
+  car_hire_spend_domestic: 0,
+  car_hire_spend_international: 0,
+  car_hire_bookings: 0,
+  total_carbon_kg: 0,
+  compliance_rate: 0,
+  violation_count: 0,
+  critical_violations: 0
 })
 const recentBookings = ref([])
 const monthlyData = ref([])
@@ -251,78 +379,15 @@ const loadData = async () => {
   try {
     console.log('🌐 [DashboardView] Loading dashboard data with filters:', activeFilters.value)
 
-    // Use bookingService which handles filter transformation automatically
-    // No need to manually convert filter names - filterTransformer does it!
+    // Call new dashboard summary endpoint for aggregated metrics
+    const summaryData = await bookingService.getDashboardSummary(activeFilters.value)
+    summary.value = summaryData
+
+    console.log('✅ [DashboardView] Dashboard summary loaded:', summaryData)
+
+    // Get recent bookings for the table
     const data = await bookingService.getBookings(activeFilters.value)
-
-    // Handle paginated response (data.results) or direct array
     const bookings = data.results || data
-
-    console.log('✅ [DashboardView] Bookings loaded:', bookings.length)
-
-    // Use backend summary statistics for totals (same as BookingsView pattern)
-    if (data.summary) {
-      console.log('📊 [DashboardView] Backend summary:', data.summary)
-      summary.value.total_spend = data.summary.total_spend || 0
-      summary.value.total_bookings = data.summary.booking_count || bookings.length
-    } else {
-      // Fallback if summary not available
-      summary.value.total_spend = 0
-      summary.value.total_bookings = bookings.length
-    }
-
-    // Calculate breakdown by booking type (dashboard-specific)
-    summary.value.air_spend = 0
-    summary.value.air_bookings = 0
-    summary.value.accommodation_spend = 0
-    summary.value.accommodation_bookings = 0
-    summary.value.car_hire_spend = 0
-    summary.value.car_hire_bookings = 0
-
-    bookings.forEach(booking => {
-      // Count air bookings
-      if (booking.air_bookings && booking.air_bookings.length > 0) {
-        const airSpend = booking.air_bookings.reduce((sum, air) => {
-          let amount = parseFloat(air.total_amount_base) || parseFloat(air.total_amount) || parseFloat(air.total_fare)
-          
-          // If no total fields exist, calculate from components
-          if (!amount) {
-            const baseFare = parseFloat(air.base_fare) || 0
-            const taxes = parseFloat(air.taxes) || 0
-            const gst = parseFloat(air.gst_amount) || 0
-            const fees = parseFloat(air.fees) || 0
-            amount = baseFare + taxes + gst + fees
-          }
-          
-          return sum + amount
-        }, 0)
-        summary.value.air_spend += airSpend
-        summary.value.air_bookings += booking.air_bookings.length
-      }
-
-      // Count accommodation bookings
-      if (booking.accommodation_bookings && booking.accommodation_bookings.length > 0) {
-        const hotelSpend = booking.accommodation_bookings.reduce((sum, hotel) => {
-          const amount = parseFloat(hotel.total_amount_base) || parseFloat(hotel.total_amount) || 0
-          return sum + amount
-        }, 0)
-        summary.value.accommodation_spend += hotelSpend
-        summary.value.accommodation_bookings += booking.accommodation_bookings.length
-      }
-
-      // Count car hire bookings
-      if (booking.car_hire_bookings && booking.car_hire_bookings.length > 0) {
-        const carSpend = booking.car_hire_bookings.reduce((sum, car) => {
-          const amount = parseFloat(car.total_amount_base) || parseFloat(car.total_amount) || 0
-          return sum + amount
-        }, 0)
-        summary.value.car_hire_spend += carSpend
-        summary.value.car_hire_bookings += booking.car_hire_bookings.length
-      }
-    })
-
-    // Note: total_spend comes from backend summary (more accurate)
-    // We don't recalculate it from components to avoid discrepancies
 
     // Get recent bookings (last 10)
     recentBookings.value = bookings
@@ -332,7 +397,8 @@ const loadData = async () => {
     // Process monthly trend data
     processMonthlyData(bookings)
 
-    console.log('Summary calculated:', summary.value)
+    console.log('Summary:', summary.value)
+    console.log('Recent bookings:', recentBookings.value.length)
     console.log('Monthly data points:', monthlyData.value.length)
 
   } catch (err) {
@@ -340,11 +406,11 @@ const loadData = async () => {
     error.value = 'Failed to load dashboard data. Please try again.'
   } finally {
     loading.value = false
-    
+
     // Wait for v-else content to render AFTER loading becomes false
     await nextTick()
     await nextTick()
-    
+
     console.log('Rendering charts...')
     renderCharts()
   }
