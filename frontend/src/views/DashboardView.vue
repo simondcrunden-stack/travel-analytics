@@ -526,6 +526,9 @@
                   Trip Type
                 </th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Destination
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Date
                 </th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -551,6 +554,9 @@
                   >
                     {{ booking.trip_type === 'DOMESTIC' ? 'Domestic' : 'International' }}
                   </span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {{ getDestinations(booking) }}
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   {{ formatDate(booking.travel_date) }}
@@ -894,6 +900,39 @@ const getStatusClass = (status) => {
     'REFUNDED': 'px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800'
   }
   return classes[status] || classes['PENDING']
+}
+
+const getDestinations = (booking) => {
+  // Check air bookings first
+  if (booking.air_bookings && booking.air_bookings.length > 0) {
+    const airBooking = booking.air_bookings[0]
+    const origin = airBooking.origin_airport_iata_code
+    const destination = airBooking.destination_airport_iata_code
+
+    // If multiple air bookings, show "Multi-city"
+    if (booking.air_bookings.length > 1) {
+      return 'Multi-city'
+    }
+
+    return `${origin} → ${destination}`
+  }
+
+  // Check accommodation bookings
+  if (booking.accommodation_bookings && booking.accommodation_bookings.length > 0) {
+    const cities = booking.accommodation_bookings.map(h => h.city).filter(c => c)
+    if (cities.length > 1) {
+      return cities.slice(0, 2).join(', ') + (cities.length > 2 ? '...' : '')
+    }
+    return cities[0] || '-'
+  }
+
+  // Check car hire bookings
+  if (booking.car_hire_bookings && booking.car_hire_bookings.length > 0) {
+    const car = booking.car_hire_bookings[0]
+    return car.pickup_city || '-'
+  }
+
+  return '-'
 }
 
 // Lifecycle
