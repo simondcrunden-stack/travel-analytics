@@ -133,6 +133,13 @@ export default {
     return response.data
   },
 
+  // Budget summary for dashboard
+  async getBudgetSummary(params = {}) {
+    const backendParams = transformFiltersForBackend(params)
+    const response = await api.get('/budgets/budget_summary/', { params: backendParams })
+    return response.data
+  },
+
   // Helper: Calculate totals from bookings
   calculateTotals(bookings) {
     return bookings.reduce((acc, booking) => {

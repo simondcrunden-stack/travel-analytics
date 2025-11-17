@@ -1092,10 +1092,10 @@ class BudgetViewSet(viewsets.ReadOnlyModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ['organization', 'fiscal_year', 'cost_center', 'is_active']
     search_fields = ['cost_center', 'cost_center_name']
-    
+
     def get_queryset(self):
         user = self.request.user
-        
+
         if user.user_type == 'ADMIN':
             return Budget.objects.all()
         elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
@@ -1105,6 +1105,122 @@ class BudgetViewSet(viewsets.ReadOnlyModelViewSet):
             )
         else:
             return Budget.objects.filter(organization=user.organization)
+
+    @action(detail=False, methods=['get'])
+    def budget_summary(self, request):
+        """
+        Get aggregated budget summary for dashboard display.
+        Returns overall budget vs actual with status breakdown.
+        """
+        user = request.user
+
+        # Get organization ID from query params or user's organization
+        organization_id = request.query_params.get('organization')
+
+        # Build base queryset
+        if user.user_type == 'ADMIN':
+            budgets_qs = Budget.objects.filter(is_active=True)
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            budgets_qs = Budget.objects.filter(
+                Q(organization=user.organization) |
+                Q(organization__travel_agent=user.organization),
+                is_active=True
+            )
+        else:
+            budgets_qs = Budget.objects.filter(
+                organization=user.organization,
+                is_active=True
+            )
+
+        # Filter by organization if specified
+        if organization_id:
+            budgets_qs = budgets_qs.filter(organization_id=organization_id)
+
+        # Get current fiscal year budgets (or all if no current FY)
+        try:
+            if organization_id:
+                org = Organization.objects.get(id=organization_id)
+            elif user.organization:
+                org = user.organization
+            else:
+                org = None
+
+            if org:
+                current_fy = FiscalYear.objects.filter(
+                    organization=org,
+                    is_current=True
+                ).first()
+
+                if current_fy:
+                    budgets_qs = budgets_qs.filter(fiscal_year=current_fy)
+        except Organization.DoesNotExist:
+            pass
+
+        budgets = budgets_qs.select_related('organization', 'fiscal_year')
+
+        # Initialize summary
+        summary = {
+            'total_budgets': 0,
+            'total_allocated': 0,
+            'total_spent': 0,
+            'total_remaining': 0,
+            'overall_utilization': 0,
+            'budgets_ok': 0,
+            'budgets_warning': 0,
+            'budgets_critical': 0,
+            'budgets_exceeded': 0,
+            'critical_budgets': [],  # List of cost centers that are critical/exceeded
+        }
+
+        # Process each budget
+        for budget in budgets:
+            summary['total_budgets'] += 1
+            summary['total_allocated'] += float(budget.total_budget)
+
+            # Get budget status (includes spent, remaining, percentage, status)
+            status_info = budget.get_budget_status()
+            spent = float(status_info['spent'])
+            remaining = float(status_info['remaining'])
+            percentage = status_info['percentage']
+            status = status_info['status']
+
+            summary['total_spent'] += spent
+            summary['total_remaining'] += remaining
+
+            # Count by status
+            if percentage > 100:
+                summary['budgets_exceeded'] += 1
+                summary['critical_budgets'].append({
+                    'cost_center': budget.cost_center,
+                    'cost_center_name': budget.cost_center_name,
+                    'allocated': float(budget.total_budget),
+                    'spent': spent,
+                    'percentage': percentage,
+                    'status': 'EXCEEDED'
+                })
+            elif status == 'CRITICAL':
+                summary['budgets_critical'] += 1
+                summary['critical_budgets'].append({
+                    'cost_center': budget.cost_center,
+                    'cost_center_name': budget.cost_center_name,
+                    'allocated': float(budget.total_budget),
+                    'spent': spent,
+                    'percentage': percentage,
+                    'status': status
+                })
+            elif status == 'WARNING':
+                summary['budgets_warning'] += 1
+            else:
+                summary['budgets_ok'] += 1
+
+        # Calculate overall utilization
+        if summary['total_allocated'] > 0:
+            summary['overall_utilization'] = round(
+                (summary['total_spent'] / summary['total_allocated']) * 100,
+                1
+            )
+
+        return Response(summary)
 
 
 # ============================================================================

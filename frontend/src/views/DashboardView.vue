@@ -236,6 +236,142 @@
         </div>
       </div>
 
+      <!-- Budget Tracking -->
+      <div class="mt-6" v-if="budgetSummary.total_budgets > 0">
+        <h2 class="text-lg font-semibold text-gray-900 mb-4">Budget Tracking</h2>
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <!-- Overall Budget Status -->
+          <div class="bg-white rounded-lg shadow p-6">
+            <div class="flex items-center justify-between">
+              <div class="flex-1">
+                <p class="text-sm font-medium text-gray-600">Budget Utilization</p>
+                <p class="text-3xl font-bold mt-2" :class="budgetSummary.overall_utilization > 95 ? 'text-red-600' : budgetSummary.overall_utilization > 80 ? 'text-amber-600' : 'text-green-600'">
+                  {{ budgetSummary.overall_utilization.toFixed(1) }}%
+                </p>
+              </div>
+              <div :class="budgetSummary.overall_utilization > 95 ? 'bg-red-100' : budgetSummary.overall_utilization > 80 ? 'bg-amber-100' : 'bg-green-100'" class="p-3 rounded-full">
+                <svg class="w-6 h-6" :class="budgetSummary.overall_utilization > 95 ? 'text-red-600' : budgetSummary.overall_utilization > 80 ? 'text-amber-600' : 'text-green-600'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                </svg>
+              </div>
+            </div>
+            <div class="mt-3 pt-3 border-t border-gray-100">
+              <div class="flex items-center justify-between text-xs">
+                <span class="text-gray-500">Allocated:</span>
+                <span class="font-semibold text-gray-700">{{ formatCurrency(budgetSummary.total_allocated) }}</span>
+              </div>
+              <div class="flex items-center justify-between text-xs mt-1">
+                <span class="text-gray-500">Spent:</span>
+                <span class="font-semibold text-gray-700">{{ formatCurrency(budgetSummary.total_spent) }}</span>
+              </div>
+              <div class="flex items-center justify-between text-xs mt-1">
+                <span class="text-gray-500">Remaining:</span>
+                <span class="font-semibold" :class="budgetSummary.total_remaining < 0 ? 'text-red-700' : 'text-green-700'">
+                  {{ formatCurrency(budgetSummary.total_remaining) }}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Budgets OK -->
+          <div class="bg-white rounded-lg shadow p-6">
+            <div class="flex items-center justify-between">
+              <div class="flex-1">
+                <p class="text-sm font-medium text-gray-600">On Track</p>
+                <p class="text-3xl font-bold text-green-600 mt-2">
+                  {{ budgetSummary.budgets_ok }}
+                </p>
+              </div>
+              <div class="bg-green-100 p-3 rounded-full">
+                <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+            </div>
+            <div class="mt-3 pt-3 border-t border-gray-100">
+              <p class="text-xs text-gray-500">
+                Cost centers within budget
+              </p>
+            </div>
+          </div>
+
+          <!-- Budgets Warning -->
+          <div class="bg-white rounded-lg shadow p-6">
+            <div class="flex items-center justify-between">
+              <div class="flex-1">
+                <p class="text-sm font-medium text-gray-600">At Risk</p>
+                <p class="text-3xl font-bold text-amber-600 mt-2">
+                  {{ budgetSummary.budgets_warning }}
+                </p>
+              </div>
+              <div class="bg-amber-100 p-3 rounded-full">
+                <svg class="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+            </div>
+            <div class="mt-3 pt-3 border-t border-gray-100">
+              <p class="text-xs text-gray-500">
+                Approaching threshold (80-95%)
+              </p>
+            </div>
+          </div>
+
+          <!-- Budgets Critical/Exceeded -->
+          <div class="bg-white rounded-lg shadow p-6">
+            <div class="flex items-center justify-between">
+              <div class="flex-1">
+                <p class="text-sm font-medium text-gray-600">Overspend Alert</p>
+                <p class="text-3xl font-bold text-red-600 mt-2">
+                  {{ budgetSummary.budgets_critical + budgetSummary.budgets_exceeded }}
+                </p>
+              </div>
+              <div class="bg-red-100 p-3 rounded-full">
+                <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+            </div>
+            <div class="mt-3 pt-3 border-t border-gray-100">
+              <div class="flex items-center justify-between text-xs">
+                <span class="text-gray-500">Critical (95%+):</span>
+                <span class="font-semibold text-red-700">{{ budgetSummary.budgets_critical }}</span>
+              </div>
+              <div class="flex items-center justify-between text-xs mt-1">
+                <span class="text-gray-500">Exceeded (100%+):</span>
+                <span class="font-semibold text-red-700">{{ budgetSummary.budgets_exceeded }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Critical Budgets Alert List -->
+        <div v-if="budgetSummary.critical_budgets.length > 0" class="mt-4 bg-red-50 border border-red-200 rounded-lg p-4">
+          <div class="flex items-start">
+            <div class="flex-shrink-0">
+              <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+            <div class="ml-3 flex-1">
+              <h3 class="text-sm font-medium text-red-800">Critical Budget Alerts</h3>
+              <div class="mt-2 text-sm text-red-700">
+                <ul class="list-disc list-inside space-y-1">
+                  <li v-for="budget in budgetSummary.critical_budgets.slice(0, 5)" :key="budget.cost_center">
+                    <span class="font-semibold">{{ budget.cost_center_name || budget.cost_center }}</span>:
+                    {{ formatCurrency(budget.spent) }} / {{ formatCurrency(budget.allocated) }}
+                    <span class="font-bold">({{ budget.percentage.toFixed(1) }}%)</span>
+                  </li>
+                </ul>
+                <p v-if="budgetSummary.critical_budgets.length > 5" class="mt-2 text-xs">
+                  ... and {{ budgetSummary.critical_budgets.length - 5 }} more
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Charts Row -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
         <!-- Spend by Category Chart -->
@@ -352,6 +488,18 @@ const summary = ref({
   violation_count: 0,
   critical_violations: 0
 })
+const budgetSummary = ref({
+  total_budgets: 0,
+  total_allocated: 0,
+  total_spent: 0,
+  total_remaining: 0,
+  overall_utilization: 0,
+  budgets_ok: 0,
+  budgets_warning: 0,
+  budgets_critical: 0,
+  budgets_exceeded: 0,
+  critical_budgets: []
+})
 const recentBookings = ref([])
 const monthlyData = ref([])
 
@@ -384,6 +532,16 @@ const loadData = async () => {
     summary.value = summaryData
 
     console.log('✅ [DashboardView] Dashboard summary loaded:', summaryData)
+
+    // Get budget summary (non-blocking - fail silently if no budgets exist)
+    try {
+      const budgetData = await bookingService.getBudgetSummary(activeFilters.value)
+      budgetSummary.value = budgetData
+      console.log('✅ [DashboardView] Budget summary loaded:', budgetData)
+    } catch (budgetErr) {
+      console.log('ℹ️ [DashboardView] No budget data available:', budgetErr.message)
+      // Keep default empty budget summary
+    }
 
     // Get recent bookings for the table
     const data = await bookingService.getBookings(activeFilters.value)
