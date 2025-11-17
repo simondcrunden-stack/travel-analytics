@@ -559,7 +559,7 @@
                   {{ formatDate(booking.travel_date) }}
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                  {{ formatCurrency(booking.total_amount) }}
+                  {{ formatCurrency(booking.total_amount_with_transactions) }}
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap">
                   <span :class="getStatusClass(booking.status)">
@@ -725,11 +725,11 @@ const loadData = async () => {
 const processMonthlyData = (bookings) => {
   // Group bookings by month
   const monthGroups = {}
-  
+
   bookings.forEach(booking => {
     const date = new Date(booking.travel_date)
     const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
-    
+
     if (!monthGroups[monthKey]) {
       monthGroups[monthKey] = {
         month: monthKey,
@@ -737,13 +737,14 @@ const processMonthlyData = (bookings) => {
         count: 0
       }
     }
-    
-    monthGroups[monthKey].total += parseFloat(booking.total_amount || 0)
+
+    // Use total_amount_with_transactions to include all exchanges, refunds, etc.
+    monthGroups[monthKey].total += parseFloat(booking.total_amount_with_transactions || booking.total_amount || 0)
     monthGroups[monthKey].count += 1
   })
-  
+
   // Convert to sorted array
-  monthlyData.value = Object.values(monthGroups).sort((a, b) => 
+  monthlyData.value = Object.values(monthGroups).sort((a, b) =>
     a.month.localeCompare(b.month)
   )
 }

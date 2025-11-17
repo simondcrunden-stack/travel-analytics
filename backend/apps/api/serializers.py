@@ -157,19 +157,22 @@ class BookingListSerializer(serializers.ModelSerializer):
     
     # Computed field for primary booking type
     primary_booking_type = serializers.SerializerMethodField()
-    
+
+    # Computed field for total amount including transactions
+    total_amount_with_transactions = serializers.SerializerMethodField()
+
     class Meta:
         model = Booking
         fields = [
             'id', 'agent_booking_reference', 'supplier_reference',
             'booking_date', 'travel_date', 'return_date',
             'status', 'traveller_name', 'organization_name',
-            'currency', 'total_amount',
-            'policy_compliant', 'air_bookings', 'accommodation_bookings', 
+            'currency', 'total_amount', 'total_amount_with_transactions',
+            'policy_compliant', 'air_bookings', 'accommodation_bookings',
             'car_hire_bookings',
-            'primary_booking_type'  # ← ADD THIS
+            'primary_booking_type'
         ]
-    
+
     def get_primary_booking_type(self, obj):
         """Determine primary booking type based on which bookings exist"""
         # Check what type of bookings are present (priority: AIR > ACCOMMODATION > CAR)
@@ -181,6 +184,68 @@ class BookingListSerializer(serializers.ModelSerializer):
             return 'CAR'
         else:
             return 'OTHER'
+
+    def get_total_amount_with_transactions(self, obj):
+        """
+        Calculate total amount including all BookingTransaction records.
+        This includes exchanges, refunds, credits, modifications, etc.
+        """
+        from django.contrib.contenttypes.models import ContentType
+        from apps.bookings.models import BookingTransaction, AirBooking, AccommodationBooking, CarHireBooking
+
+        total = 0
+
+        # Add air bookings with transactions
+        for air in obj.air_bookings.all():
+            air_amount = float(air.total_fare or 0)
+
+            # Add transactions for this air booking
+            air_content_type = ContentType.objects.get_for_model(AirBooking)
+            air_transactions = BookingTransaction.objects.filter(
+                content_type=air_content_type,
+                object_id=air.id,
+                status__in=['CONFIRMED', 'PENDING']
+            )
+            transaction_total = sum(float(t.total_amount_base or t.total_amount or 0) for t in air_transactions)
+            air_amount += transaction_total
+
+            total += air_amount
+
+        # Add accommodation bookings with transactions
+        for accom in obj.accommodation_bookings.all():
+            accom_amount = float(accom.total_amount_base or 0)
+            if accom_amount == 0 and accom.nightly_rate:
+                accom_amount = float(accom.nightly_rate) * accom.number_of_nights
+
+            # Add transactions for this accommodation
+            accom_content_type = ContentType.objects.get_for_model(AccommodationBooking)
+            accom_transactions = BookingTransaction.objects.filter(
+                content_type=accom_content_type,
+                object_id=accom.id,
+                status__in=['CONFIRMED', 'PENDING']
+            )
+            transaction_total = sum(float(t.total_amount_base or t.total_amount or 0) for t in accom_transactions)
+            accom_amount += transaction_total
+
+            total += accom_amount
+
+        # Add car hire bookings with transactions
+        for car in obj.car_hire_bookings.all():
+            car_amount = float(car.total_amount_base or car.total_cost or 0)
+
+            # Add transactions for this car hire
+            car_content_type = ContentType.objects.get_for_model(CarHireBooking)
+            car_transactions = BookingTransaction.objects.filter(
+                content_type=car_content_type,
+                object_id=car.id,
+                status__in=['CONFIRMED', 'PENDING']
+            )
+            transaction_total = sum(float(t.total_amount_base or t.total_amount or 0) for t in car_transactions)
+            car_amount += transaction_total
+
+            total += car_amount
+
+        return round(total, 2)
 
 
 class BookingDetailSerializer(serializers.ModelSerializer):
