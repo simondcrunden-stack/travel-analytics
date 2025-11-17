@@ -372,6 +372,104 @@
         </div>
       </div>
 
+      <!-- Top Rankings -->
+      <div class="mt-6">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-lg font-semibold text-gray-900">Top Performers</h2>
+          <div class="flex items-center gap-4">
+            <!-- Category Tabs -->
+            <div class="flex bg-gray-100 rounded-lg p-1">
+              <button
+                @click="selectedRankingCategory = 'cost_centers'"
+                :class="selectedRankingCategory === 'cost_centers' ? 'bg-white text-gray-900 shadow' : 'text-gray-600'"
+                class="px-3 py-1.5 text-sm font-medium rounded-md transition-all"
+              >
+                Cost Centers
+              </button>
+              <button
+                @click="selectedRankingCategory = 'travellers'"
+                :class="selectedRankingCategory === 'travellers' ? 'bg-white text-gray-900 shadow' : 'text-gray-600'"
+                class="px-3 py-1.5 text-sm font-medium rounded-md transition-all"
+              >
+                Travellers
+              </button>
+            </div>
+
+            <!-- Metric Selector -->
+            <select
+              v-model="selectedRankingType"
+              class="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="trips">Most Trips</option>
+              <option value="spend">Highest Spend</option>
+              <option value="carbon">Highest Carbon</option>
+              <option value="compliance">Best Compliance</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Rankings Table -->
+        <div class="bg-white rounded-lg shadow overflow-hidden">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rank</th>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  {{ selectedRankingCategory === 'cost_centers' ? 'Cost Center' : 'Traveller' }}
+                </th>
+                <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Trips</th>
+                <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total Spend</th>
+                <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Carbon (kg)</th>
+                <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Compliance</th>
+              </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+              <tr
+                v-for="(item, index) in rankings[selectedRankingCategory][`by_${selectedRankingType}`]"
+                :key="selectedRankingCategory === 'cost_centers' ? item.cost_center : item.traveller_id"
+                :class="index === 0 ? 'bg-yellow-50' : index === 1 ? 'bg-gray-50' : index === 2 ? 'bg-orange-50' : ''"
+              >
+                <td class="px-6 py-4 whitespace-nowrap text-sm">
+                  <span
+                    class="inline-flex items-center justify-center w-8 h-8 rounded-full font-bold"
+                    :class="index === 0 ? 'bg-yellow-400 text-yellow-900' : index === 1 ? 'bg-gray-400 text-gray-900' : index === 2 ? 'bg-orange-400 text-orange-900' : 'bg-gray-200 text-gray-700'"
+                  >
+                    {{ index + 1 }}
+                  </span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <div class="text-sm font-medium text-gray-900">
+                    {{ selectedRankingCategory === 'cost_centers' ? item.cost_center : item.traveller_name }}
+                  </div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-right text-sm text-gray-900">
+                  {{ item.trip_count }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-right text-sm text-gray-900">
+                  {{ formatCurrency(item.total_spend) }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-right text-sm text-gray-900">
+                  {{ item.total_carbon_kg.toFixed(0) }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-right">
+                  <span
+                    class="inline-flex px-2 py-1 text-xs font-semibold rounded-full"
+                    :class="item.compliance_rate >= 80 ? 'bg-green-100 text-green-800' : item.compliance_rate >= 60 ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-800'"
+                  >
+                    {{ item.compliance_rate.toFixed(1) }}%
+                  </span>
+                </td>
+              </tr>
+              <tr v-if="rankings[selectedRankingCategory][`by_${selectedRankingType}`].length === 0">
+                <td colspan="6" class="px-6 py-8 text-center text-sm text-gray-500">
+                  No data available
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <!-- Charts Row -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
         <!-- Spend by Category Chart -->
@@ -500,6 +598,22 @@ const budgetSummary = ref({
   budgets_exceeded: 0,
   critical_budgets: []
 })
+const rankings = ref({
+  cost_centers: {
+    by_trips: [],
+    by_spend: [],
+    by_carbon: [],
+    by_compliance: []
+  },
+  travellers: {
+    by_trips: [],
+    by_spend: [],
+    by_carbon: [],
+    by_compliance: []
+  }
+})
+const selectedRankingType = ref('trips')  // trips, spend, carbon, compliance
+const selectedRankingCategory = ref('cost_centers')  // cost_centers, travellers
 const recentBookings = ref([])
 const monthlyData = ref([])
 
@@ -541,6 +655,16 @@ const loadData = async () => {
     } catch (budgetErr) {
       console.log('ℹ️ [DashboardView] No budget data available:', budgetErr.message)
       // Keep default empty budget summary
+    }
+
+    // Get top rankings (non-blocking - fail silently if no data)
+    try {
+      const rankingsData = await bookingService.getTopRankings({ ...activeFilters.value, limit: 5 })
+      rankings.value = rankingsData
+      console.log('✅ [DashboardView] Rankings loaded:', rankingsData)
+    } catch (rankingsErr) {
+      console.log('ℹ️ [DashboardView] No rankings data available:', rankingsErr.message)
+      // Keep default empty rankings
     }
 
     // Get recent bookings for the table

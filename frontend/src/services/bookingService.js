@@ -140,6 +140,13 @@ export default {
     return response.data
   },
 
+  // Top rankings for dashboard (cost centers and travellers)
+  async getTopRankings(params = {}) {
+    const backendParams = transformFiltersForBackend(params)
+    const response = await api.get('/bookings/top_rankings/', { params: backendParams })
+    return response.data
+  },
+
   // Helper: Calculate totals from bookings
   calculateTotals(bookings) {
     return bookings.reduce((acc, booking) => {

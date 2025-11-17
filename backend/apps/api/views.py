@@ -1053,6 +1053,156 @@ class BookingViewSet(viewsets.ModelViewSet):
 
         return Response(summary)
 
+    @action(detail=False, methods=['get'])
+    def top_rankings(self, request):
+        """
+        Get top rankings for cost centers and travellers.
+        Returns top performers by trip count, spend, carbon, and compliance.
+        """
+        user = request.user
+
+        # Build base queryset using same logic as get_queryset()
+        if user.user_type == 'ADMIN':
+            base_queryset = Booking.objects.all()
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            base_queryset = Booking.objects.filter(
+                Q(organization=user.organization) |
+                Q(organization__travel_agent=user.organization)
+            )
+        else:
+            base_queryset = Booking.objects.filter(organization=user.organization)
+
+        # Apply filters from query params
+        organization_id = request.query_params.get('organization')
+        if organization_id:
+            base_queryset = base_queryset.filter(organization_id=organization_id)
+
+        bookings = base_queryset.select_related('organization', 'traveller').prefetch_related(
+            'air_bookings__segments',
+            'accommodation_bookings',
+            'car_hire_bookings',
+            'violations'
+        )
+
+        # Aggregate by cost center
+        cost_center_data = {}
+        traveller_data = {}
+
+        for booking in bookings:
+            cost_center = booking.cost_center or 'Unassigned'
+            traveller_id = str(booking.traveller.id) if booking.traveller else 'Unknown'
+            traveller_name = str(booking.traveller) if booking.traveller else 'Unknown'
+
+            # Initialize cost center aggregation
+            if cost_center not in cost_center_data:
+                cost_center_data[cost_center] = {
+                    'cost_center': cost_center,
+                    'trip_count': 0,
+                    'total_spend': 0,
+                    'total_carbon_kg': 0,
+                    'total_bookings': 0,
+                    'compliant_bookings': 0
+                }
+
+            # Initialize traveller aggregation
+            if traveller_id not in traveller_data:
+                traveller_data[traveller_id] = {
+                    'traveller_id': traveller_id,
+                    'traveller_name': traveller_name,
+                    'trip_count': 0,
+                    'total_spend': 0,
+                    'total_carbon_kg': 0,
+                    'total_bookings': 0,
+                    'compliant_bookings': 0
+                }
+
+            # Calculate booking spend
+            booking_spend = 0
+
+            # Add air spend
+            for air in booking.air_bookings.all():
+                air_amount = float(air.total_fare or 0)
+                booking_spend += air_amount
+                cost_center_data[cost_center]['total_carbon_kg'] += float(air.total_carbon_kg or 0)
+                traveller_data[traveller_id]['total_carbon_kg'] += float(air.total_carbon_kg or 0)
+
+            # Add accommodation spend
+            for accom in booking.accommodation_bookings.all():
+                accom_amount = float(accom.total_amount_base or 0)
+                if accom_amount == 0 and accom.nightly_rate:
+                    accom_amount = float(accom.nightly_rate) * accom.number_of_nights
+                booking_spend += accom_amount
+
+            # Add car hire spend
+            for car in booking.car_hire_bookings.all():
+                car_amount = float(car.total_amount_base or 0)
+                booking_spend += car_amount
+
+            # Update aggregations
+            cost_center_data[cost_center]['trip_count'] += 1
+            cost_center_data[cost_center]['total_spend'] += booking_spend
+            cost_center_data[cost_center]['total_bookings'] += 1
+
+            traveller_data[traveller_id]['trip_count'] += 1
+            traveller_data[traveller_id]['total_spend'] += booking_spend
+            traveller_data[traveller_id]['total_bookings'] += 1
+
+            # Check compliance
+            has_violations = booking.violations.exists()
+            if not has_violations:
+                cost_center_data[cost_center]['compliant_bookings'] += 1
+                traveller_data[traveller_id]['compliant_bookings'] += 1
+
+        # Calculate compliance rates and format results
+        cost_centers = []
+        for cc_data in cost_center_data.values():
+            compliance_rate = 0
+            if cc_data['total_bookings'] > 0:
+                compliance_rate = round((cc_data['compliant_bookings'] / cc_data['total_bookings']) * 100, 1)
+            cost_centers.append({
+                'cost_center': cc_data['cost_center'],
+                'trip_count': cc_data['trip_count'],
+                'total_spend': cc_data['total_spend'],
+                'total_carbon_kg': cc_data['total_carbon_kg'],
+                'compliance_rate': compliance_rate
+            })
+
+        travellers = []
+        for t_data in traveller_data.values():
+            if t_data['traveller_id'] == 'Unknown':
+                continue  # Skip unknown travellers
+            compliance_rate = 0
+            if t_data['total_bookings'] > 0:
+                compliance_rate = round((t_data['compliant_bookings'] / t_data['total_bookings']) * 100, 1)
+            travellers.append({
+                'traveller_id': t_data['traveller_id'],
+                'traveller_name': t_data['traveller_name'],
+                'trip_count': t_data['trip_count'],
+                'total_spend': t_data['total_spend'],
+                'total_carbon_kg': t_data['total_carbon_kg'],
+                'compliance_rate': compliance_rate
+            })
+
+        # Sort and get top N for each category
+        limit = int(request.query_params.get('limit', 10))
+
+        rankings = {
+            'cost_centers': {
+                'by_trips': sorted(cost_centers, key=lambda x: x['trip_count'], reverse=True)[:limit],
+                'by_spend': sorted(cost_centers, key=lambda x: x['total_spend'], reverse=True)[:limit],
+                'by_carbon': sorted(cost_centers, key=lambda x: x['total_carbon_kg'], reverse=True)[:limit],
+                'by_compliance': sorted(cost_centers, key=lambda x: x['compliance_rate'], reverse=True)[:limit],
+            },
+            'travellers': {
+                'by_trips': sorted(travellers, key=lambda x: x['trip_count'], reverse=True)[:limit],
+                'by_spend': sorted(travellers, key=lambda x: x['total_spend'], reverse=True)[:limit],
+                'by_carbon': sorted(travellers, key=lambda x: x['total_carbon_kg'], reverse=True)[:limit],
+                'by_compliance': sorted(travellers, key=lambda x: x['compliance_rate'], reverse=True)[:limit],
+            }
+        }
+
+        return Response(rankings)
+
 
 # ============================================================================
 # BUDGET VIEWSETS
