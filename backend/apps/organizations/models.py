@@ -1,6 +1,7 @@
 # backend/apps/organizations/models.py
 
 from django.db import models
+from mptt.models import MPTTModel, TreeForeignKey
 import uuid
 
 
@@ -123,3 +124,206 @@ class Organization(models.Model):
             return country.common_name
         except:
             return self.home_country
+
+
+class OrganizationalNode(MPTTModel):
+    """
+    Flexible organizational hierarchy using MPTT (Modified Preorder Tree Traversal).
+
+    Supports variable-depth organizational structures:
+    - Cost centers (leaves)
+    - Business units, regions, departments, divisions (intermediate nodes)
+    - Custom node types defined by organization
+
+    Examples:
+        Sales structure (deep):
+            Sales-ASPAC (Division)
+            └── Sales-Australia (National)
+                └── VIC-Sales (Region)
+                    ├── VIC-001 (Cost Center)
+                    ├── VIC-002 (Cost Center)
+                    └── VIC-003 (Cost Center)
+
+        Marketing structure (flat):
+            ASPAC-Marketing (Division)
+            ├── National-Marketing (National)
+            │   ├── VIC-Marketing (Cost Center)
+            │   ├── NSW-Marketing (Cost Center)
+            │   └── QLD-Marketing (Cost Center)
+    """
+
+    NODE_TYPE_CHOICES = [
+        ('COST_CENTER', 'Cost Center'),
+        ('BUSINESS_UNIT', 'Business Unit'),
+        ('REGION', 'Region'),
+        ('DEPARTMENT', 'Department'),
+        ('DIVISION', 'Division'),
+        ('GROUP', 'Group'),
+        ('OTHER', 'Other'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organization = models.ForeignKey(
+        Organization,
+        on_delete=models.CASCADE,
+        related_name='organizational_nodes',
+        help_text="Organization this node belongs to"
+    )
+
+    # Tree structure
+    parent = TreeForeignKey(
+        'self',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='children',
+        help_text="Parent node in the hierarchy (null for root nodes)"
+    )
+
+    # Node identification
+    code = models.CharField(
+        max_length=100,
+        help_text="Unique code for this node (e.g., 'VIC-001', 'Sales-ASPAC')"
+    )
+    name = models.CharField(
+        max_length=200,
+        help_text="Display name for this node"
+    )
+    node_type = models.CharField(
+        max_length=20,
+        choices=NODE_TYPE_CHOICES,
+        default='COST_CENTER',
+        help_text="Type of organizational unit"
+    )
+
+    # Node properties
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Whether this node is currently active"
+    )
+    description = models.TextField(
+        blank=True,
+        help_text="Optional description of this organizational unit"
+    )
+
+    # Metadata
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class MPTTMeta:
+        order_insertion_by = ['code']
+
+    class Meta:
+        db_table = 'organizational_nodes'
+        unique_together = [['organization', 'code']]
+        indexes = [
+            models.Index(fields=['organization', 'code']),
+            models.Index(fields=['organization', 'node_type']),
+            models.Index(fields=['organization', 'is_active']),
+        ]
+        verbose_name = 'Organizational Node'
+        verbose_name_plural = 'Organizational Nodes'
+
+    def __str__(self):
+        return f"{self.name} ({self.code})"
+
+    def get_full_path(self):
+        """
+        Get the full path from root to this node.
+
+        Returns:
+            str: Path like "Sales-ASPAC > Sales-Australia > VIC-Sales > VIC-001"
+        """
+        ancestors = self.get_ancestors(include_self=True)
+        return " > ".join([node.name for node in ancestors])
+
+    def get_descendants_count(self):
+        """
+        Get count of all descendants (children, grandchildren, etc.).
+
+        Returns:
+            int: Number of descendants
+        """
+        return self.get_descendant_count()
+
+    def is_leaf_node(self):
+        """
+        Check if this is a leaf node (no children).
+
+        Returns:
+            bool: True if leaf node
+        """
+        return self.is_leaf_node()
+
+    def can_be_merged_with(self, other_node):
+        """
+        Check if this node can be merged with another node.
+
+        Rules:
+        - Must be in same organization
+        - Must be same node type
+        - Cannot merge node with itself
+        - Cannot merge if it would create circular reference
+
+        Args:
+            other_node: OrganizationalNode to merge with
+
+        Returns:
+            bool: True if merge is allowed
+        """
+        if self.id == other_node.id:
+            return False
+        if self.organization_id != other_node.organization_id:
+            return False
+        if self.node_type != other_node.node_type:
+            return False
+        # Check if other_node is an ancestor of self (would create circular ref)
+        if other_node in self.get_ancestors():
+            return False
+        return True
+
+    def merge_into(self, target_node):
+        """
+        Merge this node into another node.
+
+        Process:
+        1. Move all children to target node
+        2. Update all travellers pointing to this node
+        3. Update all budgets pointing to this node
+        4. Mark this node as inactive or delete it
+
+        Args:
+            target_node: OrganizationalNode to merge into
+
+        Returns:
+            bool: True if merge successful
+
+        Raises:
+            ValueError: If merge not allowed
+        """
+        if not self.can_be_merged_with(target_node):
+            raise ValueError(f"Cannot merge {self} into {target_node}")
+
+        # Move children to target
+        for child in self.get_children():
+            child.move_to(target_node, 'last-child')
+            child.save()
+
+        # Update travellers
+        from apps.bookings.models import Traveller
+        Traveller.objects.filter(organizational_node=self).update(
+            organizational_node=target_node
+        )
+
+        # Update budgets
+        from apps.budgets.models import Budget
+        Budget.objects.filter(organizational_node=self).update(
+            organizational_node=target_node
+        )
+
+        # Mark as inactive
+        self.is_active = False
+        self.code = f"{self.code}_MERGED_{uuid.uuid4().hex[:8]}"  # Prevent unique constraint issues
+        self.save()
+
+        return True

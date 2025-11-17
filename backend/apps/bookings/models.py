@@ -40,11 +40,25 @@ class Traveller(models.Model):
         help_text="Link this traveller to a user account if they need platform access"
     )
     employee_id = models.CharField(max_length=100, blank=True)
-    
+
     # Department/cost center for reporting
     department = models.CharField(max_length=100, blank=True)
-    cost_center = models.CharField(max_length=100, blank=True)
-    
+    cost_center = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="DEPRECATED: Use organizational_node instead. Kept for backward compatibility."
+    )
+
+    # Organizational hierarchy (replaces cost_center)
+    organizational_node = models.ForeignKey(
+        'organizations.OrganizationalNode',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='travellers',
+        help_text="Link to organizational hierarchy node (cost center, business unit, etc.)"
+    )
+
     # Status
     is_active = models.BooleanField(default=True)
     
@@ -57,6 +71,7 @@ class Traveller(models.Model):
         indexes = [
             models.Index(fields=['organization', 'last_name', 'first_name']),
             models.Index(fields=['organization', 'is_active']),
+            models.Index(fields=['organizational_node']),
         ]
         unique_together = [['organization', 'employee_id']]
     
