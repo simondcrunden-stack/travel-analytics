@@ -1089,7 +1089,8 @@ class BookingViewSet(viewsets.ModelViewSet):
         traveller_data = {}
 
         for booking in bookings:
-            cost_center = booking.cost_center or 'Unassigned'
+            # cost_center is on Traveller model, not Booking model
+            cost_center = booking.traveller.cost_center if (booking.traveller and booking.traveller.cost_center) else 'Unassigned'
             traveller_id = str(booking.traveller.id) if booking.traveller else 'Unknown'
             traveller_name = str(booking.traveller) if booking.traveller else 'Unknown'
 
