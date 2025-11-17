@@ -4,13 +4,14 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Count, Sum, Avg, Q
+from django.contrib.contenttypes.models import ContentType
 from datetime import datetime, timedelta
 
 from apps.organizations.models import Organization
 from apps.users.models import User
 from apps.bookings.models import (
     Traveller, Booking, AirBooking, AirSegment,
-    AccommodationBooking, CarHireBooking, Invoice, ServiceFee
+    AccommodationBooking, CarHireBooking, Invoice, ServiceFee, BookingTransaction
 )
 from apps.budgets.models import FiscalYear, Budget, BudgetAlert
 from apps.compliance.models import ComplianceViolation, TravelRiskAlert
@@ -961,8 +962,21 @@ class BookingViewSet(viewsets.ModelViewSet):
             # AIR BOOKINGS
             if booking.air_bookings.exists():
                 for air in booking.air_bookings.all():
-                    # Calculate air spend
+                    # Calculate air spend (original booking amount)
                     air_amount = float(air.total_fare or 0)
+
+                    # Add any exchange tickets, refunds, or other transactions for this air booking
+                    air_content_type = ContentType.objects.get_for_model(AirBooking)
+                    air_transactions = BookingTransaction.objects.filter(
+                        content_type=air_content_type,
+                        object_id=air.id,
+                        status__in=['CONFIRMED', 'PENDING']  # Exclude CANCELLED transactions
+                    )
+
+                    # Sum transaction amounts (can be negative for refunds)
+                    transaction_total = sum(float(t.total_amount_base or t.total_amount or 0) for t in air_transactions)
+                    air_amount += transaction_total
+
                     summary['air_spend'] += air_amount
                     summary['air_bookings'] += 1
 
@@ -996,6 +1010,19 @@ class BookingViewSet(viewsets.ModelViewSet):
                     # Fallback: calculate from nightly rate if total_amount_base is not set
                     if accom_amount == 0 and accom.nightly_rate:
                         accom_amount = float(accom.nightly_rate) * accom.number_of_nights
+
+                    # Add any modifications, cancellations, or other transactions for this accommodation
+                    accom_content_type = ContentType.objects.get_for_model(AccommodationBooking)
+                    accom_transactions = BookingTransaction.objects.filter(
+                        content_type=accom_content_type,
+                        object_id=accom.id,
+                        status__in=['CONFIRMED', 'PENDING']
+                    )
+
+                    # Sum transaction amounts (can be negative for refunds)
+                    transaction_total = sum(float(t.total_amount_base or t.total_amount or 0) for t in accom_transactions)
+                    accom_amount += transaction_total
+
                     summary['accommodation_spend'] += accom_amount
                     summary['accommodation_bookings'] += 1
 
@@ -1019,6 +1046,19 @@ class BookingViewSet(viewsets.ModelViewSet):
             if booking.car_hire_bookings.exists():
                 for car in booking.car_hire_bookings.all():
                     car_amount = float(car.total_amount_base or car.total_cost or 0)
+
+                    # Add any modifications, cancellations, or other transactions for this car hire
+                    car_content_type = ContentType.objects.get_for_model(CarHireBooking)
+                    car_transactions = BookingTransaction.objects.filter(
+                        content_type=car_content_type,
+                        object_id=car.id,
+                        status__in=['CONFIRMED', 'PENDING']
+                    )
+
+                    # Sum transaction amounts (can be negative for refunds)
+                    transaction_total = sum(float(t.total_amount_base or t.total_amount or 0) for t in car_transactions)
+                    car_amount += transaction_total
+
                     summary['car_hire_spend'] += car_amount
                     summary['car_hire_bookings'] += 1
 
@@ -1122,23 +1162,56 @@ class BookingViewSet(viewsets.ModelViewSet):
             # Calculate booking spend
             booking_spend = 0
 
-            # Add air spend
+            # Add air spend (including exchange tickets, refunds, etc.)
             for air in booking.air_bookings.all():
                 air_amount = float(air.total_fare or 0)
+
+                # Add any exchange tickets, refunds, or other transactions
+                air_content_type = ContentType.objects.get_for_model(AirBooking)
+                air_transactions = BookingTransaction.objects.filter(
+                    content_type=air_content_type,
+                    object_id=air.id,
+                    status__in=['CONFIRMED', 'PENDING']
+                )
+                transaction_total = sum(float(t.total_amount_base or t.total_amount or 0) for t in air_transactions)
+                air_amount += transaction_total
+
                 booking_spend += air_amount
                 cost_center_data[cost_center]['total_carbon_kg'] += float(air.total_carbon_kg or 0)
                 traveller_data[traveller_id]['total_carbon_kg'] += float(air.total_carbon_kg or 0)
 
-            # Add accommodation spend
+            # Add accommodation spend (including modifications, cancellations, etc.)
             for accom in booking.accommodation_bookings.all():
                 accom_amount = float(accom.total_amount_base or 0)
                 if accom_amount == 0 and accom.nightly_rate:
                     accom_amount = float(accom.nightly_rate) * accom.number_of_nights
+
+                # Add any modifications or transactions
+                accom_content_type = ContentType.objects.get_for_model(AccommodationBooking)
+                accom_transactions = BookingTransaction.objects.filter(
+                    content_type=accom_content_type,
+                    object_id=accom.id,
+                    status__in=['CONFIRMED', 'PENDING']
+                )
+                transaction_total = sum(float(t.total_amount_base or t.total_amount or 0) for t in accom_transactions)
+                accom_amount += transaction_total
+
                 booking_spend += accom_amount
 
-            # Add car hire spend
+            # Add car hire spend (including modifications, cancellations, etc.)
             for car in booking.car_hire_bookings.all():
                 car_amount = float(car.total_amount_base or 0)
+
+                # Add any modifications or transactions
+                car_content_type = ContentType.objects.get_for_model(CarHireBooking)
+                car_transactions = BookingTransaction.objects.filter(
+                    content_type=car_content_type,
+                    object_id=car.id,
+                    status__in=['CONFIRMED', 'PENDING']
+                )
+                transaction_total = sum(float(t.total_amount_base or t.total_amount or 0) for t in car_transactions)
+                car_amount += transaction_total
+
                 booking_spend += car_amount
 
             # Update aggregations
