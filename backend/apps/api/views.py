@@ -1102,7 +1102,8 @@ class BookingViewSet(viewsets.ModelViewSet):
                     'total_spend': 0,
                     'total_carbon_kg': 0,
                     'total_bookings': 0,
-                    'compliant_bookings': 0
+                    'compliant_bookings': 0,
+                    'lost_savings': 0
                 }
 
             # Initialize traveller aggregation
@@ -1114,7 +1115,8 @@ class BookingViewSet(viewsets.ModelViewSet):
                     'total_spend': 0,
                     'total_carbon_kg': 0,
                     'total_bookings': 0,
-                    'compliant_bookings': 0
+                    'compliant_bookings': 0,
+                    'lost_savings': 0
                 }
 
             # Calculate booking spend
@@ -1148,11 +1150,17 @@ class BookingViewSet(viewsets.ModelViewSet):
             traveller_data[traveller_id]['total_spend'] += booking_spend
             traveller_data[traveller_id]['total_bookings'] += 1
 
-            # Check compliance
+            # Check compliance and calculate lost savings
             has_violations = booking.violations.exists()
             if not has_violations:
                 cost_center_data[cost_center]['compliant_bookings'] += 1
                 traveller_data[traveller_id]['compliant_bookings'] += 1
+            else:
+                # Calculate lost savings from violation variance amounts
+                for violation in booking.violations.all():
+                    lost_amount = float(violation.variance_amount or 0)
+                    cost_center_data[cost_center]['lost_savings'] += lost_amount
+                    traveller_data[traveller_id]['lost_savings'] += lost_amount
 
         # Calculate compliance rates and format results
         cost_centers = []
@@ -1165,7 +1173,8 @@ class BookingViewSet(viewsets.ModelViewSet):
                 'trip_count': cc_data['trip_count'],
                 'total_spend': cc_data['total_spend'],
                 'total_carbon_kg': cc_data['total_carbon_kg'],
-                'compliance_rate': compliance_rate
+                'compliance_rate': compliance_rate,
+                'lost_savings': cc_data['lost_savings']
             })
 
         travellers = []
@@ -1181,7 +1190,8 @@ class BookingViewSet(viewsets.ModelViewSet):
                 'trip_count': t_data['trip_count'],
                 'total_spend': t_data['total_spend'],
                 'total_carbon_kg': t_data['total_carbon_kg'],
-                'compliance_rate': compliance_rate
+                'compliance_rate': compliance_rate,
+                'lost_savings': t_data['lost_savings']
             })
 
         # Sort and get top N for each category
@@ -1193,12 +1203,14 @@ class BookingViewSet(viewsets.ModelViewSet):
                 'by_spend': sorted(cost_centers, key=lambda x: x['total_spend'], reverse=True)[:limit],
                 'by_carbon': sorted(cost_centers, key=lambda x: x['total_carbon_kg'], reverse=True)[:limit],
                 'by_compliance': sorted(cost_centers, key=lambda x: x['compliance_rate'], reverse=True)[:limit],
+                'by_lost_savings': sorted(cost_centers, key=lambda x: x['lost_savings'], reverse=True)[:limit],
             },
             'travellers': {
                 'by_trips': sorted(travellers, key=lambda x: x['trip_count'], reverse=True)[:limit],
                 'by_spend': sorted(travellers, key=lambda x: x['total_spend'], reverse=True)[:limit],
                 'by_carbon': sorted(travellers, key=lambda x: x['total_carbon_kg'], reverse=True)[:limit],
                 'by_compliance': sorted(travellers, key=lambda x: x['compliance_rate'], reverse=True)[:limit],
+                'by_lost_savings': sorted(travellers, key=lambda x: x['lost_savings'], reverse=True)[:limit],
             }
         }
 
