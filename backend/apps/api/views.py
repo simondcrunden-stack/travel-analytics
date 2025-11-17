@@ -991,7 +991,11 @@ class BookingViewSet(viewsets.ModelViewSet):
             # ACCOMMODATION BOOKINGS
             if booking.accommodation_bookings.exists():
                 for accom in booking.accommodation_bookings.all():
-                    accom_amount = float(accom.total_amount_base or accom.nightly_rate or 0) * accom.number_of_nights
+                    # total_amount_base is already the total (nightly_rate * nights), don't multiply again
+                    accom_amount = float(accom.total_amount_base or 0)
+                    # Fallback: calculate from nightly rate if total_amount_base is not set
+                    if accom_amount == 0 and accom.nightly_rate:
+                        accom_amount = float(accom.nightly_rate) * accom.number_of_nights
                     summary['accommodation_spend'] += accom_amount
                     summary['accommodation_bookings'] += 1
 
