@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from apps.organizations.models import Organization
+from apps.organizations.models import Organization, OrganizationalNode
 from apps.users.models import User
 from apps.bookings.models import (
     Traveller, Booking, AirBooking, AirSegment,
@@ -47,6 +47,111 @@ class UserSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'password': {'write_only': True}
         }
+
+
+# ============================================================================
+# ORGANIZATIONAL HIERARCHY SERIALIZERS
+# ============================================================================
+
+class OrganizationalNodeSerializer(serializers.ModelSerializer):
+    """Basic organizational node serializer"""
+    parent_name = serializers.CharField(source='parent.name', read_only=True)
+    full_path = serializers.SerializerMethodField()
+    descendant_count = serializers.SerializerMethodField()
+    traveller_count = serializers.SerializerMethodField()
+    budget_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = OrganizationalNode
+        fields = [
+            'id', 'organization', 'parent', 'parent_name',
+            'code', 'name', 'node_type', 'description',
+            'is_active', 'full_path', 'descendant_count',
+            'traveller_count', 'budget_count',
+            'created_at', 'updated_at',
+            # MPTT fields
+            'lft', 'rght', 'tree_id', 'level'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at', 'lft', 'rght', 'tree_id', 'level']
+
+    def get_full_path(self, obj):
+        """Get hierarchical path"""
+        return obj.get_full_path()
+
+    def get_descendant_count(self, obj):
+        """Get count of all descendants"""
+        return obj.get_descendant_count()
+
+    def get_traveller_count(self, obj):
+        """Get count of travellers assigned to this node"""
+        return obj.travellers.filter(is_active=True).count()
+
+    def get_budget_count(self, obj):
+        """Get count of budgets assigned to this node"""
+        return obj.budgets.filter(is_active=True).count()
+
+
+class OrganizationalNodeTreeSerializer(serializers.ModelSerializer):
+    """
+    Tree serializer with recursive children.
+    Use for rendering full organizational hierarchy.
+    """
+    children = serializers.SerializerMethodField()
+    parent_name = serializers.CharField(source='parent.name', read_only=True)
+    traveller_count = serializers.SerializerMethodField()
+    budget_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = OrganizationalNode
+        fields = [
+            'id', 'organization', 'parent', 'parent_name',
+            'code', 'name', 'node_type', 'description',
+            'is_active', 'level', 'children',
+            'traveller_count', 'budget_count'
+        ]
+
+    def get_children(self, obj):
+        """Recursively serialize children"""
+        children = obj.get_children().filter(is_active=True)
+        return OrganizationalNodeTreeSerializer(children, many=True, context=self.context).data
+
+    def get_traveller_count(self, obj):
+        """Get count of travellers assigned to this node"""
+        return obj.travellers.filter(is_active=True).count()
+
+    def get_budget_count(self, obj):
+        """Get count of budgets assigned to this node"""
+        return obj.budgets.filter(is_active=True).count()
+
+
+class OrganizationalNodeMoveSerializer(serializers.Serializer):
+    """Serializer for moving nodes in the tree"""
+    target_id = serializers.UUIDField(required=True)
+    position = serializers.ChoiceField(
+        choices=['first-child', 'last-child', 'left', 'right'],
+        default='last-child'
+    )
+
+    def validate_target_id(self, value):
+        """Validate that target node exists"""
+        try:
+            OrganizationalNode.objects.get(id=value)
+        except OrganizationalNode.DoesNotExist:
+            raise serializers.ValidationError("Target node does not exist")
+        return value
+
+
+class OrganizationalNodeMergeSerializer(serializers.Serializer):
+    """Serializer for merging nodes"""
+    target_id = serializers.UUIDField(required=True)
+
+    def validate_target_id(self, value):
+        """Validate that target node exists"""
+        try:
+            OrganizationalNode.objects.get(id=value)
+        except OrganizationalNode.DoesNotExist:
+            raise serializers.ValidationError("Target node does not exist")
+        return value
 
 
 # ============================================================================
