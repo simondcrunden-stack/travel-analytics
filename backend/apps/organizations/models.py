@@ -1,6 +1,7 @@
 # backend/apps/organizations/models.py
 
 from django.db import models
+from mptt.models import MPTTModel, TreeForeignKey
 import uuid
 
 
@@ -125,12 +126,33 @@ class Organization(models.Model):
             return self.home_country
 
 
-class OrganizationalNode(models.Model):
+class OrganizationalNode(MPTTModel):
     """
-    Hierarchical organizational structure (departments, divisions, cost centers, etc.)
-    for customer organizations. Uses adjacency list model for tree structure.
+    Flexible organizational hierarchy using MPTT (Modified Preorder Tree Traversal).
+
+    Supports variable-depth organizational structures:
+    - Cost centers (leaves)
+    - Business units, regions, departments, divisions (intermediate nodes)
+    - Custom node types defined by organization
+
+    Examples:
+        Sales structure (deep):
+            Sales-ASPAC (Division)
+            └── Sales-Australia (National)
+                └── VIC-Sales (Region)
+                    ├── VIC-001 (Cost Center)
+                    ├── VIC-002 (Cost Center)
+                    └── VIC-003 (Cost Center)
+
+        Marketing structure (flat):
+            ASPAC-Marketing (Division)
+            ├── National-Marketing (National)
+            │   ├── VIC-Marketing (Cost Center)
+            │   ├── NSW-Marketing (Cost Center)
+            │   └── QLD-Marketing (Cost Center)
     """
-    NODE_TYPES = [
+
+    NODE_TYPE_CHOICES = [
         ('COST_CENTER', 'Cost Center'),
         ('BUSINESS_UNIT', 'Business Unit'),
         ('REGION', 'Region'),
@@ -145,134 +167,163 @@ class OrganizationalNode(models.Model):
         Organization,
         on_delete=models.CASCADE,
         related_name='organizational_nodes',
-        help_text="The organization this node belongs to"
+        help_text="Organization this node belongs to"
     )
 
-    # Node identification
-    name = models.CharField(max_length=200, help_text="Name of the organizational unit")
-    code = models.CharField(max_length=50, help_text="Unique code within organization")
-    node_type = models.CharField(max_length=20, choices=NODE_TYPES, default='DEPARTMENT')
-
-    # Tree structure (adjacency list)
-    parent = models.ForeignKey(
+    # Tree structure
+    parent = TreeForeignKey(
         'self',
         on_delete=models.CASCADE,
         null=True,
         blank=True,
         related_name='children',
-        help_text="Parent node in the hierarchy"
+        help_text="Parent node in the hierarchy (null for root nodes)"
     )
 
-    # Cached path for efficient queries (format: /root_code/parent_code/node_code/)
-    path = models.CharField(
-        max_length=500,
+    # Node identification
+    code = models.CharField(
+        max_length=100,
+        help_text="Unique code for this node (e.g., 'VIC-001', 'Sales-ASPAC')"
+    )
+    name = models.CharField(
+        max_length=200,
+        help_text="Display name for this node"
+    )
+    node_type = models.CharField(
+        max_length=20,
+        choices=NODE_TYPE_CHOICES,
+        default='COST_CENTER',
+        help_text="Type of organizational unit"
+    )
+
+    # Node properties
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Whether this node is currently active"
+    )
+    description = models.TextField(
         blank=True,
-        help_text="Materialized path for efficient tree queries"
+        help_text="Optional description of this organizational unit"
     )
-
-    # Display order within siblings
-    display_order = models.IntegerField(default=0)
-
-    # Status
-    is_active = models.BooleanField(default=True)
 
     # Metadata
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    class MPTTMeta:
+        order_insertion_by = ['code']
+
     class Meta:
         db_table = 'organizational_nodes'
-        unique_together = [('organization', 'code')]
+        unique_together = [['organization', 'code']]
         indexes = [
-            models.Index(fields=['organization', 'parent']),
+            models.Index(fields=['organization', 'code']),
             models.Index(fields=['organization', 'node_type']),
-            models.Index(fields=['path']),
+            models.Index(fields=['organization', 'is_active']),
         ]
-        ordering = ['display_order', 'name']
+        verbose_name = 'Organizational Node'
+        verbose_name_plural = 'Organizational Nodes'
 
     def __str__(self):
-        return f"{self.organization.code} - {self.name} ({self.code})"
+        return f"{self.name} ({self.code})"
 
-    def save(self, *args, **kwargs):
-        """Override save to update the materialized path"""
-        # Update path on save
-        if self.parent:
-            self.path = f"{self.parent.path}{self.code}/"
-        else:
-            self.path = f"/{self.code}/"
+    def get_full_path(self):
+        """
+        Get the full path from root to this node.
 
-        super().save(*args, **kwargs)
+        Returns:
+            str: Path like "Sales-ASPAC > Sales-Australia > VIC-Sales > VIC-001"
+        """
+        ancestors = self.get_ancestors(include_self=True)
+        return " > ".join([node.name for node in ancestors])
 
-        # Update children paths if this node's path changed
-        if hasattr(self, '_path_changed'):
-            for child in self.children.all():
-                child.save()
+    def get_descendants_count(self):
+        """
+        Get count of all descendants (children, grandchildren, etc.).
 
-    @property
-    def full_path(self):
-        """Get human-readable full path"""
-        if self.parent:
-            return f"{self.parent.full_path} > {self.name}"
-        return self.name
+        Returns:
+            int: Number of descendants
+        """
+        return self.get_descendant_count()
 
-    @property
-    def depth(self):
-        """Calculate depth in tree (root = 0)"""
-        return self.path.count('/') - 2 if self.path else 0
+    def is_leaf_node(self):
+        """
+        Check if this is a leaf node (no children).
 
-    def get_ancestors(self):
-        """Get all ancestors from root to parent"""
-        if not self.parent:
-            return OrganizationalNode.objects.none()
+        Returns:
+            bool: True if leaf node
+        """
+        return self.is_leaf_node()
 
-        ancestors = []
-        current = self.parent
-        while current:
-            ancestors.insert(0, current)
-            current = current.parent
+    def can_be_merged_with(self, other_node):
+        """
+        Check if this node can be merged with another node.
 
-        return OrganizationalNode.objects.filter(id__in=[a.id for a in ancestors])
+        Rules:
+        - Must be in same organization
+        - Must be same node type
+        - Cannot merge node with itself
+        - Cannot merge if it would create circular reference
 
-    def get_descendants(self, include_self=False):
-        """Get all descendants (children, grandchildren, etc.)"""
-        queryset = OrganizationalNode.objects.filter(
-            organization=self.organization,
-            path__startswith=self.path
-        ).exclude(id=self.id)
+        Args:
+            other_node: OrganizationalNode to merge with
 
-        if include_self:
-            queryset = queryset | OrganizationalNode.objects.filter(id=self.id)
+        Returns:
+            bool: True if merge is allowed
+        """
+        if self.id == other_node.id:
+            return False
+        if self.organization_id != other_node.organization_id:
+            return False
+        if self.node_type != other_node.node_type:
+            return False
+        # Check if other_node is an ancestor of self (would create circular ref)
+        if other_node in self.get_ancestors():
+            return False
+        return True
 
-        return queryset
+    def merge_into(self, target_node):
+        """
+        Merge this node into another node.
 
-    def get_siblings(self, include_self=False):
-        """Get siblings (nodes with same parent)"""
-        queryset = OrganizationalNode.objects.filter(
-            organization=self.organization,
-            parent=self.parent
+        Process:
+        1. Move all children to target node
+        2. Update all travellers pointing to this node
+        3. Update all budgets pointing to this node
+        4. Mark this node as inactive or delete it
+
+        Args:
+            target_node: OrganizationalNode to merge into
+
+        Returns:
+            bool: True if merge successful
+
+        Raises:
+            ValueError: If merge not allowed
+        """
+        if not self.can_be_merged_with(target_node):
+            raise ValueError(f"Cannot merge {self} into {target_node}")
+
+        # Move children to target
+        for child in self.get_children():
+            child.move_to(target_node, 'last-child')
+            child.save()
+
+        # Update travellers
+        from apps.bookings.models import Traveller
+        Traveller.objects.filter(organizational_node=self).update(
+            organizational_node=target_node
         )
 
-        if not include_self:
-            queryset = queryset.exclude(id=self.id)
+        # Update budgets
+        from apps.budgets.models import Budget
+        Budget.objects.filter(organizational_node=self).update(
+            organizational_node=target_node
+        )
 
-        return queryset
+        # Mark as inactive
+        self.is_active = False
+        self.code = f"{self.code}_MERGED_{uuid.uuid4().hex[:8]}"  # Prevent unique constraint issues
+        self.save()
 
-    def can_delete(self):
-        """Check if node can be deleted (no children, no references)"""
-        has_children = self.children.exists()
-        has_travellers = hasattr(self, 'travellers') and self.travellers.exists()
-        has_budgets = hasattr(self, 'budgets') and self.budgets.exists()
-
-        return not (has_children or has_travellers or has_budgets)
-
-    def get_traveller_count(self):
-        """Count travellers associated with this node"""
-        if hasattr(self, 'travellers'):
-            return self.travellers.count()
-        return 0
-
-    def get_budget_count(self):
-        """Count budgets associated with this node"""
-        if hasattr(self, 'budgets'):
-            return self.budgets.count()
-        return 0
+        return True

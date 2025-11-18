@@ -144,10 +144,10 @@
 
     <!-- Universal Filters -->
     <UniversalFilters
-      :show-traveller="true"
+      :show-traveller="false"
       :show-date-range="true"
       :show-destinations="false"
-      :show-organization="false"
+      :show-organization="true"
       :show-status="false"
       :show-supplier="false"
       @filters-changed="handleFiltersChanged"
@@ -344,26 +344,37 @@
 
         <!-- Pagination -->
         <div class="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
-          <div class="text-sm text-gray-600">
-            Showing {{ (currentPage - 1) * itemsPerPage + 1 }} to 
-            {{ Math.min(currentPage * itemsPerPage, filteredViolations.length) }} of 
-            {{ filteredViolations.length }} violations
+          <div class="flex items-center gap-2">
+            <span class="text-sm text-gray-700">Rows per page:</span>
+            <select v-model="itemsPerPage" class="border border-gray-300 rounded-md px-2 py-1 text-sm">
+              <option :value="10">10</option>
+              <option :value="20">20</option>
+              <option :value="30">30</option>
+              <option :value="40">40</option>
+              <option :value="50">50</option>
+            </select>
           </div>
-          <div class="flex gap-2">
-            <button
-              @click="currentPage--"
-              :disabled="currentPage === 1"
-              class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Previous
-            </button>
-            <button
-              @click="currentPage++"
-              :disabled="currentPage >= totalPages"
-              class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Next
-            </button>
+
+          <div class="flex items-center gap-4">
+            <span class="text-sm text-gray-700">
+              {{ (currentPage - 1) * itemsPerPage + 1 }}-{{ Math.min(currentPage * itemsPerPage, filteredViolations.length) }} of {{ filteredViolations.length }}
+            </span>
+            <div class="flex gap-1">
+              <button
+                @click="currentPage--"
+                :disabled="currentPage === 1"
+                class="px-3 py-1 rounded border border-gray-300 text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+              >
+                Previous
+              </button>
+              <button
+                @click="currentPage++"
+                :disabled="currentPage >= totalPages"
+                class="px-3 py-1 rounded border border-gray-300 text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+              >
+                Next
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -376,6 +387,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
 import UniversalFilters from '@/components/common/UniversalFilters.vue'
+import { transformFiltersForBackend } from '@/utils/filterTransformer'
 import {
   mdiAlertCircle,
   mdiCurrencyUsd,
@@ -429,68 +441,37 @@ const fetchViolations = async () => {
     loading.value = true
     error.value = null
 
-    // In a real app, this would be an API call
-    // For now, we'll generate sample data
-    violations.value = generateSampleViolations()
+    const params = transformFiltersForBackend(universalFilters.value)
+
+    // Add view-specific params
+    if (viewFilters.value.severity) params.severity = viewFilters.value.severity
+    if (viewFilters.value.type) params.violation_type = viewFilters.value.type
+
+    console.log('🚨 [ComplianceView] Fetching violations with params:', params)
+
+    const response = await api.get('/compliance-violations/', { params })
+    violations.value = response.data.results || []
+
+    console.log('✅ [ComplianceView] Loaded violations:', violations.value.length)
+
     calculateStats()
   } catch (err) {
     error.value = 'Failed to load compliance data'
-    console.error(err)
+    console.error('Error loading compliance violations:', err)
   } finally {
     loading.value = false
   }
 }
 
-// Generate sample violations (replace with actual API call)
-const generateSampleViolations = () => {
-  const types = ['LOWEST_FARE', 'ADVANCE_BOOKING', 'TRAVEL_CLASS', 'PREFERRED_SUPPLIER']
-  const severities = ['INFO', 'WARNING', 'BREACH', 'CRITICAL']
-  const travellers = [
-    { name: 'Jennifer Wilson', org: 'TechCorp Australia' },
-    { name: 'David Anderson', org: 'TechCorp Australia' },
-    { name: 'Sophie Martinez', org: 'TechCorp Australia' },
-    { name: 'Emily White', org: 'Retail Solutions Group' },
-  ]
-
-  const sampleViolations = []
-  for (let i = 0; i < 50; i++) {
-    const traveller = travellers[Math.floor(Math.random() * travellers.length)]
-    const type = types[Math.floor(Math.random() * types.length)]
-    const severity = severities[Math.floor(Math.random() * severities.length)]
-    
-    sampleViolations.push({
-      id: i + 1,
-      detected_at: new Date(2025, 9, Math.floor(Math.random() * 20) + 1).toISOString(),
-      traveller_name: traveller.name,
-      organization_name: traveller.org,
-      booking_reference: `BK${1000 + i}`,
-      violation_type: type,
-      severity: severity,
-      expected_amount: Math.floor(Math.random() * 1000) + 500,
-      actual_amount: Math.floor(Math.random() * 1500) + 500,
-      variance_amount: severity === 'INFO' ? null : Math.floor(Math.random() * 500) + 50,
-      violation_description: getViolationDescription(type),
-    })
-  }
-  return sampleViolations
-}
-
-const getViolationDescription = (type) => {
-  const descriptions = {
-    LOWEST_FARE: 'Did not select the lowest available fare option',
-    ADVANCE_BOOKING: 'Booking made less than required advance notice period',
-    TRAVEL_CLASS: 'Higher class of travel booked than policy permits',
-    PREFERRED_SUPPLIER: 'Non-preferred supplier selected without approval',
-  }
-  return descriptions[type] || 'Policy violation detected'
-}
-
 // Calculate statistics
 const calculateStats = () => {
   stats.value.totalViolations = violations.value.length
-  stats.value.totalImpact = violations.value.reduce((sum, v) => sum + (v.variance_amount || 0), 0)
+  stats.value.totalImpact = violations.value.reduce((sum, v) => {
+    const variance = parseFloat(v.variance_amount) || 0
+    return sum + variance
+  }, 0)
   stats.value.criticalCount = violations.value.filter(v => v.severity === 'CRITICAL').length
-  
+
   // Compliance rate (assuming total bookings = violations * 5 for demo)
   const totalBookings = violations.value.length * 5
   const compliantBookings = totalBookings - violations.value.length
@@ -522,10 +503,11 @@ const paginatedViolations = computed(() => {
 
 // Utility functions
 const formatCurrency = (value) => {
+  const numValue = parseFloat(value) || 0
   return new Intl.NumberFormat('en-AU', {
     style: 'currency',
     currency: 'AUD',
-  }).format(value)
+  }).format(numValue)
 }
 
 const formatDate = (dateString) => {
@@ -588,10 +570,16 @@ const exportReport = () => {
   // Implement CSV/PDF export
 }
 
-// Watch view-specific filters and reset pagination
+// Watch view-specific filters and refetch data
 watch(viewFilters, () => {
   currentPage.value = 1
+  fetchViolations()
 }, { deep: true })
+
+// Watch pagination changes
+watch(itemsPerPage, () => {
+  currentPage.value = 1
+})
 
 // Lifecycle
 onMounted(() => {

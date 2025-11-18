@@ -5,13 +5,14 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import ValidationError
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Count, Sum, Avg, Q
+from django.contrib.contenttypes.models import ContentType
 from datetime import datetime, timedelta
 
 from apps.organizations.models import Organization, OrganizationalNode
 from apps.users.models import User
 from apps.bookings.models import (
     Traveller, Booking, AirBooking, AirSegment,
-    AccommodationBooking, CarHireBooking, Invoice, ServiceFee
+    AccommodationBooking, CarHireBooking, Invoice, ServiceFee, BookingTransaction
 )
 from apps.budgets.models import FiscalYear, Budget, BudgetAlert
 from apps.compliance.models import ComplianceViolation, TravelRiskAlert
@@ -20,6 +21,8 @@ from apps.commissions.models import Commission
 
 from .serializers import (
     OrganizationSerializer, UserSerializer,
+    OrganizationalNodeSerializer, OrganizationalNodeTreeSerializer,
+    OrganizationalNodeMoveSerializer, OrganizationalNodeMergeSerializer,
     TravellerListSerializer, TravellerDetailSerializer,
     BookingListSerializer, BookingDetailSerializer,
     AirBookingSerializer, AccommodationBookingSerializer, CarHireBookingSerializer,
@@ -80,6 +83,200 @@ class OrganizationViewSet(viewsets.ReadOnlyModelViewSet):
             queryset = queryset.filter(travel_agent_id=travel_agent_id)
 
         return queryset
+
+
+class OrganizationalNodeViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for organizational hierarchy management.
+
+    Supports full CRUD operations plus tree-specific actions:
+    - tree: Get full organizational tree
+    - roots: Get root nodes only
+    - children: Get children of a specific node
+    - ancestors: Get ancestors of a specific node
+    - descendants: Get descendants of a specific node
+    - move: Move a node to a new position in the tree
+    - merge: Merge a node into another node
+    """
+    serializer_class = OrganizationalNodeSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['organization', 'node_type', 'is_active', 'parent']
+    search_fields = ['code', 'name', 'description']
+    ordering_fields = ['code', 'name', 'created_at']
+    ordering = ['lft']  # MPTT left value for tree order
+
+    def get_queryset(self):
+        """Filter by user's organization access"""
+        user = self.request.user
+
+        if user.user_type == 'ADMIN':
+            return OrganizationalNode.objects.all()
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            # Return nodes for agent's org + their customer orgs
+            if user.organization:
+                return OrganizationalNode.objects.filter(
+                    Q(organization=user.organization) |
+                    Q(organization__travel_agent=user.organization)
+                )
+            return OrganizationalNode.objects.all()
+        else:
+            # Customer users - only their org
+            if user.organization:
+                return OrganizationalNode.objects.filter(organization=user.organization)
+            return OrganizationalNode.objects.none()
+
+    @action(detail=False, methods=['get'])
+    def tree(self, request):
+        """
+        Get full organizational tree for the user's organization.
+
+        Returns complete hierarchy with nested children.
+        Query params:
+        - organization_id: Filter by specific organization (optional)
+        """
+        organization_id = request.query_params.get('organization_id')
+
+        queryset = self.get_queryset()
+        if organization_id:
+            queryset = queryset.filter(organization_id=organization_id)
+
+        # Get root nodes (no parent) and build tree from there
+        root_nodes = queryset.filter(parent__isnull=True, is_active=True)
+        serializer = OrganizationalNodeTreeSerializer(
+            root_nodes,
+            many=True,
+            context={'request': request}
+        )
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def roots(self, request):
+        """Get all root nodes (nodes without parents)"""
+        queryset = self.get_queryset().filter(parent__isnull=True, is_active=True)
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['get'])
+    def children(self, request, pk=None):
+        """Get direct children of a node"""
+        node = self.get_object()
+        children = node.get_children().filter(is_active=True)
+        serializer = self.get_serializer(children, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['get'])
+    def ancestors(self, request, pk=None):
+        """Get all ancestors of a node (path to root)"""
+        node = self.get_object()
+        ancestors = node.get_ancestors()
+        serializer = self.get_serializer(ancestors, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['get'])
+    def descendants(self, request, pk=None):
+        """Get all descendants of a node (entire subtree)"""
+        node = self.get_object()
+        descendants = node.get_descendants().filter(is_active=True)
+        serializer = self.get_serializer(descendants, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def move(self, request, pk=None):
+        """
+        Move a node to a new position in the tree.
+
+        Body:
+        {
+            "target_id": "uuid-of-target-node",
+            "position": "first-child" | "last-child" | "left" | "right"
+        }
+        """
+        node = self.get_object()
+        serializer = OrganizationalNodeMoveSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        target_id = serializer.validated_data['target_id']
+        position = serializer.validated_data['position']
+
+        try:
+            target = OrganizationalNode.objects.get(id=target_id)
+
+            # Validate move is within same organization
+            if node.organization_id != target.organization_id:
+                return Response(
+                    {"error": "Cannot move node to different organization"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Perform move using MPTT
+            node.move_to(target, position)
+            node.save()
+
+            serializer = self.get_serializer(node)
+            return Response(serializer.data)
+
+        except OrganizationalNode.DoesNotExist:
+            return Response(
+                {"error": "Target node not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    @action(detail=True, methods=['post'])
+    def merge(self, request, pk=None):
+        """
+        Merge this node into another node.
+
+        Body:
+        {
+            "target_id": "uuid-of-target-node"
+        }
+
+        This will:
+        1. Move all children to target node
+        2. Update all travellers to target node
+        3. Update all budgets to target node
+        4. Mark this node as inactive
+        """
+        node = self.get_object()
+        serializer = OrganizationalNodeMergeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        target_id = serializer.validated_data['target_id']
+
+        try:
+            target = OrganizationalNode.objects.get(id=target_id)
+
+            # Validate merge
+            if not node.can_be_merged_with(target):
+                return Response(
+                    {"error": "Cannot merge these nodes. Check organization, node type, and hierarchy."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Perform merge
+            node.merge_into(target)
+
+            return Response({
+                "message": f"Successfully merged {node.name} into {target.name}",
+                "target": self.get_serializer(target).data
+            })
+
+        except OrganizationalNode.DoesNotExist:
+            return Response(
+                {"error": "Target node not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
 
 class UserViewSet(viewsets.ReadOnlyModelViewSet):
@@ -543,14 +740,11 @@ class BookingViewSet(viewsets.ModelViewSet):
         if supplier:
             supplier_search = supplier.strip()
             supplier_q = Q()
-            
+
             supplier_q |= Q(air_bookings__primary_airline_name__icontains=supplier_search)
-            supplier_q |= Q(
-                Q(accommodation_bookings__hotel_name__icontains=supplier_search) |
-                Q(accommodation_bookings__hotel_chain__icontains=supplier_search)
-            )
+            supplier_q |= Q(accommodation_bookings__hotel_name__icontains=supplier_search)
             supplier_q |= Q(car_hire_bookings__rental_company__icontains=supplier_search)
-            
+
             queryset = queryset.filter(supplier_q).distinct()
         
         return queryset
@@ -709,13 +903,654 @@ class BookingViewSet(viewsets.ModelViewSet):
         
         # Sort by name
         country_data.sort(key=lambda x: x['name'])
-        
+
         return Response(country_data)
+
+    @action(detail=False, methods=['get'])
+    def supplier_autocomplete(self, request):
+        """
+        Get autocomplete suggestions for suppliers based on type.
+        Query params:
+        - type: 'airline', 'hotel', or 'car_rental'
+        - search: optional search query
+        - organization: optional organization filter
+        """
+        user = request.user
+        supplier_type = request.query_params.get('type', '')
+        search_query = request.query_params.get('search', '')
+        organization_id = request.query_params.get('organization')
+
+        # Build base queryset using same logic as get_queryset()
+        if user.user_type == 'ADMIN':
+            base_queryset = Booking.objects.all()
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            base_queryset = Booking.objects.filter(
+                Q(organization=user.organization) |
+                Q(organization__travel_agent=user.organization)
+            )
+        else:
+            base_queryset = Booking.objects.filter(organization=user.organization)
+
+        # Apply organization filter if provided
+        if organization_id:
+            base_queryset = base_queryset.filter(organization_id=organization_id)
+
+        results = []
+
+        if supplier_type == 'airline':
+            # Get airlines from air bookings
+            from apps.reference_data.models import Airline
+            airline_codes = AirBooking.objects.filter(
+                booking__in=base_queryset,
+                primary_airline_iata_code__isnull=False
+            ).exclude(
+                primary_airline_iata_code=''
+            ).values_list('primary_airline_iata_code', flat=True).distinct()
+
+            airlines = Airline.objects.filter(iata_code__in=airline_codes)
+
+            if search_query:
+                airlines = airlines.filter(
+                    Q(name__icontains=search_query) |
+                    Q(iata_code__icontains=search_query)
+                )
+
+            results = [
+                {
+                    'value': airline.name,
+                    'label': f"{airline.name} ({airline.iata_code})",
+                    'subtitle': None
+                }
+                for airline in airlines[:50]
+            ]
+
+        elif supplier_type == 'hotel':
+            # Get hotels from master data (Hotel model)
+            from apps.reference_data.models import Hotel, HotelAlias
+
+            # Start with hotels that have bookings in the base queryset
+            hotel_ids = AccommodationBooking.objects.filter(
+                booking__in=base_queryset,
+                hotel__isnull=False
+            ).values_list('hotel_id', flat=True).distinct()
+
+            hotels = Hotel.objects.filter(
+                id__in=hotel_ids,
+                is_active=True
+            )
+
+            if search_query:
+                # Search both canonical name and aliases
+                hotels = hotels.filter(
+                    Q(canonical_name__icontains=search_query) |
+                    Q(hotel_chain__icontains=search_query) |
+                    Q(aliases__alias_name__icontains=search_query, aliases__is_active=True)
+                ).distinct()
+
+            results = [
+                {
+                    'value': hotel.canonical_name,
+                    'label': f"{hotel.canonical_name} ({hotel.hotel_chain})" if hotel.hotel_chain else hotel.canonical_name,
+                    'subtitle': None
+                }
+                for hotel in hotels[:50]
+            ]
+
+        elif supplier_type == 'car_rental':
+            # Get unique rental companies
+            companies = CarHireBooking.objects.filter(
+                booking__in=base_queryset,
+                rental_company__isnull=False
+            ).values_list('rental_company', flat=True).distinct()
+
+            if search_query:
+                companies = CarHireBooking.objects.filter(
+                    booking__in=base_queryset,
+                    rental_company__icontains=search_query
+                ).values_list('rental_company', flat=True).distinct()
+
+            results = [
+                {
+                    'value': company,
+                    'label': company,
+                    'subtitle': None
+                }
+                for company in sorted(companies)[:50]
+            ]
+
+        return Response(results)
+
+    @action(detail=False, methods=['get'])
+    def city_autocomplete(self, request):
+        """
+        Get autocomplete suggestions for cities.
+        Query params:
+        - search: optional search query
+        - organization: optional organization filter
+        """
+        user = request.user
+        search_query = request.query_params.get('search', '')
+        organization_id = request.query_params.get('organization')
+
+        # Build base queryset using same logic as get_queryset()
+        if user.user_type == 'ADMIN':
+            base_queryset = Booking.objects.all()
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            base_queryset = Booking.objects.filter(
+                Q(organization=user.organization) |
+                Q(organization__travel_agent=user.organization)
+            )
+        else:
+            base_queryset = Booking.objects.filter(organization=user.organization)
+
+        # Apply organization filter if provided
+        if organization_id:
+            base_queryset = base_queryset.filter(organization_id=organization_id)
+
+        cities = set()
+
+        # Get cities from air segments (via airports)
+        from apps.reference_data.models import Airport
+        air_segments = AirSegment.objects.filter(
+            air_booking__booking__in=base_queryset
+        ).values_list('origin_airport_iata_code', 'destination_airport_iata_code')
+
+        iata_codes = set()
+        for origin_code, dest_code in air_segments:
+            if origin_code:
+                iata_codes.add(origin_code)
+            if dest_code:
+                iata_codes.add(dest_code)
+
+        if iata_codes:
+            airport_cities = Airport.objects.filter(
+                iata_code__in=iata_codes
+            ).values_list('city', flat=True).distinct()
+            cities.update(airport_cities)
+
+        # Get cities from accommodation
+        accommodation_cities = AccommodationBooking.objects.filter(
+            booking__in=base_queryset,
+            city__isnull=False
+        ).values_list('city', flat=True).distinct()
+        cities.update(accommodation_cities)
+
+        # Get cities from car hire
+        car_pickup_cities = CarHireBooking.objects.filter(
+            booking__in=base_queryset,
+            pickup_city__isnull=False
+        ).values_list('pickup_city', flat=True).distinct()
+        cities.update(car_pickup_cities)
+
+        car_dropoff_cities = CarHireBooking.objects.filter(
+            booking__in=base_queryset,
+            dropoff_city__isnull=False
+        ).values_list('dropoff_city', flat=True).distinct()
+        cities.update(car_dropoff_cities)
+
+        # Filter by search query if provided
+        if search_query:
+            cities = [city for city in cities if search_query.lower() in city.lower()]
+
+        # Sort and format results
+        city_list = sorted(cities)[:50]
+        results = [
+            {
+                'value': city,
+                'label': city,
+                'subtitle': None
+            }
+            for city in city_list
+        ]
+
+        return Response(results)
+
+    @action(detail=False, methods=['get'])
+    def dashboard_summary(self, request):
+        """
+        Get executive dashboard summary with domestic/international breakdown.
+        Returns comprehensive metrics for the dashboard view.
+        """
+        user = request.user
+
+        # Build base queryset using same logic as get_queryset()
+        if user.user_type == 'ADMIN':
+            base_queryset = Booking.objects.all()
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            base_queryset = Booking.objects.filter(
+                Q(organization=user.organization) |
+                Q(organization__travel_agent=user.organization)
+            )
+        else:
+            base_queryset = Booking.objects.filter(organization=user.organization)
+
+        # Apply filters from query params (reuse existing filter logic)
+        organization_id = request.query_params.get('organization')
+        if organization_id:
+            base_queryset = base_queryset.filter(organization_id=organization_id)
+
+        # Get organization's home country for domestic/international classification
+        home_country = 'AUS'  # Default
+        if organization_id:
+            try:
+                org = Organization.objects.get(id=organization_id)
+                home_country = org.home_country
+            except Organization.DoesNotExist:
+                pass
+        elif user.organization:
+            home_country = user.organization.home_country
+
+        # Initialize summary data
+        summary = {
+            'total_bookings': 0,
+            'total_spend': 0,
+            'total_spend_domestic': 0,
+            'total_spend_international': 0,
+            'air_bookings': 0,
+            'air_spend': 0,
+            'air_spend_domestic': 0,
+            'air_spend_international': 0,
+            'accommodation_bookings': 0,
+            'accommodation_spend': 0,
+            'accommodation_spend_domestic': 0,
+            'accommodation_spend_international': 0,
+            'car_hire_bookings': 0,
+            'car_hire_spend': 0,
+            'car_hire_spend_domestic': 0,
+            'car_hire_spend_international': 0,
+            'total_carbon_kg': 0,
+            'compliance_rate': 0,
+            'violation_count': 0,
+            'critical_violations': 0,
+        }
+
+        bookings = base_queryset.select_related('organization', 'traveller').prefetch_related(
+            'air_bookings__segments',
+            'accommodation_bookings',
+            'car_hire_bookings',
+            'violations'
+        )
+
+        summary['total_bookings'] = bookings.count()
+
+        # Process each booking
+        for booking in bookings:
+            # AIR BOOKINGS
+            if booking.air_bookings.exists():
+                for air in booking.air_bookings.all():
+                    # Calculate air spend (original booking amount)
+                    air_amount = float(air.total_fare or 0)
+
+                    # Add any exchange tickets, refunds, or other transactions for this air booking
+                    air_content_type = ContentType.objects.get_for_model(AirBooking)
+                    air_transactions = BookingTransaction.objects.filter(
+                        content_type=air_content_type,
+                        object_id=air.id,
+                        status__in=['CONFIRMED', 'PENDING']  # Exclude CANCELLED transactions
+                    )
+
+                    # Sum transaction amounts (can be negative for refunds)
+                    transaction_total = sum(float(t.total_amount_base or t.total_amount or 0) for t in air_transactions)
+                    air_amount += transaction_total
+
+                    summary['air_spend'] += air_amount
+                    summary['air_bookings'] += 1
+
+                    # Classify as domestic or international
+                    is_domestic = False
+                    if air.segments.exists():
+                        # Check if all segments are domestic
+                        all_domestic = True
+                        for segment in air.segments.all():
+                            if segment.origin_airport and segment.destination_airport:
+                                origin_country = segment.origin_airport.country_code if hasattr(segment.origin_airport, 'country_code') else None
+                                dest_country = segment.destination_airport.country_code if hasattr(segment.destination_airport, 'country_code') else None
+                                if origin_country != home_country or dest_country != home_country:
+                                    all_domestic = False
+                                    break
+                        is_domestic = all_domestic
+
+                    if is_domestic:
+                        summary['air_spend_domestic'] += air_amount
+                    else:
+                        summary['air_spend_international'] += air_amount
+
+                    # Add carbon emissions
+                    summary['total_carbon_kg'] += float(air.total_carbon_kg or 0)
+
+            # ACCOMMODATION BOOKINGS
+            if booking.accommodation_bookings.exists():
+                for accom in booking.accommodation_bookings.all():
+                    # total_amount_base is already the total (nightly_rate * nights), don't multiply again
+                    accom_amount = float(accom.total_amount_base or 0)
+                    # Fallback: calculate from nightly rate if total_amount_base is not set
+                    if accom_amount == 0 and accom.nightly_rate:
+                        accom_amount = float(accom.nightly_rate) * accom.number_of_nights
+
+                    # Add any modifications, cancellations, or other transactions for this accommodation
+                    accom_content_type = ContentType.objects.get_for_model(AccommodationBooking)
+                    accom_transactions = BookingTransaction.objects.filter(
+                        content_type=accom_content_type,
+                        object_id=accom.id,
+                        status__in=['CONFIRMED', 'PENDING']
+                    )
+
+                    # Sum transaction amounts (can be negative for refunds)
+                    transaction_total = sum(float(t.total_amount_base or t.total_amount or 0) for t in accom_transactions)
+                    accom_amount += transaction_total
+
+                    summary['accommodation_spend'] += accom_amount
+                    summary['accommodation_bookings'] += 1
+
+                    # Classify as domestic or international based on country
+                    # Get country code from reference data if available
+                    is_domestic = False
+                    if accom.country:
+                        try:
+                            country = Country.objects.get(name__iexact=accom.country)
+                            is_domestic = (country.alpha_3 == home_country)
+                        except Country.DoesNotExist:
+                            # Fallback: check if country name matches home country name
+                            is_domestic = (accom.country.upper() in ['AUSTRALIA', 'AUS']) if home_country == 'AUS' else False
+
+                    if is_domestic:
+                        summary['accommodation_spend_domestic'] += accom_amount
+                    else:
+                        summary['accommodation_spend_international'] += accom_amount
+
+            # CAR HIRE BOOKINGS
+            if booking.car_hire_bookings.exists():
+                for car in booking.car_hire_bookings.all():
+                    car_amount = float(car.total_amount_base or car.total_cost or 0)
+
+                    # Add any modifications, cancellations, or other transactions for this car hire
+                    car_content_type = ContentType.objects.get_for_model(CarHireBooking)
+                    car_transactions = BookingTransaction.objects.filter(
+                        content_type=car_content_type,
+                        object_id=car.id,
+                        status__in=['CONFIRMED', 'PENDING']
+                    )
+
+                    # Sum transaction amounts (can be negative for refunds)
+                    transaction_total = sum(float(t.total_amount_base or t.total_amount or 0) for t in car_transactions)
+                    car_amount += transaction_total
+
+                    summary['car_hire_spend'] += car_amount
+                    summary['car_hire_bookings'] += 1
+
+                    # Classify as domestic or international
+                    is_domestic = False
+                    if car.country:
+                        try:
+                            country = Country.objects.get(name__iexact=car.country)
+                            is_domestic = (country.alpha_3 == home_country)
+                        except Country.DoesNotExist:
+                            is_domestic = (car.country.upper() in ['AUSTRALIA', 'AUS']) if home_country == 'AUS' else False
+
+                    if is_domestic:
+                        summary['car_hire_spend_domestic'] += car_amount
+                    else:
+                        summary['car_hire_spend_international'] += car_amount
+
+        # Calculate total spend
+        summary['total_spend'] = summary['air_spend'] + summary['accommodation_spend'] + summary['car_hire_spend']
+        summary['total_spend_domestic'] = summary['air_spend_domestic'] + summary['accommodation_spend_domestic'] + summary['car_hire_spend_domestic']
+        summary['total_spend_international'] = summary['air_spend_international'] + summary['accommodation_spend_international'] + summary['car_hire_spend_international']
+
+        # Get compliance data
+        violations = ComplianceViolation.objects.filter(booking__in=bookings)
+        summary['violation_count'] = violations.count()
+        summary['critical_violations'] = violations.filter(severity='CRITICAL').count()
+
+        # Calculate compliance rate
+        if summary['total_bookings'] > 0:
+            compliant_bookings = summary['total_bookings'] - bookings.filter(violations__isnull=False).distinct().count()
+            summary['compliance_rate'] = round((compliant_bookings / summary['total_bookings']) * 100, 1)
+
+        return Response(summary)
+
+    @action(detail=False, methods=['get'])
+    def top_rankings(self, request):
+        """
+        Get top rankings for cost centers and travellers.
+        Returns top performers by trip count, spend, carbon, and compliance.
+        """
+        user = request.user
+
+        # Build base queryset using same logic as get_queryset()
+        if user.user_type == 'ADMIN':
+            base_queryset = Booking.objects.all()
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            base_queryset = Booking.objects.filter(
+                Q(organization=user.organization) |
+                Q(organization__travel_agent=user.organization)
+            )
+        else:
+            base_queryset = Booking.objects.filter(organization=user.organization)
+
+        # Apply filters from query params
+        organization_id = request.query_params.get('organization')
+        if organization_id:
+            base_queryset = base_queryset.filter(organization_id=organization_id)
+
+        bookings = base_queryset.select_related('organization', 'traveller').prefetch_related(
+            'air_bookings__segments',
+            'accommodation_bookings',
+            'car_hire_bookings',
+            'violations'
+        )
+
+        # Aggregate by cost center
+        cost_center_data = {}
+        traveller_data = {}
+
+        for booking in bookings:
+            # cost_center is on Traveller model, not Booking model
+            cost_center = booking.traveller.cost_center if (booking.traveller and booking.traveller.cost_center) else 'Unassigned'
+            traveller_id = str(booking.traveller.id) if booking.traveller else 'Unknown'
+            traveller_name = str(booking.traveller) if booking.traveller else 'Unknown'
+
+            # Initialize cost center aggregation
+            if cost_center not in cost_center_data:
+                cost_center_data[cost_center] = {
+                    'cost_center': cost_center,
+                    'trip_count': 0,
+                    'total_spend': 0,
+                    'total_carbon_kg': 0,
+                    'total_bookings': 0,
+                    'compliant_bookings': 0,
+                    'lost_savings': 0,
+                    'cost_of_change': 0
+                }
+
+            # Initialize traveller aggregation
+            if traveller_id not in traveller_data:
+                traveller_data[traveller_id] = {
+                    'traveller_id': traveller_id,
+                    'traveller_name': traveller_name,
+                    'trip_count': 0,
+                    'total_spend': 0,
+                    'total_carbon_kg': 0,
+                    'total_bookings': 0,
+                    'compliant_bookings': 0,
+                    'lost_savings': 0,
+                    'cost_of_change': 0
+                }
+
+            # Calculate booking spend
+            booking_spend = 0
+
+            # Add air spend (including exchange tickets, refunds, etc.)
+            for air in booking.air_bookings.all():
+                air_amount = float(air.total_fare or 0)
+
+                # Add any exchange tickets, refunds, or other transactions
+                air_content_type = ContentType.objects.get_for_model(AirBooking)
+                air_transactions = BookingTransaction.objects.filter(
+                    content_type=air_content_type,
+                    object_id=air.id,
+                    status__in=['CONFIRMED', 'PENDING']
+                )
+                transaction_total = sum(float(t.total_amount_base or t.total_amount or 0) for t in air_transactions)
+                air_amount += transaction_total
+
+                # Calculate cost of change (exchange and reissue fees only)
+                change_transactions = BookingTransaction.objects.filter(
+                    content_type=air_content_type,
+                    object_id=air.id,
+                    transaction_type__in=['EXCHANGE', 'REISSUE'],
+                    status__in=['CONFIRMED', 'PENDING']
+                )
+                change_cost = sum(float(t.total_amount_base or t.total_amount or 0) for t in change_transactions)
+                cost_center_data[cost_center]['cost_of_change'] += change_cost
+                traveller_data[traveller_id]['cost_of_change'] += change_cost
+
+                booking_spend += air_amount
+                cost_center_data[cost_center]['total_carbon_kg'] += float(air.total_carbon_kg or 0)
+                traveller_data[traveller_id]['total_carbon_kg'] += float(air.total_carbon_kg or 0)
+
+            # Add accommodation spend (including modifications, cancellations, etc.)
+            for accom in booking.accommodation_bookings.all():
+                accom_amount = float(accom.total_amount_base or 0)
+                if accom_amount == 0 and accom.nightly_rate:
+                    accom_amount = float(accom.nightly_rate) * accom.number_of_nights
+
+                # Add any modifications or transactions
+                accom_content_type = ContentType.objects.get_for_model(AccommodationBooking)
+                accom_transactions = BookingTransaction.objects.filter(
+                    content_type=accom_content_type,
+                    object_id=accom.id,
+                    status__in=['CONFIRMED', 'PENDING']
+                )
+                transaction_total = sum(float(t.total_amount_base or t.total_amount or 0) for t in accom_transactions)
+                accom_amount += transaction_total
+
+                booking_spend += accom_amount
+
+            # Add car hire spend (including modifications, cancellations, etc.)
+            for car in booking.car_hire_bookings.all():
+                car_amount = float(car.total_amount_base or 0)
+
+                # Add any modifications or transactions
+                car_content_type = ContentType.objects.get_for_model(CarHireBooking)
+                car_transactions = BookingTransaction.objects.filter(
+                    content_type=car_content_type,
+                    object_id=car.id,
+                    status__in=['CONFIRMED', 'PENDING']
+                )
+                transaction_total = sum(float(t.total_amount_base or t.total_amount or 0) for t in car_transactions)
+                car_amount += transaction_total
+
+                booking_spend += car_amount
+
+            # Update aggregations
+            cost_center_data[cost_center]['trip_count'] += 1
+            cost_center_data[cost_center]['total_spend'] += booking_spend
+            cost_center_data[cost_center]['total_bookings'] += 1
+
+            traveller_data[traveller_id]['trip_count'] += 1
+            traveller_data[traveller_id]['total_spend'] += booking_spend
+            traveller_data[traveller_id]['total_bookings'] += 1
+
+            # Check compliance and calculate lost savings
+            has_violations = booking.violations.exists()
+            if not has_violations:
+                cost_center_data[cost_center]['compliant_bookings'] += 1
+                traveller_data[traveller_id]['compliant_bookings'] += 1
+            else:
+                # Calculate lost savings from violation variance amounts
+                for violation in booking.violations.all():
+                    lost_amount = float(violation.variance_amount or 0)
+                    cost_center_data[cost_center]['lost_savings'] += lost_amount
+                    traveller_data[traveller_id]['lost_savings'] += lost_amount
+
+        # Calculate compliance rates and format results
+        cost_centers = []
+        for cc_data in cost_center_data.values():
+            compliance_rate = 0
+            if cc_data['total_bookings'] > 0:
+                compliance_rate = round((cc_data['compliant_bookings'] / cc_data['total_bookings']) * 100, 1)
+            cost_centers.append({
+                'cost_center': cc_data['cost_center'],
+                'trip_count': cc_data['trip_count'],
+                'total_spend': cc_data['total_spend'],
+                'total_carbon_kg': cc_data['total_carbon_kg'],
+                'compliance_rate': compliance_rate,
+                'lost_savings': cc_data['lost_savings'],
+                'cost_of_change': cc_data['cost_of_change']
+            })
+
+        travellers = []
+        for t_data in traveller_data.values():
+            if t_data['traveller_id'] == 'Unknown':
+                continue  # Skip unknown travellers
+            compliance_rate = 0
+            if t_data['total_bookings'] > 0:
+                compliance_rate = round((t_data['compliant_bookings'] / t_data['total_bookings']) * 100, 1)
+            travellers.append({
+                'traveller_id': t_data['traveller_id'],
+                'traveller_name': t_data['traveller_name'],
+                'trip_count': t_data['trip_count'],
+                'total_spend': t_data['total_spend'],
+                'total_carbon_kg': t_data['total_carbon_kg'],
+                'compliance_rate': compliance_rate,
+                'lost_savings': t_data['lost_savings'],
+                'cost_of_change': t_data['cost_of_change']
+            })
+
+        # Sort and get top N for each category
+        limit = int(request.query_params.get('limit', 10))
+
+        rankings = {
+            'cost_centers': {
+                'by_trips': sorted(cost_centers, key=lambda x: x['trip_count'], reverse=True)[:limit],
+                'by_spend': sorted(cost_centers, key=lambda x: x['total_spend'], reverse=True)[:limit],
+                'by_carbon': sorted(cost_centers, key=lambda x: x['total_carbon_kg'], reverse=True)[:limit],
+                'by_compliance': sorted(cost_centers, key=lambda x: x['compliance_rate'], reverse=True)[:limit],
+                'by_lost_savings': sorted(cost_centers, key=lambda x: x['lost_savings'], reverse=True)[:limit],
+                'by_cost_of_change': sorted(cost_centers, key=lambda x: x['cost_of_change'], reverse=True)[:limit],
+            },
+            'travellers': {
+                'by_trips': sorted(travellers, key=lambda x: x['trip_count'], reverse=True)[:limit],
+                'by_spend': sorted(travellers, key=lambda x: x['total_spend'], reverse=True)[:limit],
+                'by_carbon': sorted(travellers, key=lambda x: x['total_carbon_kg'], reverse=True)[:limit],
+                'by_compliance': sorted(travellers, key=lambda x: x['compliance_rate'], reverse=True)[:limit],
+                'by_lost_savings': sorted(travellers, key=lambda x: x['lost_savings'], reverse=True)[:limit],
+                'by_cost_of_change': sorted(travellers, key=lambda x: x['cost_of_change'], reverse=True)[:limit],
+            }
+        }
+
+        return Response(rankings)
 
 
 # ============================================================================
 # BUDGET VIEWSETS
 # ============================================================================
+
+class FiscalYearViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    API endpoint for fiscal years.
+    """
+    serializer_class = FiscalYearSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filterset_fields = ['organization', 'is_active', 'is_current']
+
+    def get_queryset(self):
+        user = self.request.user
+
+        if user.user_type == 'ADMIN':
+            return FiscalYear.objects.all().order_by('-start_date')
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            return FiscalYear.objects.filter(
+                Q(organization=user.organization) |
+                Q(organization__travel_agent=user.organization)
+            ).order_by('-start_date')
+        else:
+            return FiscalYear.objects.filter(
+                organization=user.organization
+            ).order_by('-start_date')
+
 
 class BudgetViewSet(viewsets.ReadOnlyModelViewSet):
     """
@@ -726,10 +1561,10 @@ class BudgetViewSet(viewsets.ReadOnlyModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ['organization', 'fiscal_year', 'cost_center', 'is_active']
     search_fields = ['cost_center', 'cost_center_name']
-    
+
     def get_queryset(self):
         user = self.request.user
-        
+
         if user.user_type == 'ADMIN':
             return Budget.objects.all()
         elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
@@ -739,6 +1574,122 @@ class BudgetViewSet(viewsets.ReadOnlyModelViewSet):
             )
         else:
             return Budget.objects.filter(organization=user.organization)
+
+    @action(detail=False, methods=['get'])
+    def budget_summary(self, request):
+        """
+        Get aggregated budget summary for dashboard display.
+        Returns overall budget vs actual with status breakdown.
+        """
+        user = request.user
+
+        # Get organization ID from query params or user's organization
+        organization_id = request.query_params.get('organization')
+
+        # Build base queryset
+        if user.user_type == 'ADMIN':
+            budgets_qs = Budget.objects.filter(is_active=True)
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            budgets_qs = Budget.objects.filter(
+                Q(organization=user.organization) |
+                Q(organization__travel_agent=user.organization),
+                is_active=True
+            )
+        else:
+            budgets_qs = Budget.objects.filter(
+                organization=user.organization,
+                is_active=True
+            )
+
+        # Filter by organization if specified
+        if organization_id:
+            budgets_qs = budgets_qs.filter(organization_id=organization_id)
+
+        # Get current fiscal year budgets (or all if no current FY)
+        try:
+            if organization_id:
+                org = Organization.objects.get(id=organization_id)
+            elif user.organization:
+                org = user.organization
+            else:
+                org = None
+
+            if org:
+                current_fy = FiscalYear.objects.filter(
+                    organization=org,
+                    is_current=True
+                ).first()
+
+                if current_fy:
+                    budgets_qs = budgets_qs.filter(fiscal_year=current_fy)
+        except Organization.DoesNotExist:
+            pass
+
+        budgets = budgets_qs.select_related('organization', 'fiscal_year')
+
+        # Initialize summary
+        summary = {
+            'total_budgets': 0,
+            'total_allocated': 0,
+            'total_spent': 0,
+            'total_remaining': 0,
+            'overall_utilization': 0,
+            'budgets_ok': 0,
+            'budgets_warning': 0,
+            'budgets_critical': 0,
+            'budgets_exceeded': 0,
+            'critical_budgets': [],  # List of cost centers that are critical/exceeded
+        }
+
+        # Process each budget
+        for budget in budgets:
+            summary['total_budgets'] += 1
+            summary['total_allocated'] += float(budget.total_budget)
+
+            # Get budget status (includes spent, remaining, percentage, status)
+            status_info = budget.get_budget_status()
+            spent = float(status_info['spent'])
+            remaining = float(status_info['remaining'])
+            percentage = status_info['percentage']
+            status = status_info['status']
+
+            summary['total_spent'] += spent
+            summary['total_remaining'] += remaining
+
+            # Count by status
+            if percentage > 100:
+                summary['budgets_exceeded'] += 1
+                summary['critical_budgets'].append({
+                    'cost_center': budget.cost_center,
+                    'cost_center_name': budget.cost_center_name,
+                    'allocated': float(budget.total_budget),
+                    'spent': spent,
+                    'percentage': percentage,
+                    'status': 'EXCEEDED'
+                })
+            elif status == 'CRITICAL':
+                summary['budgets_critical'] += 1
+                summary['critical_budgets'].append({
+                    'cost_center': budget.cost_center,
+                    'cost_center_name': budget.cost_center_name,
+                    'allocated': float(budget.total_budget),
+                    'spent': spent,
+                    'percentage': percentage,
+                    'status': status
+                })
+            elif status == 'WARNING':
+                summary['budgets_warning'] += 1
+            else:
+                summary['budgets_ok'] += 1
+
+        # Calculate overall utilization
+        if summary['total_allocated'] > 0:
+            summary['overall_utilization'] = round(
+                (summary['total_spent'] / summary['total_allocated']) * 100,
+                1
+            )
+
+        return Response(summary)
 
 
 # ============================================================================
@@ -800,14 +1751,14 @@ class CommissionViewSet(viewsets.ReadOnlyModelViewSet):
 class ServiceFeeViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet for service fees"""
     serializer_class = ServiceFeeSerializer
-    filterset_fields = ['organization', 'fee_type', 'traveller']
+    filterset_fields = ['organization', 'fee_type', 'traveller', 'booking_channel']
     search_fields = ['description']
-    ordering_fields = ['fee_date', 'amount']
+    ordering_fields = ['fee_date', 'fee_amount']
     ordering = ['-fee_date']
-    
+
     def get_queryset(self):
         user = self.request.user
-        
+
         if user.user_type == 'ADMIN':
             return ServiceFee.objects.all()
         elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
@@ -819,8 +1770,49 @@ class ServiceFeeViewSet(viewsets.ReadOnlyModelViewSet):
         elif user.user_type in ['CUSTOMER_ADMIN', 'CUSTOMER_RISK', 'CUSTOMER']:
             if user.organization:
                 return ServiceFee.objects.filter(organization=user.organization)
-        
+
         return ServiceFee.objects.none()
+
+    @action(detail=False, methods=['get'])
+    def fee_type_choices(self, request):
+        """
+        Get available fee type choices from the model.
+        Returns dynamic list so new fee types can be added without frontend changes.
+        """
+        choices = [
+            {'value': choice[0], 'label': choice[1]}
+            for choice in ServiceFee.FEE_TYPES
+        ]
+        return Response(choices)
+
+# ============================================================================
+# COMPLIANCE VIEWSET
+# ============================================================================
+
+class ComplianceViolationViewSet(viewsets.ReadOnlyModelViewSet):
+    """ViewSet for compliance violations"""
+    serializer_class = ComplianceViolationSerializer
+    filterset_fields = ['organization', 'violation_type', 'severity', 'is_waived']
+    search_fields = ['booking__agent_booking_reference', 'traveller__first_name', 'traveller__last_name', 'violation_description']
+    ordering_fields = ['detected_at', 'variance_amount', 'severity']
+    ordering = ['-detected_at']
+
+    def get_queryset(self):
+        user = self.request.user
+
+        if user.user_type == 'ADMIN':
+            return ComplianceViolation.objects.all()
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            if user.organization:
+                return ComplianceViolation.objects.filter(
+                    Q(organization=user.organization) |
+                    Q(organization__travel_agent=user.organization)
+                )
+        elif user.user_type in ['CUSTOMER_ADMIN', 'CUSTOMER_RISK', 'CUSTOMER']:
+            if user.organization:
+                return ComplianceViolation.objects.filter(organization=user.organization)
+
+        return ComplianceViolation.objects.none()
 
 # ============================================================================
 # COUNTRY VIEWSET

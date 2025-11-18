@@ -157,6 +157,12 @@ const baseMenuItems = [
     path: '/budgets',
     icon: 'mdi-wallet',
     badge: null
+  },
+  {
+    name: 'Organization Structure',
+    path: '/organization-structure',
+    icon: 'mdi-file-tree',
+    badge: null
   }
 ]
 

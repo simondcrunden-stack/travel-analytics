@@ -33,6 +33,13 @@ export default {
     return response.data
   },
 
+  // Executive dashboard summary with domestic/international breakdown
+  async getDashboardSummary(params = {}) {
+    const backendParams = transformFiltersForBackend(params)
+    const response = await api.get('/bookings/dashboard_summary/', { params: backendParams })
+    return response.data
+  },
+
   // Carbon emissions report
   async getCarbonReport(params = {}) {
     const response = await api.get('/bookings/carbon_report/', { params })
@@ -123,6 +130,20 @@ export default {
   // Get all countries
   async getCountries(params = {}) {
     const response = await api.get('/countries/', { params })
+    return response.data
+  },
+
+  // Budget summary for dashboard
+  async getBudgetSummary(params = {}) {
+    const backendParams = transformFiltersForBackend(params)
+    const response = await api.get('/budgets/budget_summary/', { params: backendParams })
+    return response.data
+  },
+
+  // Top rankings for dashboard (cost centers and travellers)
+  async getTopRankings(params = {}) {
+    const backendParams = transformFiltersForBackend(params)
+    const response = await api.get('/bookings/top_rankings/', { params: backendParams })
     return response.data
   },
 

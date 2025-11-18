@@ -329,9 +329,11 @@ onMounted(async () => {
 <template>
   <div class="space-y-6">
     <!-- Header -->
-    <div>
-      <h1 class="text-2xl font-bold text-gray-900">Car Hire Analytics</h1>
-      <p class="mt-1 text-sm text-gray-500">Analyze car rental bookings, spending patterns, and vehicle preferences</p>
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl font-bold text-gray-900">Car Hire Records</h1>
+        <p class="mt-1 text-sm text-gray-500">Analyze car rental bookings, spending patterns, and vehicle preferences</p>
+      </div>
     </div>
 
     <!-- Universal Filters -->
@@ -344,6 +346,7 @@ onMounted(async () => {
       :show-supplier="true"
       supplier-label="Rental Company"
       supplier-placeholder="Hertz, Avis, Budget..."
+      supplier-type="car_rental"
       @filters-changed="handleFiltersChanged"
     />
 
@@ -438,40 +441,40 @@ onMounted(async () => {
 
     <!-- Bookings Table -->
     <div v-if="!loading && !error" class="bg-white rounded-xl shadow-sm overflow-hidden">
-      <!-- Table Controls -->
-      <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-        <div class="flex items-center space-x-4">
-          <span class="text-sm text-gray-700">
-            Showing {{ startIndex + 1 }}-{{ Math.min(endIndex, carHireBookings.length) }} of {{ carHireBookings.length }} bookings
-          </span>
-        </div>
-        <div class="flex items-center space-x-2">
-          <label class="text-sm text-gray-700">Per page:</label>
-          <select
-            v-model="itemsPerPage"
-            class="border border-gray-300 rounded-md px-2 py-1 text-sm"
-          >
-            <option :value="10">10</option>
-            <option :value="20">20</option>
-            <option :value="30">30</option>
-            <option :value="40">40</option>
-            <option :value="50">50</option>
-          </select>
-        </div>
+      <!-- Table Header -->
+      <div class="p-6 border-b border-gray-200">
+        <h2 class="text-lg font-semibold text-gray-900">Car Hire Records</h2>
+        <p class="text-sm text-gray-600 mt-1">{{ carHireBookings.length }} bookings found</p>
       </div>
 
       <div class="overflow-x-auto">
         <table class="min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-50">
             <tr>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reference</th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Traveller</th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rental Company</th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">City</th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vehicle</th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pickup</th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Days</th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Reference
+              </th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Traveller
+              </th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Rental Company
+              </th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                City
+              </th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Vehicle
+              </th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Pickup
+              </th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Days
+              </th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Amount
+              </th>
             </tr>
           </thead>
           <tbody class="bg-white divide-y divide-gray-200">
@@ -496,23 +499,40 @@ onMounted(async () => {
 
       <!-- Pagination -->
       <div class="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
-        <button
-          @click="currentPage > 1 && currentPage--"
-          :disabled="currentPage === 1"
-          class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          Previous
-        </button>
-        <span class="text-sm text-gray-700">
-          Page {{ currentPage }} of {{ totalPages }}
-        </span>
-        <button
-          @click="currentPage < totalPages && currentPage++"
-          :disabled="currentPage === totalPages"
-          class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          Next
-        </button>
+        <div class="flex items-center gap-2">
+          <span class="text-sm text-gray-700">Rows per page:</span>
+          <select v-model="itemsPerPage" class="border border-gray-300 rounded-md px-2 py-1 text-sm">
+            <option :value="10">10</option>
+            <option :value="20">20</option>
+            <option :value="30">30</option>
+            <option :value="40">40</option>
+            <option :value="50">50</option>
+          </select>
+        </div>
+
+        <div class="flex items-center gap-4">
+          <span class="text-sm text-gray-700">
+            {{ (currentPage - 1) * itemsPerPage + 1 }}-{{ Math.min(currentPage * itemsPerPage, carHireBookings.length) }}
+            of {{ carHireBookings.length }}
+          </span>
+
+          <div class="flex gap-2">
+            <button
+              @click="currentPage > 1 && currentPage--"
+              :disabled="currentPage === 1"
+              class="px-3 py-1 border border-gray-300 rounded-md text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+            >
+              Previous
+            </button>
+            <button
+              @click="currentPage < totalPages && currentPage++"
+              :disabled="currentPage === totalPages"
+              class="px-3 py-1 border border-gray-300 rounded-md text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+            >
+              Next
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </div>

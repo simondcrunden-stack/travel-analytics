@@ -49,14 +49,32 @@ class FiscalYear(models.Model):
 
 
 class Budget(models.Model):
-    """Annual budget allocations by cost center"""
+    """Annual budget allocations by organizational node (cost center, business unit, etc.)"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name='budgets')
     fiscal_year = models.ForeignKey(FiscalYear, on_delete=models.CASCADE, related_name='budgets')
-    
-    # Cost center
-    cost_center = models.CharField(max_length=100)
-    cost_center_name = models.CharField(max_length=200)
+
+    # Organizational hierarchy node
+    organizational_node = models.ForeignKey(
+        'organizations.OrganizationalNode',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='budgets',
+        help_text="Link to organizational hierarchy node (cost center, business unit, division, etc.)"
+    )
+
+    # Cost center (deprecated - kept for backward compatibility)
+    cost_center = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="DEPRECATED: Use organizational_node instead. Kept for backward compatibility."
+    )
+    cost_center_name = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="DEPRECATED: Use organizational_node.name instead. Kept for backward compatibility."
+    )
     
     # Budget allocation by category
     total_budget = models.DecimalField(
@@ -116,12 +134,31 @@ class Budget(models.Model):
         db_table = 'budgets'
         indexes = [
             models.Index(fields=['organization', 'fiscal_year', 'cost_center']),
+            models.Index(fields=['organizational_node']),
             models.Index(fields=['fiscal_year', 'is_active']),
         ]
-        unique_together = [['organization', 'fiscal_year', 'cost_center']]
-    
+        # Note: Removed unique_together for cost_center since we're migrating to organizational_node
+        # Will add new constraint: unique_together = [['organization', 'fiscal_year', 'organizational_node']]
+        # after data migration is complete
+
     def __str__(self):
+        if self.organizational_node:
+            return f"{self.organization.name} - {self.organizational_node.name} ({self.fiscal_year.year_label})"
         return f"{self.organization.name} - {self.cost_center} ({self.fiscal_year.year_label})"
+
+    @property
+    def node_name(self):
+        """Get the display name for this budget's organizational node"""
+        if self.organizational_node:
+            return self.organizational_node.name
+        return self.cost_center_name or self.cost_center
+
+    @property
+    def node_code(self):
+        """Get the code for this budget's organizational node"""
+        if self.organizational_node:
+            return self.organizational_node.code
+        return self.cost_center
     
     def get_total_spent(self):
         """Calculate total spent against this budget"""

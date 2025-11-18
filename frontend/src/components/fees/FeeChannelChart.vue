@@ -163,12 +163,14 @@ const loadChannelData = async () => {
     let offlineTotal = 0
 
     fees.forEach((fee) => {
-      const amount = parseFloat(fee.amount || 0)
+      const amount = parseFloat(fee.fee_amount || 0)
       const feeType = fee.fee_type || ''
+      const channel = fee.booking_channel || ''
 
-      if (feeType.includes('ONLINE')) {
+      // Check both booking_channel and fee_type for classification
+      if (channel === 'Online' || feeType.includes('ONLINE')) {
         onlineTotal += amount
-      } else if (feeType.includes('OFFLINE')) {
+      } else if (channel === 'Offline' || feeType.includes('OFFLINE')) {
         offlineTotal += amount
       }
     })

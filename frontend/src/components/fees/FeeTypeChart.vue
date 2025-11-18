@@ -186,7 +186,7 @@ const loadFeeData = async () => {
         }
       }
 
-      feeMap[type].total += parseFloat(fee.amount || 0)
+      feeMap[type].total += parseFloat(fee.fee_amount || 0)
       feeMap[type].count += 1
     })
 

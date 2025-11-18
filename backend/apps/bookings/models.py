@@ -40,11 +40,25 @@ class Traveller(models.Model):
         help_text="Link this traveller to a user account if they need platform access"
     )
     employee_id = models.CharField(max_length=100, blank=True)
-    
+
     # Department/cost center for reporting
     department = models.CharField(max_length=100, blank=True)
-    cost_center = models.CharField(max_length=100, blank=True)
-    
+    cost_center = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="DEPRECATED: Use organizational_node instead. Kept for backward compatibility."
+    )
+
+    # Organizational hierarchy (replaces cost_center)
+    organizational_node = models.ForeignKey(
+        'organizations.OrganizationalNode',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='travellers',
+        help_text="Link to organizational hierarchy node (cost center, business unit, etc.)"
+    )
+
     # Status
     is_active = models.BooleanField(default=True)
     
@@ -57,6 +71,7 @@ class Traveller(models.Model):
         indexes = [
             models.Index(fields=['organization', 'last_name', 'first_name']),
             models.Index(fields=['organization', 'is_active']),
+            models.Index(fields=['organizational_node']),
         ]
         unique_together = [['organization', 'employee_id']]
     
@@ -627,13 +642,14 @@ class AirSegment(models.Model):
 class AccommodationBooking(models.Model):
     """
     Extended details for hotel bookings
-    
+
     IMPORTANT CHANGES:
     - Session 26: Changed from OneToOneField to ForeignKey
     - Session 34: Added automatic currency conversion
+    - Session 43: Added Hotel FK for master data management
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    
+
     # CHANGED: ForeignKey instead of OneToOneField
     booking = models.ForeignKey(
         Booking,
@@ -641,9 +657,22 @@ class AccommodationBooking(models.Model):
         related_name='accommodation_bookings',  # Changed from 'accommodation_details'
         help_text="Parent booking - one booking can have multiple hotel stays"
     )
-    
-    # Hotel details
-    hotel_name = models.CharField(max_length=200)
+
+    # Hotel reference (master data)
+    hotel = models.ForeignKey(
+        'reference_data.Hotel',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='bookings',
+        help_text="Link to canonical hotel record (for master data management)"
+    )
+
+    # Hotel details (preserved for historical data and unmapped hotels)
+    hotel_name = models.CharField(
+        max_length=200,
+        help_text="Original hotel name from booking (preserved for history)"
+    )
     hotel_chain = models.CharField(max_length=100, blank=True)
     
     # Location
@@ -670,6 +699,7 @@ class AccommodationBooking(models.Model):
         db_table = 'accommodation_bookings'
         indexes = [
             models.Index(fields=['booking']),
+            models.Index(fields=['hotel']),
             models.Index(fields=['city', 'check_in_date']),
             models.Index(fields=['hotel_chain']),
         ]
@@ -979,10 +1009,12 @@ class ServiceFee(models.Model):
     
     # Fee details
     fee_type = models.CharField(max_length=30, choices=FEE_TYPES)
-    fee_date = models.DateField()
-    fee_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    fee_date = models.DateField(verbose_name='Invoice Date')
+    invoice_number = models.CharField(max_length=100, blank=True, verbose_name='Invoice Number')
+    fee_amount = models.DecimalField(max_digits=10, decimal_places=2, verbose_name='Fee Amount')
+    gst_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name='GST Amount')
     currency = models.CharField(max_length=3, default='AUD')
-    
+
     # Channel
     booking_channel = models.CharField(max_length=20, blank=True)  # Online, Offline, Mobile
     

@@ -166,7 +166,7 @@ const loadTrendData = async () => {
     fees.forEach((fee) => {
       const date = new Date(fee.fee_date)
       const monthKey = date.toLocaleDateString('en-AU', { month: 'short', year: 'numeric' })
-      const amount = parseFloat(fee.amount || 0)
+      const amount = parseFloat(fee.fee_amount || 0)
 
       if (!monthMap[monthKey]) {
         monthMap[monthKey] = {

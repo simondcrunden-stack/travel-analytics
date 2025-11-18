@@ -1,17 +1,19 @@
 <template>
   <div class="space-y-6">
     <!-- Header -->
-    <div>
-      <h1 class="text-2xl font-bold text-gray-900">Service Fees Analytics</h1>
-      <p class="mt-1 text-sm text-gray-500">Analyze booking fees, channels, and trends</p>
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl font-bold text-gray-900">Service Fees Analytics</h1>
+        <p class="mt-1 text-sm text-gray-500">Analyze booking fees, channels, and trends</p>
+      </div>
     </div>
 
     <!-- Universal Filters -->
     <UniversalFilters
-      :show-traveller="true"
+      :show-traveller="false"
       :show-date-range="true"
       :show-destinations="true"
-      :show-organization="false"
+      :show-organization="true"
       :show-status="false"
       :show-supplier="false"
       @filters-changed="handleFiltersChanged"
@@ -30,15 +32,9 @@
             class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
           >
             <option value="">All Fee Types</option>
-            <option value="ONLINE_DOMESTIC">Online Domestic</option>
-            <option value="ONLINE_INTERNATIONAL">Online International</option>
-            <option value="OFFLINE_DOMESTIC">Offline Domestic</option>
-            <option value="OFFLINE_INTERNATIONAL">Offline International</option>
-            <option value="CHANGE_FEE">Change Fee</option>
-            <option value="REFUND_FEE">Refund Fee</option>
-            <option value="AFTER_HOURS">After Hours</option>
-            <option value="CONSULTATION">Consultation</option>
-            <option value="OTHER">Other</option>
+            <option v-for="feeType in feeTypes" :key="feeType.value" :value="feeType.value">
+              {{ feeType.label }}
+            </option>
           </select>
         </div>
 
@@ -51,8 +47,9 @@
             class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
           >
             <option value="">All Channels</option>
-            <option value="ONLINE">Online</option>
-            <option value="OFFLINE">Offline</option>
+            <option value="Online">Online</option>
+            <option value="Offline">Offline</option>
+            <option value="Mobile">Mobile</option>
           </select>
         </div>
 
@@ -148,6 +145,125 @@
       </div>
 
       <FeeTrendChart :filters="allFilters" />
+
+      <!-- Service Fees Table -->
+      <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+        <!-- Table Header -->
+        <div class="p-6 border-b border-gray-200">
+          <h2 class="text-lg font-semibold text-gray-900">Service Fee Records</h2>
+          <p class="text-sm text-gray-600 mt-1">{{ serviceFees.length }} fees found</p>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Invoice Date
+                </th>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Organization
+                </th>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Traveller
+                </th>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Booking Reference
+                </th>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Fee Type
+                </th>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Description
+                </th>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Channel
+                </th>
+                <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Amount
+                </th>
+              </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+              <tr v-for="fee in paginatedFees" :key="fee.id" class="hover:bg-gray-50">
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  {{ formatDate(fee.fee_date) }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  {{ fee.organization_name || 'N/A' }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  {{ fee.traveller_name || 'N/A' }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  {{ fee.booking_reference || 'N/A' }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  {{ formatFeeType(fee.fee_type) }}
+                </td>
+                <td class="px-6 py-4 text-sm text-gray-900">
+                  {{ fee.description || 'N/A' }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <span v-if="fee.booking_channel === 'Online' || (fee.fee_type && fee.fee_type.includes('ONLINE'))" class="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800">
+                    Online
+                  </span>
+                  <span v-else-if="fee.booking_channel === 'Mobile'" class="px-2 py-1 text-xs rounded-full bg-purple-100 text-purple-800">
+                    Mobile
+                  </span>
+                  <span v-else class="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-800">
+                    Offline
+                  </span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900">
+                  {{ fee.currency || 'AUD' }} ${{ formatNumber(fee.fee_amount) }}
+                </td>
+              </tr>
+              <tr v-if="paginatedFees.length === 0">
+                <td colspan="8" class="px-6 py-8 text-center text-sm text-gray-500">
+                  No service fees found
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination -->
+        <div class="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="text-sm text-gray-700">Rows per page:</span>
+            <select v-model="itemsPerPage" class="border border-gray-300 rounded-md px-2 py-1 text-sm">
+              <option :value="10">10</option>
+              <option :value="20">20</option>
+              <option :value="30">30</option>
+              <option :value="40">40</option>
+              <option :value="50">50</option>
+            </select>
+          </div>
+
+          <div class="flex items-center gap-4">
+            <span class="text-sm text-gray-700">
+              {{ startIndex + 1 }}-{{ endIndex }} of {{ serviceFees.length }}
+            </span>
+            <div class="flex gap-1">
+              <button
+                @click="currentPage--"
+                :disabled="currentPage === 1"
+                class="px-3 py-1 rounded border border-gray-300 text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+              >
+                Previous
+              </button>
+              <button
+                @click="currentPage++"
+                :disabled="currentPage >= totalPages"
+                class="px-3 py-1 rounded border border-gray-300 text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
   </div>
 </template>
 
@@ -186,6 +302,38 @@ const stats = reactive({
   onlinePercentage: 0,
 })
 
+// Service fees data
+const serviceFees = ref([])
+
+// Fee types (loaded dynamically)
+const feeTypes = ref([])
+
+// Pagination
+const currentPage = ref(1)
+const itemsPerPage = ref(20)
+
+// Computed pagination values
+const totalPages = computed(() => {
+  return Math.ceil(serviceFees.value.length / itemsPerPage.value)
+})
+
+const startIndex = computed(() => {
+  return (currentPage.value - 1) * itemsPerPage.value
+})
+
+const endIndex = computed(() => {
+  return Math.min(startIndex.value + itemsPerPage.value, serviceFees.value.length)
+})
+
+const paginatedFees = computed(() => {
+  return serviceFees.value.slice(startIndex.value, endIndex.value)
+})
+
+// Watch pagination changes
+watch(itemsPerPage, () => {
+  currentPage.value = 1
+})
+
 // Handle UniversalFilters changes
 const handleFiltersChanged = async (filters) => {
   console.log('📊 [ServiceFeesView] Universal filters changed:', filters)
@@ -198,6 +346,60 @@ const formatNumber = (num) => {
   return new Intl.NumberFormat('en-AU').format(Math.round(num || 0))
 }
 
+// Format date helper
+const formatDate = (dateString) => {
+  if (!dateString) return 'N/A'
+  const date = new Date(dateString)
+  return date.toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' })
+}
+
+// Load fee types from API
+const loadFeeTypes = async () => {
+  try {
+    const response = await api.get('/service-fees/fee_type_choices/')
+    feeTypes.value = response.data
+    console.log('✅ Loaded fee types:', feeTypes.value)
+  } catch (error) {
+    console.error('Error loading fee types:', error)
+    // Fallback to hardcoded values if API fails
+    feeTypes.value = [
+      { value: 'BOOKING_ONLINE_DOM', label: 'Online Booking - Domestic' },
+      { value: 'BOOKING_ONLINE_INTL', label: 'Online Booking - International' },
+      { value: 'BOOKING_OFFLINE_DOM', label: 'Offline Booking - Domestic' },
+      { value: 'BOOKING_OFFLINE_INTL', label: 'Offline Booking - International' },
+      { value: 'CHANGE_FEE', label: 'Change Fee' },
+      { value: 'REFUND_FEE', label: 'Refund Fee' },
+      { value: 'AFTER_HOURS', label: 'After Hours Fee' },
+      { value: 'CONSULTATION', label: 'Consultation Fee' },
+      { value: 'OTHER', label: 'Other Fee' }
+    ]
+  }
+}
+
+// Format fee type helper
+const formatFeeType = (feeType) => {
+  if (!feeType) return 'N/A'
+
+  // Try to find the label from loaded fee types
+  const feeTypeObj = feeTypes.value.find(ft => ft.value === feeType)
+  if (feeTypeObj) return feeTypeObj.label
+
+  // Fallback to hardcoded mapping
+  const typeMap = {
+    'BOOKING_ONLINE_DOM': 'Online Booking - Domestic',
+    'BOOKING_ONLINE_INTL': 'Online Booking - International',
+    'BOOKING_OFFLINE_DOM': 'Offline Booking - Domestic',
+    'BOOKING_OFFLINE_INTL': 'Offline Booking - International',
+    'CHANGE_FEE': 'Change Fee',
+    'REFUND_FEE': 'Refund Fee',
+    'AFTER_HOURS': 'After Hours Fee',
+    'CONSULTATION': 'Consultation Fee',
+    'OTHER': 'Other Fee'
+  }
+
+  return typeMap[feeType] || feeType
+}
+
 // Load stats
 const loadStats = async () => {
   try {
@@ -205,7 +407,7 @@ const loadStats = async () => {
 
     // Add view-specific params
     if (viewFilters.feeType) params.fee_type = viewFilters.feeType
-    if (viewFilters.channel) params.channel = viewFilters.channel
+    if (viewFilters.channel) params.booking_channel = viewFilters.channel
     if (viewFilters.description) params.description = viewFilters.description
 
     console.log('🔍 [ServiceFeesView] Loading with params:', params)
@@ -214,13 +416,19 @@ const loadStats = async () => {
 
     const fees = response.data.results || []
 
+    // Store fees for table
+    serviceFees.value = fees
+
+    // Reset to first page when data changes
+    currentPage.value = 1
+
     stats.totalTransactions = fees.length
-    stats.totalFees = fees.reduce((sum, f) => sum + parseFloat(f.amount || 0), 0)
+    stats.totalFees = fees.reduce((sum, f) => sum + parseFloat(f.fee_amount || 0), 0)
     stats.avgFee = stats.totalTransactions > 0 ? Math.round(stats.totalFees / stats.totalTransactions) : 0
 
     // Calculate online percentage
     const onlineFees = fees.filter(f =>
-      f.fee_type && f.fee_type.includes('ONLINE')
+      f.booking_channel === 'Online' || (f.fee_type && f.fee_type.includes('ONLINE'))
     ).length
     stats.onlinePercentage = stats.totalTransactions > 0
       ? Math.round((onlineFees / stats.totalTransactions) * 100)
@@ -237,6 +445,7 @@ watch(viewFilters, () => {
 
 // Load data on mount
 onMounted(() => {
+  loadFeeTypes()
   loadStats()
 })
 </script>

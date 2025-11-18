@@ -12,17 +12,18 @@
         v-model="selectedFiscalYear"
         class="px-4 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
       >
-        <option value="FY2024-25">FY 2024-25</option>
-        <option value="FY2023-24">FY 2023-24</option>
+        <option v-for="fy in fiscalYears" :key="fy.id" :value="fy.year_label">
+          {{ fy.year_label }}
+        </option>
       </select>
     </div>
 
     <!-- Universal Filters -->
     <UniversalFilters
-      :show-traveller="true"
+      :show-traveller="false"
       :show-date-range="true"
       :show-destinations="false"
-      :show-organization="false"
+      :show-organization="true"
       :show-status="false"
       :show-supplier="false"
       @filters-changed="handleFiltersChanged"
@@ -131,20 +132,7 @@
       <div class="bg-white rounded-xl shadow-sm p-6">
         <h3 class="text-lg font-semibold text-gray-900 mb-4">Budget Filters</h3>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <!-- Organization Filter -->
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Organization</label>
-            <select
-              v-model="viewFilters.organization"
-              class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-            >
-              <option value="">All Organizations</option>
-              <option value="TechCorp Australia">TechCorp Australia</option>
-              <option value="Retail Solutions Group">Retail Solutions Group</option>
-            </select>
-          </div>
-
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <!-- Budget Status Filter -->
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2">Budget Status</label>
@@ -172,127 +160,121 @@
         </div>
       </div>
 
-      <!-- Budget List -->
-      <div class="space-y-4">
-        <div
-          v-for="budget in filteredBudgets"
-          :key="budget.id"
-          class="bg-white rounded-xl shadow-sm overflow-hidden hover:shadow-md transition-shadow"
-        >
-          <div class="p-6">
-            <!-- Header -->
-            <div class="flex items-start justify-between mb-4">
-              <div>
-                <h3 class="text-lg font-semibold text-gray-900">
-                  {{ budget.costCenter }} - {{ budget.costCenterName }}
-                </h3>
-                <p class="text-sm text-gray-600 mt-1">{{ budget.organization }}</p>
-              </div>
-              <span :class="getStatusBadgeClass(budget.status)">
-                {{ budget.status }}
-              </span>
-            </div>
+      <!-- Budget Table -->
+      <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+        <!-- Table Header -->
+        <div class="p-6 border-b border-gray-200">
+          <h2 class="text-lg font-semibold text-gray-900">Budget Records</h2>
+          <p class="text-sm text-gray-600 mt-1">{{ filteredBudgets.length }} cost centres found</p>
+        </div>
 
-            <!-- Overall Progress -->
-            <div class="mb-4">
-              <div class="flex items-center justify-between mb-2">
-                <span class="text-sm font-medium text-gray-700">Overall Budget</span>
-                <span class="text-sm text-gray-600">
-                  {{ formatCurrency(budget.spent) }} / {{ formatCurrency(budget.total) }}
-                </span>
-              </div>
-              <div class="w-full bg-gray-200 rounded-full h-3">
-                <div
-                  :class="getProgressBarClass(budget.percentage)"
-                  :style="{ width: `${Math.min(budget.percentage, 100)}%` }"
-                  class="h-3 rounded-full transition-all duration-300"
-                ></div>
-              </div>
-              <div class="flex items-center justify-between mt-2">
-                <span class="text-sm text-gray-600">{{ budget.percentage }}% used</span>
-                <span class="text-sm font-medium text-gray-900">
-                  {{ formatCurrency(budget.remaining) }} remaining
-                </span>
-              </div>
-            </div>
-
-            <!-- Category Breakdown -->
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 pt-4 border-t border-gray-200">
-              <!-- Air -->
-              <div>
-                <div class="flex items-center justify-between mb-2">
-                  <span class="text-xs text-gray-600">Air</span>
-                  <span class="text-xs font-medium text-gray-900">
-                    {{ Math.round((budget.airSpent / budget.airBudget) * 100) }}%
+        <div class="overflow-x-auto">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Cost Centre
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Organization
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Budget
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Spent
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Remaining
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Utilization
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Status
+                </th>
+              </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+              <tr
+                v-for="budget in paginatedBudgets"
+                :key="budget.id"
+                class="hover:bg-gray-50 transition-colors"
+              >
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <div class="text-sm font-medium text-gray-900">{{ budget.costCenter }}</div>
+                  <div class="text-sm text-gray-500">{{ budget.costCenterName }}</div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  {{ budget.organization }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  {{ formatCurrency(budget.total) }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  {{ formatCurrency(budget.spent) }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  {{ formatCurrency(budget.remaining) }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <div class="flex items-center">
+                    <div class="flex-1 max-w-[120px]">
+                      <div class="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          :class="getProgressBarClass(budget.percentage)"
+                          :style="{ width: `${Math.min(budget.percentage, 100)}%` }"
+                          class="h-2 rounded-full"
+                        ></div>
+                      </div>
+                    </div>
+                    <span class="ml-3 text-sm font-medium text-gray-900">{{ budget.percentage }}%</span>
+                  </div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <span :class="getStatusBadgeClass(budget.status)">
+                    {{ budget.status }}
                   </span>
-                </div>
-                <div class="w-full bg-gray-200 rounded-full h-2">
-                  <div
-                    class="bg-blue-600 h-2 rounded-full"
-                    :style="{ width: `${Math.min((budget.airSpent / budget.airBudget) * 100, 100)}%` }"
-                  ></div>
-                </div>
-                <p class="text-xs text-gray-600 mt-1">
-                  {{ formatCurrency(budget.airSpent) }} / {{ formatCurrency(budget.airBudget) }}
-                </p>
-              </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
 
-              <!-- Accommodation -->
-              <div>
-                <div class="flex items-center justify-between mb-2">
-                  <span class="text-xs text-gray-600">Accommodation</span>
-                  <span class="text-xs font-medium text-gray-900">
-                    {{ Math.round((budget.hotelSpent / budget.hotelBudget) * 100) }}%
-                  </span>
-                </div>
-                <div class="w-full bg-gray-200 rounded-full h-2">
-                  <div
-                    class="bg-purple-600 h-2 rounded-full"
-                    :style="{ width: `${Math.min((budget.hotelSpent / budget.hotelBudget) * 100, 100)}%` }"
-                  ></div>
-                </div>
-                <p class="text-xs text-gray-600 mt-1">
-                  {{ formatCurrency(budget.hotelSpent) }} / {{ formatCurrency(budget.hotelBudget) }}
-                </p>
-              </div>
+        <!-- Pagination -->
+        <div class="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="text-sm text-gray-700">Rows per page:</span>
+            <select v-model="itemsPerPage" class="border border-gray-300 rounded-md px-2 py-1 text-sm">
+              <option :value="10">10</option>
+              <option :value="20">20</option>
+              <option :value="30">30</option>
+              <option :value="40">40</option>
+              <option :value="50">50</option>
+            </select>
+          </div>
 
-              <!-- Car Hire -->
-              <div>
-                <div class="flex items-center justify-between mb-2">
-                  <span class="text-xs text-gray-600">Car Hire</span>
-                  <span class="text-xs font-medium text-gray-900">
-                    {{ Math.round((budget.carSpent / budget.carBudget) * 100) }}%
-                  </span>
-                </div>
-                <div class="w-full bg-gray-200 rounded-full h-2">
-                  <div
-                    class="bg-green-600 h-2 rounded-full"
-                    :style="{ width: `${Math.min((budget.carSpent / budget.carBudget) * 100, 100)}%` }"
-                  ></div>
-                </div>
-                <p class="text-xs text-gray-600 mt-1">
-                  {{ formatCurrency(budget.carSpent) }} / {{ formatCurrency(budget.carBudget) }}
-                </p>
-              </div>
+          <div class="flex items-center gap-4">
+            <span class="text-sm text-gray-700">
+              {{ (currentPage - 1) * itemsPerPage + 1 }}-{{ Math.min(currentPage * itemsPerPage, filteredBudgets.length) }}
+              of {{ filteredBudgets.length }}
+            </span>
 
-              <!-- Other -->
-              <div>
-                <div class="flex items-center justify-between mb-2">
-                  <span class="text-xs text-gray-600">Other</span>
-                  <span class="text-xs font-medium text-gray-900">
-                    {{ Math.round((budget.otherSpent / budget.otherBudget) * 100) }}%
-                  </span>
-                </div>
-                <div class="w-full bg-gray-200 rounded-full h-2">
-                  <div
-                    class="bg-orange-600 h-2 rounded-full"
-                    :style="{ width: `${Math.min((budget.otherSpent / budget.otherBudget) * 100, 100)}%` }"
-                  ></div>
-                </div>
-                <p class="text-xs text-gray-600 mt-1">
-                  {{ formatCurrency(budget.otherSpent) }} / {{ formatCurrency(budget.otherBudget) }}
-                </p>
-              </div>
+            <div class="flex gap-2">
+              <button
+                @click="prevPage"
+                :disabled="currentPage === 1"
+                class="px-3 py-1 border border-gray-300 rounded-md text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+              >
+                Previous
+              </button>
+              <button
+                @click="nextPage"
+                :disabled="currentPage === totalPages"
+                class="px-3 py-1 border border-gray-300 rounded-md text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+              >
+                Next
+              </button>
             </div>
           </div>
         </div>
@@ -302,8 +284,10 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
+import api from '@/services/api'
 import UniversalFilters from '@/components/common/UniversalFilters.vue'
+import { transformFiltersForBackend } from '@/utils/filterTransformer'
 import {
   mdiCurrencyUsd,
   mdiChartLine,
@@ -316,7 +300,8 @@ import {
 const loading = ref(true)
 const error = ref(null)
 const budgets = ref([])
-const selectedFiscalYear = ref('FY2024-25')
+const fiscalYears = ref([])
+const selectedFiscalYear = ref('')
 
 // Universal filters from UniversalFilters component
 const universalFilters = ref({})
@@ -328,11 +313,41 @@ const viewFilters = ref({
   search: '',
 })
 
+// Pagination
+const currentPage = ref(1)
+const itemsPerPage = ref(20)
+
 // Handle UniversalFilters changes
 const handleFiltersChanged = async (filters) => {
   console.log('💰 [BudgetView] Universal filters changed:', filters)
   universalFilters.value = filters
+  currentPage.value = 1
   await fetchBudgets()
+}
+
+// Fetch fiscal years
+const fetchFiscalYears = async () => {
+  try {
+    console.log('📅 [BudgetView] Fetching fiscal years')
+    const response = await api.get('/fiscal-years/', {
+      params: {
+        is_active: true
+      }
+    })
+    fiscalYears.value = response.data.results || []
+    console.log('✅ [BudgetView] Loaded fiscal years:', fiscalYears.value.length)
+
+    // Set default to current fiscal year if available
+    const currentFY = fiscalYears.value.find(fy => fy.is_current)
+    if (currentFY) {
+      selectedFiscalYear.value = currentFY.year_label
+    } else if (fiscalYears.value.length > 0) {
+      // Default to first fiscal year if no current one is set
+      selectedFiscalYear.value = fiscalYears.value[0].year_label
+    }
+  } catch (err) {
+    console.error('Error loading fiscal years:', err)
+  }
 }
 
 // Fetch data
@@ -341,115 +356,37 @@ const fetchBudgets = async () => {
     loading.value = true
     error.value = null
 
-    // Generate sample budget data
-    budgets.value = generateSampleBudgets()
+    const params = transformFiltersForBackend(universalFilters.value)
+
+    // Add view-specific params
+    if (viewFilters.value.search) params.search = viewFilters.value.search
+    if (selectedFiscalYear.value) params.fiscal_year__year_label = selectedFiscalYear.value
+
+    console.log('💰 [BudgetView] Fetching budgets with params:', params)
+
+    const response = await api.get('/budgets/', { params })
+    const budgetsData = response.data.results || []
+
+    console.log('✅ [BudgetView] Loaded budgets:', budgetsData.length)
+
+    // Transform backend data to frontend format
+    budgets.value = budgetsData.map(budget => ({
+      id: budget.id,
+      organization: budget.organization_name,
+      costCenter: budget.cost_center,
+      costCenterName: budget.cost_center_name,
+      total: parseFloat(budget.total_budget),
+      spent: parseFloat(budget.budget_status.spent),
+      remaining: parseFloat(budget.budget_status.remaining),
+      percentage: Math.round(budget.budget_status.percentage),
+      status: budget.budget_status.status,
+    }))
   } catch (err) {
     error.value = 'Failed to load budget data'
-    console.error(err)
+    console.error('Error loading budgets:', err)
   } finally {
     loading.value = false
   }
-}
-
-// Generate sample budgets
-const generateSampleBudgets = () => {
-  return [
-    {
-      id: 1,
-      organization: 'TechCorp Australia',
-      costCenter: 'ENG-001',
-      costCenterName: 'Engineering Department',
-      total: 150000,
-      spent: 98500,
-      remaining: 51500,
-      percentage: 66,
-      status: 'OK',
-      airBudget: 100000,
-      airSpent: 68000,
-      hotelBudget: 35000,
-      hotelSpent: 22000,
-      carBudget: 10000,
-      carSpent: 6500,
-      otherBudget: 5000,
-      otherSpent: 2000,
-    },
-    {
-      id: 2,
-      organization: 'TechCorp Australia',
-      costCenter: 'SAL-001',
-      costCenterName: 'Sales Department',
-      total: 200000,
-      spent: 168000,
-      remaining: 32000,
-      percentage: 84,
-      status: 'WARNING',
-      airBudget: 140000,
-      airSpent: 115000,
-      hotelBudget: 45000,
-      hotelSpent: 38000,
-      carBudget: 12000,
-      carSpent: 11000,
-      otherBudget: 3000,
-      otherSpent: 4000,
-    },
-    {
-      id: 3,
-      organization: 'TechCorp Australia',
-      costCenter: 'MKT-001',
-      costCenterName: 'Marketing Department',
-      total: 80000,
-      spent: 78500,
-      remaining: 1500,
-      percentage: 98,
-      status: 'CRITICAL',
-      airBudget: 50000,
-      airSpent: 49000,
-      hotelBudget: 22000,
-      hotelSpent: 21500,
-      carBudget: 6000,
-      carSpent: 6000,
-      otherBudget: 2000,
-      otherSpent: 2000,
-    },
-    {
-      id: 4,
-      organization: 'Retail Solutions Group',
-      costCenter: 'STO-001',
-      costCenterName: 'Store Operations',
-      total: 80000,
-      spent: 45200,
-      remaining: 34800,
-      percentage: 57,
-      status: 'OK',
-      airBudget: 50000,
-      airSpent: 28000,
-      hotelBudget: 22000,
-      hotelSpent: 12000,
-      carBudget: 6000,
-      carSpent: 4000,
-      otherBudget: 2000,
-      otherSpent: 1200,
-    },
-    {
-      id: 5,
-      organization: 'Retail Solutions Group',
-      costCenter: 'SUP-001',
-      costCenterName: 'Supply Chain',
-      total: 120000,
-      spent: 102000,
-      remaining: 18000,
-      percentage: 85,
-      status: 'WARNING',
-      airBudget: 85000,
-      airSpent: 72000,
-      hotelBudget: 25000,
-      hotelSpent: 21000,
-      carBudget: 8000,
-      carSpent: 7000,
-      otherBudget: 2000,
-      otherSpent: 2000,
-    },
-  ]
 }
 
 // Summary statistics
@@ -486,7 +423,6 @@ const activeAlerts = computed(() => {
 // Filtered budgets
 const filteredBudgets = computed(() => {
   return budgets.value.filter(b => {
-    if (viewFilters.value.organization && b.organization !== viewFilters.value.organization) return false
     if (viewFilters.value.status && b.status !== viewFilters.value.status) return false
     if (viewFilters.value.search) {
       const search = viewFilters.value.search.toLowerCase()
@@ -498,6 +434,33 @@ const filteredBudgets = computed(() => {
     return true
   })
 })
+
+// Paginated budgets
+const totalPages = computed(() => Math.ceil(filteredBudgets.value.length / itemsPerPage.value))
+const paginatedBudgets = computed(() => {
+  const start = (currentPage.value - 1) * itemsPerPage.value
+  const end = start + itemsPerPage.value
+  return filteredBudgets.value.slice(start, end)
+})
+
+// Pagination controls
+const goToPage = (page) => {
+  if (page >= 1 && page <= totalPages.value) {
+    currentPage.value = page
+  }
+}
+
+const nextPage = () => {
+  if (currentPage.value < totalPages.value) {
+    currentPage.value++
+  }
+}
+
+const prevPage = () => {
+  if (currentPage.value > 1) {
+    currentPage.value--
+  }
+}
 
 // Utility functions
 const formatCurrency = (value) => {
@@ -532,8 +495,18 @@ const clearFilters = () => {
   }
 }
 
-// Lifecycle
-onMounted(() => {
+// Watchers for view-specific filters
+watch(selectedFiscalYear, () => {
   fetchBudgets()
+})
+
+watch(() => viewFilters.value.search, () => {
+  fetchBudgets()
+})
+
+// Lifecycle
+onMounted(async () => {
+  await fetchFiscalYears()
+  await fetchBudgets()
 })
 </script>
