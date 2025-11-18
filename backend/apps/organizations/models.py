@@ -246,14 +246,31 @@ class OrganizationalNode(MPTTModel):
         """
         return self.get_descendant_count()
 
-    def is_leaf_node(self):
+    def get_traveller_count(self):
         """
-        Check if this is a leaf node (no children).
+        Get count of travellers associated with this node.
 
         Returns:
-            bool: True if leaf node
+            int: Number of travellers
         """
-        return self.is_leaf_node()
+        try:
+            from apps.bookings.models import Traveller
+            return Traveller.objects.filter(organizational_node=self).count()
+        except:
+            return 0
+
+    def get_budget_count(self):
+        """
+        Get count of budgets associated with this node.
+
+        Returns:
+            int: Number of budgets
+        """
+        try:
+            from apps.budgets.models import Budget
+            return Budget.objects.filter(organizational_node=self).count()
+        except:
+            return 0
 
     def can_be_merged_with(self, other_node):
         """

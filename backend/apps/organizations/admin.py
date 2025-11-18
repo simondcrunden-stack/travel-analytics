@@ -36,28 +36,29 @@ class OrganizationAdmin(admin.ModelAdmin):
 
 @admin.register(OrganizationalNode)
 class OrganizationalNodeAdmin(admin.ModelAdmin):
-    list_display = ['name', 'code', 'organization', 'node_type', 'parent', 'display_order', 'is_active']
+    list_display = ['name', 'code', 'organization', 'node_type', 'parent', 'level', 'is_active']
     list_filter = ['organization', 'node_type', 'is_active']
     search_fields = ['name', 'code', 'organization__name']
-    ordering = ['organization', 'display_order', 'name']
+    ordering = ['organization', 'tree_id', 'lft']
 
     fieldsets = (
         ('Basic Information', {
-            'fields': ('organization', 'name', 'code', 'node_type')
+            'fields': ('organization', 'name', 'code', 'node_type', 'description')
         }),
         ('Hierarchy', {
-            'fields': ('parent', 'display_order')
+            'fields': ('parent',)
         }),
         ('Status', {
             'fields': ('is_active',)
         }),
-        ('Computed Fields (Read-only)', {
-            'fields': ('path',),
-            'description': 'These fields are automatically computed'
+        ('Tree Info (Read-only)', {
+            'fields': ('level', 'lft', 'rght', 'tree_id'),
+            'description': 'MPTT tree structure fields (automatically managed)',
+            'classes': ('collapse',)
         }),
     )
 
-    readonly_fields = ['path']
+    readonly_fields = ['level', 'lft', 'rght', 'tree_id']
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         if db_field.name == "parent":

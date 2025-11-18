@@ -1930,8 +1930,8 @@ class OrganizationalNodeViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     filterset_fields = ['organization', 'node_type', 'parent', 'is_active']
     search_fields = ['name', 'code']
-    ordering_fields = ['name', 'code', 'display_order', 'created_at']
-    ordering = ['display_order', 'name']
+    ordering_fields = ['name', 'code', 'level', 'lft', 'created_at']
+    ordering = ['tree_id', 'lft']  # MPTT tree ordering
 
     def get_queryset(self):
         """

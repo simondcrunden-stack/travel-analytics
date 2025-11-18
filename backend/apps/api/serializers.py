@@ -698,8 +698,7 @@ class CountrySerializer(serializers.ModelSerializer):
 
 class OrganizationalNodeSerializer(serializers.ModelSerializer):
     """Serializer for organizational hierarchy nodes"""
-    full_path = serializers.ReadOnlyField()
-    depth = serializers.ReadOnlyField()
+    full_path = serializers.SerializerMethodField()
     traveller_count = serializers.SerializerMethodField()
     budget_count = serializers.SerializerMethodField()
     descendant_count = serializers.SerializerMethodField()
@@ -709,12 +708,15 @@ class OrganizationalNodeSerializer(serializers.ModelSerializer):
         model = OrganizationalNode
         fields = [
             'id', 'organization', 'name', 'code', 'node_type',
-            'parent', 'path', 'full_path', 'depth',
-            'display_order', 'is_active',
+            'parent', 'full_path', 'level', 'description', 'is_active',
             'traveller_count', 'budget_count', 'descendant_count',
             'children', 'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'path', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'level', 'created_at', 'updated_at']
+
+    def get_full_path(self, obj):
+        """Get the full hierarchical path"""
+        return obj.get_full_path()
 
     def get_traveller_count(self, obj):
         """Get count of travellers associated with this node"""
@@ -743,7 +745,7 @@ class OrganizationalNodeSerializer(serializers.ModelSerializer):
 
 class OrganizationalNodeListSerializer(serializers.ModelSerializer):
     """Lightweight serializer for list views"""
-    full_path = serializers.ReadOnlyField()
+    full_path = serializers.SerializerMethodField()
     organization_name = serializers.CharField(source='organization.name', read_only=True)
     parent_name = serializers.CharField(source='parent.name', read_only=True)
 
@@ -751,9 +753,13 @@ class OrganizationalNodeListSerializer(serializers.ModelSerializer):
         model = OrganizationalNode
         fields = [
             'id', 'organization', 'organization_name', 'name', 'code',
-            'node_type', 'parent', 'parent_name', 'full_path',
+            'node_type', 'parent', 'parent_name', 'full_path', 'level',
             'is_active'
         ]
+
+    def get_full_path(self, obj):
+        """Get the full hierarchical path"""
+        return obj.get_full_path()
 
 
 class OrganizationalNodeTreeSerializer(serializers.ModelSerializer):
@@ -762,20 +768,25 @@ class OrganizationalNodeTreeSerializer(serializers.ModelSerializer):
     traveller_count = serializers.SerializerMethodField()
     budget_count = serializers.SerializerMethodField()
     descendant_count = serializers.SerializerMethodField()
-    full_path = serializers.ReadOnlyField()
+    full_path = serializers.SerializerMethodField()
 
     class Meta:
         model = OrganizationalNode
         fields = [
-            'id', 'name', 'code', 'node_type', 'parent',
-            'full_path', 'display_order', 'is_active',
+            'id', 'name', 'code', 'node_type', 'parent', 'level',
+            'full_path', 'is_active',
             'traveller_count', 'budget_count', 'descendant_count',
             'children'
         ]
 
+    def get_full_path(self, obj):
+        """Get the full hierarchical path"""
+        return obj.get_full_path()
+
     def get_children(self, obj):
         """Recursively serialize children"""
-        children = obj.children.filter(is_active=True).order_by('display_order', 'name')
+        # MPTT already orders children by lft, which respects the tree structure
+        children = obj.children.filter(is_active=True)
         return OrganizationalNodeTreeSerializer(children, many=True, context=self.context).data
 
     def get_traveller_count(self, obj):
