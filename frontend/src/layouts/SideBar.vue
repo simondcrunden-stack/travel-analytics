@@ -37,7 +37,7 @@
           >
             <!-- MDI Icon -->
             <span :class="['mdi', item.icon, 'text-xl']"></span>
-            
+
             <!-- Label (hidden when collapsed) -->
             <span
               v-if="!navigationStore.isSidebarCollapsed"
@@ -45,10 +45,18 @@
             >
               {{ item.name }}
             </span>
-            
+
+            <!-- Admin Badge (optional) -->
+            <span
+              v-if="item.adminOnly && !navigationStore.isSidebarCollapsed"
+              class="ml-auto px-2 py-0.5 text-xs font-medium bg-purple-500 text-white rounded-full"
+            >
+              Admin
+            </span>
+
             <!-- Badge (optional) -->
             <span
-              v-if="item.badge && !navigationStore.isSidebarCollapsed"
+              v-else-if="item.badge && !navigationStore.isSidebarCollapsed"
               class="ml-auto px-2 py-0.5 text-xs font-medium bg-red-500 text-white rounded-full"
             >
               {{ item.badge }}
@@ -97,8 +105,8 @@ const route = useRoute()
 const navigationStore = useNavigationStore()
 const authStore = useAuthStore()
 
-// Menu items configuration with MDI icons
-const menuItems = [
+// Base menu items configuration with MDI icons
+const baseMenuItems = [
   {
     name: 'Summary',  // Changed from 'Dashboard'
     path: '/',
@@ -148,6 +156,29 @@ const menuItems = [
     badge: null
   }
 ]
+
+// Admin-only menu items
+const adminMenuItems = [
+  {
+    name: 'Organization Structure',
+    path: '/organization-structure',
+    icon: 'mdi-office-building-cog',
+    badge: null,
+    adminOnly: true
+  }
+]
+
+// Computed menu items based on user type
+const menuItems = computed(() => {
+  const items = [...baseMenuItems]
+
+  // Add admin-only items if user is admin
+  if (authStore.userType === 'ADMIN') {
+    items.push(...adminMenuItems)
+  }
+
+  return items
+})
 
 // Get current user from auth store
 const currentUser = computed(() => authStore.user)

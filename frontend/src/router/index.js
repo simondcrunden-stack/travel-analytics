@@ -46,12 +46,26 @@ const router = createRouter({
           path: '/budgets',
           name: 'Budgets',
           component: () => import('@/views/BudgetView.vue'),
-          meta: { 
+          meta: {
             requiresAuth: true,
             title: 'Budgets',
             breadcrumbs: [
               { label: 'Dashboard', path: '/' },
               { label: 'Budgets', path: '/budgets' }
+            ]
+          },
+        },
+        {
+          path: '/organization-structure',
+          name: 'OrganizationStructure',
+          component: () => import('@/views/OrganizationStructureView.vue'),
+          meta: {
+            requiresAuth: true,
+            requiresAdmin: true,
+            title: 'Organization Structure',
+            breadcrumbs: [
+              { label: 'Dashboard', path: '/' },
+              { label: 'Organization Structure', path: '/organization-structure' }
             ]
           },
         },
@@ -236,14 +250,18 @@ router.beforeEach((to, from, next) => {
   const authStore = useAuthStore()
 
   // Set page title
-  document.title = to.meta.title 
-    ? `${to.meta.title} | Travel Analytics` 
+  document.title = to.meta.title
+    ? `${to.meta.title} | Travel Analytics`
     : 'Travel Analytics'
 
   // Authentication checks
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
     next({ name: 'login' })
   } else if (to.meta.requiresGuest && authStore.isAuthenticated) {
+    next({ name: 'dashboard' })
+  } else if (to.meta.requiresAdmin && authStore.userType !== 'ADMIN') {
+    // Redirect non-admin users trying to access admin pages
+    console.warn('Access denied: Admin privileges required')
     next({ name: 'dashboard' })
   } else {
     next()
