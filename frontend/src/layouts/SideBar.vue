@@ -56,8 +56,11 @@
 
             <!-- Badge (optional) -->
             <span
-              v-else-if="item.badge && !navigationStore.isSidebarCollapsed"
-              class="ml-auto px-2 py-0.5 text-xs font-medium bg-red-500 text-white rounded-full"
+              v-if="item.badge && !navigationStore.isSidebarCollapsed"
+              :class="[
+                'ml-auto px-2 py-0.5 text-xs font-medium rounded-full',
+                item.badgeClass || 'bg-red-500 text-white'
+              ]"
             >
               {{ item.badge }}
             </span>
@@ -163,20 +166,17 @@ const adminMenuItems = [
     name: 'Organization Structure',
     path: '/organization-structure',
     icon: 'mdi-office-building-cog',
-    badge: null,
-    adminOnly: true
+    badge: 'Admin',
+    badgeClass: 'bg-purple-600 text-white'
   }
 ]
 
 // Computed menu items based on user type
 const menuItems = computed(() => {
   const items = [...baseMenuItems]
-
-  // Add admin-only items if user is admin
   if (authStore.userType === 'ADMIN') {
     items.push(...adminMenuItems)
   }
-
   return items
 })
 

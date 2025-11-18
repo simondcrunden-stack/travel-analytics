@@ -112,12 +112,26 @@ const router = createRouter({
           path: '/service-fees',
           name: 'ServiceFees',
           component: () => import('@/views/ServiceFeesView.vue'),
-          meta: { 
+          meta: {
             requiresAuth: true,
             title: 'Service Fees',
             breadcrumbs: [
               { label: 'Dashboard', path: '/' },
               { label: 'Service Fees', path: '/service-fees' }
+            ]
+          }
+        },
+        {
+          path: '/organization-structure',
+          name: 'OrganizationStructure',
+          component: () => import('@/views/OrganizationStructureView.vue'),
+          meta: {
+            requiresAuth: true,
+            requiresAdmin: true,
+            title: 'Organization Structure',
+            breadcrumbs: [
+              { label: 'Dashboard', path: '/' },
+              { label: 'Organization Structure', path: '/organization-structure' }
             ]
           }
         },
@@ -260,7 +274,7 @@ router.beforeEach((to, from, next) => {
   } else if (to.meta.requiresGuest && authStore.isAuthenticated) {
     next({ name: 'dashboard' })
   } else if (to.meta.requiresAdmin && authStore.userType !== 'ADMIN') {
-    // Redirect non-admin users trying to access admin pages
+    // Admin-only routes
     console.warn('Access denied: Admin privileges required')
     next({ name: 'dashboard' })
   } else {

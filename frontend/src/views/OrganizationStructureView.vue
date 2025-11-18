@@ -1,25 +1,30 @@
 <template>
-  <div class="space-y-6">
+  <div class="organization-structure-view p-6 space-y-6">
     <!-- Header -->
-    <div>
-      <h1 class="text-2xl font-bold text-gray-900">Organization Structure</h1>
-      <p class="mt-1 text-sm text-gray-500">
-        Manage the organizational hierarchy and assign customer organizations to travel agents
-      </p>
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl font-bold text-gray-900">Organization Structure</h1>
+        <p class="text-sm text-gray-600 mt-1">
+          Manage organizational hierarchies for customer organizations
+        </p>
+      </div>
     </div>
 
-    <!-- Selection Controls -->
-    <div class="bg-white rounded-2xl shadow-sm p-6">
-      <h2 class="text-lg font-semibold text-gray-900 mb-4">Select Organization</h2>
+    <!-- Travel Agent & Organization Selectors -->
+    <div class="bg-white rounded-lg shadow p-6 space-y-4">
+      <h2 class="text-lg font-semibold text-gray-900">Select Organization</h2>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <!-- Travel Agent Selector -->
         <div>
-          <label class="mb-2 block text-sm font-medium text-gray-700">Travel Agent</label>
+          <label for="travel-agent" class="block text-sm font-medium text-gray-700 mb-2">
+            Travel Agent
+          </label>
           <select
+            id="travel-agent"
             v-model="selectedTravelAgent"
-            class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             @change="handleTravelAgentChange"
+            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="">Select a Travel Agent</option>
             <option v-for="agent in travelAgents" :key="agent.id" :value="agent.id">
@@ -30,219 +35,187 @@
 
         <!-- Customer Organization Selector -->
         <div>
-          <label class="mb-2 block text-sm font-medium text-gray-700">Customer Organization</label>
+          <label for="organization" class="block text-sm font-medium text-gray-700 mb-2">
+            Customer Organization
+          </label>
           <select
+            id="organization"
             v-model="selectedOrganization"
-            class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             :disabled="!selectedTravelAgent"
             @change="handleOrganizationChange"
+            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
           >
-            <option value="">{{ selectedTravelAgent ? 'Select a Customer Organization' : 'Select a Travel Agent first' }}</option>
+            <option value="">
+              {{ selectedTravelAgent ? 'Select a Customer Organization' : 'Select a Travel Agent first' }}
+            </option>
             <option v-for="org in customerOrganizations" :key="org.id" :value="org.id">
               {{ org.name }} ({{ org.code }})
             </option>
           </select>
         </div>
       </div>
-    </div>
 
-    <!-- Organization Details Card -->
-    <div v-if="selectedOrganization && selectedOrgDetails" class="bg-white rounded-2xl shadow-sm p-6">
-      <div class="flex items-center justify-between mb-6">
-        <h2 class="text-lg font-semibold text-gray-900">Organization Details</h2>
-        <span
-          :class="[
-            'px-3 py-1 rounded-full text-xs font-medium',
-            selectedOrgDetails.is_active
-              ? 'bg-green-100 text-green-800'
-              : 'bg-red-100 text-red-800'
-          ]"
-        >
-          {{ selectedOrgDetails.is_active ? 'Active' : 'Inactive' }}
-        </span>
-      </div>
-
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <!-- Basic Information -->
-        <div class="space-y-4">
-          <h3 class="text-sm font-semibold text-gray-900 uppercase tracking-wide">Basic Information</h3>
-
+      <!-- Selected Organization Details -->
+      <div v-if="selectedOrganization && selectedOrgDetails" class="mt-4 p-4 bg-blue-50 rounded-lg">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
           <div>
-            <label class="text-xs font-medium text-gray-500">Organization Name</label>
-            <p class="mt-1 text-sm text-gray-900">{{ selectedOrgDetails.name }}</p>
+            <span class="text-gray-600">Name:</span>
+            <span class="ml-2 font-medium">{{ selectedOrgDetails.name }}</span>
           </div>
-
           <div>
-            <label class="text-xs font-medium text-gray-500">Organization Code</label>
-            <p class="mt-1 text-sm text-gray-900">{{ selectedOrgDetails.code }}</p>
+            <span class="text-gray-600">Code:</span>
+            <span class="ml-2 font-medium">{{ selectedOrgDetails.code }}</span>
           </div>
-
           <div>
-            <label class="text-xs font-medium text-gray-500">Organization Type</label>
-            <p class="mt-1 text-sm text-gray-900">
-              <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                {{ selectedOrgDetails.org_type === 'CUSTOMER' ? 'Customer Organization' : 'Travel Agent' }}
-              </span>
-            </p>
+            <span class="text-gray-600">Type:</span>
+            <span class="ml-2 font-medium">{{ selectedOrgDetails.org_type }}</span>
           </div>
-
           <div>
-            <label class="text-xs font-medium text-gray-500">Assigned Travel Agent</label>
-            <p class="mt-1 text-sm text-gray-900">
-              {{ selectedOrgDetails.travel_agent_name || 'Not assigned' }}
-            </p>
-          </div>
-        </div>
-
-        <!-- Contact & Settings -->
-        <div class="space-y-4">
-          <h3 class="text-sm font-semibold text-gray-900 uppercase tracking-wide">Contact & Settings</h3>
-
-          <div>
-            <label class="text-xs font-medium text-gray-500">Contact Email</label>
-            <p class="mt-1 text-sm text-gray-900">{{ selectedOrgDetails.contact_email || 'Not set' }}</p>
-          </div>
-
-          <div>
-            <label class="text-xs font-medium text-gray-500">Contact Phone</label>
-            <p class="mt-1 text-sm text-gray-900">{{ selectedOrgDetails.contact_phone || 'Not set' }}</p>
-          </div>
-
-          <div>
-            <label class="text-xs font-medium text-gray-500">Base Currency</label>
-            <p class="mt-1 text-sm text-gray-900">{{ selectedOrgDetails.base_currency || 'AUD' }}</p>
-          </div>
-
-          <div>
-            <label class="text-xs font-medium text-gray-500">Subscription Status</label>
-            <p class="mt-1 text-sm text-gray-900">
+            <span class="text-gray-600">Status:</span>
+            <span class="ml-2 font-medium">
               <span
                 :class="[
-                  'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium',
-                  selectedOrgDetails.subscription_status === 'ACTIVE'
-                    ? 'bg-green-100 text-green-800'
-                    : selectedOrgDetails.subscription_status === 'TRIAL'
-                    ? 'bg-blue-100 text-blue-800'
-                    : 'bg-gray-100 text-gray-800'
+                  'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium',
+                  selectedOrgDetails.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
                 ]"
               >
-                {{ selectedOrgDetails.subscription_status || 'Unknown' }}
+                {{ selectedOrgDetails.is_active ? 'Active' : 'Inactive' }}
               </span>
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <!-- Edit Note -->
-      <div class="mt-6 p-4 bg-blue-50 rounded-lg">
-        <div class="flex">
-          <MdiIcon :path="mdiInformationOutline" :size="20" class="text-blue-600 flex-shrink-0" />
-          <div class="ml-3">
-            <p class="text-sm text-blue-800">
-              To edit organization details or change the assigned travel agent, please use the Django Admin interface at
-              <a href="/admin/organizations/organization/" class="font-medium underline hover:text-blue-900" target="_blank">
-                /admin/organizations/organization/
-              </a>
-            </p>
+            </span>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Travel Agent's Customer Organizations List -->
-    <div v-if="selectedTravelAgent && customerOrganizations.length > 0" class="bg-white rounded-2xl shadow-sm p-6">
-      <h2 class="text-lg font-semibold text-gray-900 mb-4">
-        Customer Organizations
-        <span class="text-sm font-normal text-gray-500">({{ customerOrganizations.length }})</span>
-      </h2>
-
-      <div class="overflow-x-auto">
-        <table class="min-w-full divide-y divide-gray-200">
-          <thead class="bg-gray-50">
-            <tr>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Organization Name
-              </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Code
-              </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Contact Email
-              </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Status
-              </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Actions
-              </th>
-            </tr>
-          </thead>
-          <tbody class="bg-white divide-y divide-gray-200">
-            <tr
-              v-for="org in customerOrganizations"
-              :key="org.id"
-              :class="[
-                'hover:bg-gray-50 cursor-pointer transition-colors',
-                selectedOrganization === org.id ? 'bg-blue-50' : ''
-              ]"
-              @click="selectOrganization(org.id)"
+    <!-- Organizational Hierarchy Tree -->
+    <div v-if="selectedOrganization" class="bg-white rounded-lg shadow">
+      <!-- Tree Header -->
+      <div class="p-6 border-b border-gray-200">
+        <div class="flex items-center justify-between">
+          <h2 class="text-lg font-semibold text-gray-900">Department & Division Hierarchy</h2>
+          <div class="flex items-center space-x-2">
+            <button
+              @click="expandAll"
+              class="px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
             >
-              <td class="px-6 py-4 whitespace-nowrap">
-                <div class="text-sm font-medium text-gray-900">{{ org.name }}</div>
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap">
-                <div class="text-sm text-gray-500">{{ org.code }}</div>
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap">
-                <div class="text-sm text-gray-500">{{ org.contact_email || 'Not set' }}</div>
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap">
-                <span
-                  :class="[
-                    'px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full',
-                    org.is_active
-                      ? 'bg-green-100 text-green-800'
-                      : 'bg-red-100 text-red-800'
-                  ]"
-                >
-                  {{ org.is_active ? 'Active' : 'Inactive' }}
-                </span>
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                <button
-                  @click.stop="selectOrganization(org.id)"
-                  class="text-blue-600 hover:text-blue-900 font-medium"
-                >
-                  View Details
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+              <span class="mdi mdi-chevron-down mr-1"></span>
+              Expand All
+            </button>
+            <button
+              @click="collapseAll"
+              class="px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+            >
+              <span class="mdi mdi-chevron-up mr-1"></span>
+              Collapse All
+            </button>
+            <button
+              @click="handleAddRoot"
+              class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <span class="mdi mdi-plus mr-1"></span>
+              Add Root Node
+            </button>
+            <button
+              @click="refreshTree"
+              class="px-3 py-2 text-gray-600 hover:bg-gray-50 rounded-lg transition-colors"
+            >
+              <span class="mdi mdi-refresh"></span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Loading State -->
+      <div v-if="loading" class="p-12 text-center">
+        <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <p class="mt-4 text-gray-600">Loading organizational hierarchy...</p>
+      </div>
+
+      <!-- Error State -->
+      <div v-else-if="error" class="p-12 text-center">
+        <span class="mdi mdi-alert-circle text-4xl text-red-500"></span>
+        <p class="mt-4 text-red-600">{{ error }}</p>
+        <button
+          @click="refreshTree"
+          class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+        >
+          Retry
+        </button>
+      </div>
+
+      <!-- Empty State -->
+      <div v-else-if="!treeData || treeData.length === 0" class="p-12 text-center">
+        <span class="mdi mdi-file-tree-outline text-4xl text-gray-400"></span>
+        <p class="mt-4 text-gray-600">No organizational hierarchy found</p>
+        <p class="text-sm text-gray-500 mt-2">
+          Get started by adding a root node to create your organization structure
+        </p>
+        <button
+          @click="handleAddRoot"
+          class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+        >
+          <span class="mdi mdi-plus mr-1"></span>
+          Add Root Node
+        </button>
+      </div>
+
+      <!-- Tree Display -->
+      <div v-else class="p-6">
+        <tree-node
+          v-for="node in treeData"
+          :key="node.id"
+          :node="node"
+          :level="0"
+          :expanded-nodes="expandedNodes"
+          @toggle="handleToggle"
+          @add-child="handleAddChild"
+          @edit="handleEdit"
+          @delete="handleDelete"
+          @merge="handleMerge"
+        />
       </div>
     </div>
 
-    <!-- Empty State -->
-    <div v-if="!selectedTravelAgent" class="bg-white rounded-2xl shadow-sm p-12 text-center">
-      <MdiIcon :path="mdiOfficeBuilding" :size="48" class="mx-auto text-gray-400" />
-      <h3 class="mt-4 text-lg font-medium text-gray-900">No Travel Agent Selected</h3>
-      <p class="mt-2 text-sm text-gray-500">
-        Select a travel agent above to view and manage their customer organizations
+    <!-- Empty State (No Organization Selected) -->
+    <div v-else class="bg-white rounded-lg shadow p-12 text-center">
+      <span class="mdi mdi-office-building-outline text-6xl text-gray-300"></span>
+      <p class="mt-4 text-gray-600 text-lg">Select an organization to view its hierarchy</p>
+      <p class="text-sm text-gray-500 mt-2">
+        Choose a travel agent and customer organization from the selectors above
       </p>
     </div>
 
-    <!-- Loading State -->
-    <div v-if="loading" class="flex justify-center items-center py-12">
-      <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-    </div>
+    <!-- Node Dialog (Add/Edit) -->
+    <node-dialog
+      v-if="showNodeDialog"
+      :node="selectedNode"
+      :parent-node="parentNode"
+      :organization-id="selectedOrganization"
+      @close="closeNodeDialog"
+      @saved="handleNodeSaved"
+    />
+
+    <!-- Merge Dialog -->
+    <merge-dialog
+      v-if="showMergeDialog"
+      :source-node="nodeToMerge"
+      :organization-id="selectedOrganization"
+      @close="closeMergeDialog"
+      @merged="handleNodeMerged"
+    />
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import MdiIcon from '@/components/common/MdiIcon.vue'
-import { mdiOfficeBuilding, mdiInformationOutline } from '@mdi/js'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
+import organizationService from '@/services/organizationService'
+import TreeNode from '@/components/organization/TreeNode.vue'
+import NodeDialog from '@/components/organization/NodeDialog.vue'
+import MergeDialog from '@/components/organization/MergeDialog.vue'
+
+const authStore = useAuthStore()
 
 // State
 const travelAgents = ref([])
@@ -250,92 +223,228 @@ const customerOrganizations = ref([])
 const selectedTravelAgent = ref('')
 const selectedOrganization = ref('')
 const selectedOrgDetails = ref(null)
+
+const treeData = ref([])
+const expandedNodes = ref(new Set())
 const loading = ref(false)
+const error = ref(null)
 
-// Load all travel agents on mount
-const loadTravelAgents = async () => {
-  try {
-    loading.value = true
-    const response = await api.get('/organizations/', {
-      params: { org_type: 'AGENT' }
-    })
-    const agentData = response.data.results || response.data
-    travelAgents.value = Array.isArray(agentData) ? agentData : []
-    console.log('✅ Loaded travel agents:', travelAgents.value.length)
-  } catch (error) {
-    console.error('❌ Failed to load travel agents:', error)
-    travelAgents.value = []
-  } finally {
-    loading.value = false
-  }
-}
+// Dialog State
+const showNodeDialog = ref(false)
+const showMergeDialog = ref(false)
+const selectedNode = ref(null)
+const parentNode = ref(null)
+const nodeToMerge = ref(null)
 
-// Load customer organizations for selected travel agent
-const loadCustomerOrganizations = async () => {
-  if (!selectedTravelAgent.value) {
-    customerOrganizations.value = []
-    return
-  }
-
-  try {
-    loading.value = true
-    const response = await api.get('/organizations/', {
-      params: {
-        travel_agent: selectedTravelAgent.value,
-        org_type: 'CUSTOMER'
-      }
-    })
-    const orgData = response.data.results || response.data
-    customerOrganizations.value = Array.isArray(orgData) ? orgData : []
-    console.log('✅ Loaded customer organizations:', customerOrganizations.value.length)
-  } catch (error) {
-    console.error('❌ Failed to load customer organizations:', error)
-    customerOrganizations.value = []
-  } finally {
-    loading.value = false
-  }
-}
-
-// Load organization details
-const loadOrganizationDetails = async () => {
-  if (!selectedOrganization.value) {
-    selectedOrgDetails.value = null
-    return
-  }
-
-  try {
-    loading.value = true
-    const response = await api.get(`/organizations/${selectedOrganization.value}/`)
-    selectedOrgDetails.value = response.data
-    console.log('✅ Loaded organization details:', selectedOrgDetails.value)
-  } catch (error) {
-    console.error('❌ Failed to load organization details:', error)
-    selectedOrgDetails.value = null
-  } finally {
-    loading.value = false
-  }
-}
-
-// Handlers
-const handleTravelAgentChange = () => {
-  console.log('🔄 Travel agent changed to:', selectedTravelAgent.value)
-  selectedOrganization.value = ''
-  selectedOrgDetails.value = null
-  loadCustomerOrganizations()
-}
-
-const handleOrganizationChange = () => {
-  console.log('🔄 Organization changed to:', selectedOrganization.value)
-  loadOrganizationDetails()
-}
-
-const selectOrganization = (orgId) => {
-  selectedOrganization.value = orgId
-  loadOrganizationDetails()
-}
+// Check admin access
+const isSystemAdmin = computed(() => {
+  return authStore.userType === 'ADMIN'
+})
 
 // Lifecycle
 onMounted(() => {
+  if (!isSystemAdmin.value) {
+    error.value = 'Access denied. System admin privileges required.'
+    return
+  }
   loadTravelAgents()
 })
+
+// Watchers
+watch(selectedTravelAgent, (newValue) => {
+  if (newValue) {
+    selectedOrganization.value = ''
+    selectedOrgDetails.value = null
+    treeData.value = []
+    loadCustomerOrganizations()
+  } else {
+    customerOrganizations.value = []
+    selectedOrganization.value = ''
+    selectedOrgDetails.value = null
+    treeData.value = []
+  }
+})
+
+watch(selectedOrganization, (newValue) => {
+  if (newValue) {
+    loadOrganizationDetails()
+    loadOrganizationTree()
+  } else {
+    selectedOrgDetails.value = null
+    treeData.value = []
+  }
+})
+
+// Data Loading Methods
+const loadTravelAgents = async () => {
+  try {
+    const response = await api.get('/organizations/', {
+      params: { org_type: 'AGENT' }
+    })
+    travelAgents.value = Array.isArray(response.data.results || response.data)
+      ? (response.data.results || response.data)
+      : []
+  } catch (err) {
+    console.error('Error loading travel agents:', err)
+    error.value = 'Failed to load travel agents'
+  }
+}
+
+const loadCustomerOrganizations = async () => {
+  try {
+    const response = await api.get('/organizations/', {
+      params: { travel_agent: selectedTravelAgent.value }
+    })
+    customerOrganizations.value = Array.isArray(response.data.results || response.data)
+      ? (response.data.results || response.data)
+      : []
+  } catch (err) {
+    console.error('Error loading customer organizations:', err)
+    error.value = 'Failed to load customer organizations'
+  }
+}
+
+const loadOrganizationDetails = async () => {
+  try {
+    const response = await api.get(`/organizations/${selectedOrganization.value}/`)
+    selectedOrgDetails.value = response.data
+  } catch (err) {
+    console.error('Error loading organization details:', err)
+  }
+}
+
+const loadOrganizationTree = async () => {
+  loading.value = true
+  error.value = null
+
+  try {
+    const response = await organizationService.getOrganizationTree({
+      organization: selectedOrganization.value
+    })
+
+    // The API returns the tree structure directly
+    treeData.value = Array.isArray(response.data) ? response.data : []
+
+    // Auto-expand root nodes
+    treeData.value.forEach(node => {
+      expandedNodes.value.add(node.id)
+    })
+  } catch (err) {
+    console.error('Error loading organization tree:', err)
+    error.value = err.response?.data?.detail || 'Failed to load organizational hierarchy'
+    treeData.value = []
+  } finally {
+    loading.value = false
+  }
+}
+
+// Selector Handlers
+const handleTravelAgentChange = () => {
+  // Watcher will handle the reset and reload
+}
+
+const handleOrganizationChange = () => {
+  // Watcher will handle loading the tree
+}
+
+// Tree Navigation
+const handleToggle = (nodeId) => {
+  if (expandedNodes.value.has(nodeId)) {
+    expandedNodes.value.delete(nodeId)
+  } else {
+    expandedNodes.value.add(nodeId)
+  }
+  // Trigger reactivity
+  expandedNodes.value = new Set(expandedNodes.value)
+}
+
+const expandAll = () => {
+  const allIds = organizationService.getAllNodeIds(treeData.value)
+  expandedNodes.value = new Set(allIds)
+}
+
+const collapseAll = () => {
+  expandedNodes.value = new Set()
+}
+
+const refreshTree = () => {
+  if (selectedOrganization.value) {
+    loadOrganizationTree()
+  }
+}
+
+// Node CRUD Operations
+const handleAddRoot = () => {
+  selectedNode.value = null
+  parentNode.value = null
+  showNodeDialog.value = true
+}
+
+const handleAddChild = (node) => {
+  selectedNode.value = null
+  parentNode.value = node
+  showNodeDialog.value = true
+}
+
+const handleEdit = (node) => {
+  selectedNode.value = node
+  parentNode.value = null
+  showNodeDialog.value = true
+}
+
+const handleDelete = async (node) => {
+  // Check if node can be deleted
+  if (node.children && node.children.length > 0) {
+    alert('Cannot delete node with children. Please delete or move child nodes first.')
+    return
+  }
+
+  if (node.traveller_count > 0 || node.budget_count > 0) {
+    alert('Cannot delete node with associated travellers or budgets. Please reassign them first.')
+    return
+  }
+
+  if (!confirm(`Are you sure you want to delete "${node.name}"?`)) {
+    return
+  }
+
+  try {
+    await organizationService.deleteOrganizationalNode(node.id)
+    await refreshTree()
+  } catch (err) {
+    console.error('Error deleting node:', err)
+    alert(err.response?.data?.detail || 'Failed to delete node')
+  }
+}
+
+const handleMerge = (node) => {
+  nodeToMerge.value = node
+  showMergeDialog.value = true
+}
+
+// Dialog Handlers
+const closeNodeDialog = () => {
+  showNodeDialog.value = false
+  selectedNode.value = null
+  parentNode.value = null
+}
+
+const handleNodeSaved = () => {
+  closeNodeDialog()
+  refreshTree()
+}
+
+const closeMergeDialog = () => {
+  showMergeDialog.value = false
+  nodeToMerge.value = null
+}
+
+const handleNodeMerged = () => {
+  closeMergeDialog()
+  refreshTree()
+}
 </script>
+
+<style scoped>
+/* Add any view-specific styles here */
+</style>
