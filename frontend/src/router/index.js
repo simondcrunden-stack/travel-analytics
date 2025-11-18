@@ -46,7 +46,7 @@ const router = createRouter({
           path: '/budgets',
           name: 'Budgets',
           component: () => import('@/views/BudgetView.vue'),
-          meta: { 
+          meta: {
             requiresAuth: true,
             title: 'Budgets',
             breadcrumbs: [
@@ -56,10 +56,23 @@ const router = createRouter({
           },
         },
         {
+          path: '/organization-structure',
+          name: 'OrganizationStructure',
+          component: () => import('@/views/OrganizationStructureView.vue'),
+          meta: {
+            requiresAuth: true,
+            title: 'Organization Structure',
+            breadcrumbs: [
+              { label: 'Dashboard', path: '/' },
+              { label: 'Organization Structure', path: '/organization-structure' }
+            ]
+          },
+        },
+        {
           path: '/air',
           name: 'Air',
           component: () => import('@/views/AirView.vue'),
-          meta: { 
+          meta: {
             requiresAuth: true,
             title: 'Air Travel',
             breadcrumbs: [
