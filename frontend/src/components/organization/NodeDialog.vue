@@ -171,6 +171,10 @@ const props = defineProps({
   parentId: {
     type: String,
     default: null
+  },
+  organizationId: {
+    type: String,
+    default: null
   }
 })
 
@@ -228,7 +232,7 @@ const handleSubmit = async () => {
       node_type: formData.value.node_type,
       description: formData.value.description?.trim() || '',
       is_active: formData.value.is_active,
-      organization: authStore.user.organization
+      organization: props.organizationId || authStore.user.organization
     }
 
     // Add parent if provided
