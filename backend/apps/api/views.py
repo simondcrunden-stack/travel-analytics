@@ -1,12 +1,13 @@
-from rest_framework import viewsets, filters, status
+from rest_framework import viewsets, filters, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import ValidationError
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Count, Sum, Avg, Q
 from datetime import datetime, timedelta
 
-from apps.organizations.models import Organization
+from apps.organizations.models import Organization, OrganizationalNode
 from apps.users.models import User
 from apps.bookings.models import (
     Traveller, Booking, AirBooking, AirSegment,
@@ -25,7 +26,8 @@ from .serializers import (
     FiscalYearSerializer, BudgetSerializer, BudgetAlertSerializer,
     ComplianceViolationSerializer, TravelRiskAlertSerializer,
     AirportSerializer, AirlineSerializer, CurrencyExchangeRateSerializer,
-    CommissionSerializer, ServiceFeeSerializer, CountrySerializer
+    CommissionSerializer, ServiceFeeSerializer, CountrySerializer,
+    OrganizationalNodeSerializer, OrganizationalNodeListSerializer, OrganizationalNodeTreeSerializer
 )
 
 
@@ -916,3 +918,232 @@ class CountryViewSet(viewsets.ReadOnlyModelViewSet):
             .order_by('region')
         )
         return Response(regions)
+
+
+# ============================================================================
+# ORGANIZATIONAL NODE VIEWSET (Hierarchy Management)
+# ============================================================================
+
+class OrganizationalNodeViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing organizational hierarchy nodes.
+
+    Provides:
+    - CRUD operations on organizational nodes
+    - Tree structure retrieval
+    - Root nodes listing
+    - Move and merge operations
+    """
+    serializer_class = OrganizationalNodeSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    filterset_fields = ['organization', 'node_type', 'parent', 'is_active']
+    search_fields = ['name', 'code']
+    ordering_fields = ['name', 'code', 'display_order', 'created_at']
+    ordering = ['display_order', 'name']
+
+    def get_queryset(self):
+        """
+        Filter organizational nodes based on user's access level.
+        """
+        user = self.request.user
+
+        # System admins can see all nodes
+        if user.user_type == 'ADMIN':
+            queryset = OrganizationalNode.objects.all()
+        # Travel agents can see nodes for their organization and customer orgs
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            if user.organization:
+                # Get customer organization IDs
+                customer_org_ids = user.organization.customers.values_list('id', flat=True)
+                queryset = OrganizationalNode.objects.filter(
+                    organization__in=customer_org_ids
+                )
+            else:
+                queryset = OrganizationalNode.objects.none()
+        # Regular users see only their organization's nodes
+        else:
+            if user.organization:
+                queryset = OrganizationalNode.objects.filter(
+                    organization=user.organization
+                )
+            else:
+                queryset = OrganizationalNode.objects.none()
+
+        # Apply organization filter from query params if admin
+        organization_id = self.request.query_params.get('organization', None)
+        if organization_id and user.user_type == 'ADMIN':
+            queryset = queryset.filter(organization_id=organization_id)
+
+        return queryset.select_related('organization', 'parent')
+
+    def get_serializer_class(self):
+        """Return appropriate serializer based on action"""
+        if self.action == 'list':
+            return OrganizationalNodeListSerializer
+        elif self.action == 'tree':
+            return OrganizationalNodeTreeSerializer
+        return OrganizationalNodeSerializer
+
+    @action(detail=False, methods=['get'])
+    def tree(self, request):
+        """
+        Get organizational hierarchy as a tree structure.
+
+        Query params:
+        - organization: Filter by organization ID (required for non-admins)
+
+        Returns tree with nested children.
+        """
+        queryset = self.filter_queryset(self.get_queryset())
+
+        # Get only root nodes (no parent)
+        root_nodes = queryset.filter(parent__isnull=True, is_active=True)
+
+        serializer = OrganizationalNodeTreeSerializer(
+            root_nodes,
+            many=True,
+            context={'request': request}
+        )
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def roots(self, request):
+        """Get all root nodes (nodes without parent)"""
+        queryset = self.filter_queryset(self.get_queryset())
+        root_nodes = queryset.filter(parent__isnull=True)
+
+        serializer = self.get_serializer(root_nodes, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['get'])
+    def children(self, request, pk=None):
+        """Get immediate children of a node"""
+        node = self.get_object()
+        children = node.children.filter(is_active=True)
+
+        serializer = self.get_serializer(children, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['get'])
+    def ancestors(self, request, pk=None):
+        """Get all ancestors of a node"""
+        node = self.get_object()
+        ancestors = node.get_ancestors()
+
+        serializer = self.get_serializer(ancestors, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['get'])
+    def descendants(self, request, pk=None):
+        """Get all descendants of a node"""
+        node = self.get_object()
+        descendants = node.get_descendants()
+
+        serializer = self.get_serializer(descendants, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def move(self, request, pk=None):
+        """
+        Move a node to a new parent.
+
+        Body:
+        - target_id: ID of the new parent node (null for root)
+        - position: 'first-child', 'last-child', 'left', 'right' (default: 'last-child')
+        """
+        node = self.get_object()
+        target_id = request.data.get('target_id')
+
+        try:
+            if target_id:
+                target = OrganizationalNode.objects.get(id=target_id)
+                # Prevent moving to own descendant
+                if node.id in [d.id for d in target.get_descendants(include_self=True)]:
+                    return Response(
+                        {'error': 'Cannot move node to its own descendant'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                node.parent = target
+            else:
+                node.parent = None
+
+            node.save()
+
+            serializer = self.get_serializer(node)
+            return Response(serializer.data)
+
+        except OrganizationalNode.DoesNotExist:
+            return Response(
+                {'error': 'Target node not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    @action(detail=True, methods=['post'])
+    def merge(self, request, pk=None):
+        """
+        Merge this node into a target node.
+        All children and references are moved to the target.
+
+        Body:
+        - target_id: ID of the node to merge into
+        """
+        source_node = self.get_object()
+        target_id = request.data.get('target_id')
+
+        if not target_id:
+            return Response(
+                {'error': 'target_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            target_node = OrganizationalNode.objects.get(id=target_id)
+
+            # Cannot merge into self
+            if source_node.id == target_node.id:
+                return Response(
+                    {'error': 'Cannot merge node into itself'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Cannot merge into descendant
+            if target_node.id in [d.id for d in source_node.get_descendants()]:
+                return Response(
+                    {'error': 'Cannot merge into descendant node'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Move all children to target
+            for child in source_node.children.all():
+                child.parent = target_node
+                child.save()
+
+            # Move travellers if they exist
+            if hasattr(source_node, 'travellers'):
+                source_node.travellers.all().update(organizational_node=target_node)
+
+            # Move budgets if they exist
+            if hasattr(source_node, 'budgets'):
+                source_node.budgets.all().update(organizational_node=target_node)
+
+            # Delete source node
+            source_node.delete()
+
+            # Return updated target
+            serializer = self.get_serializer(target_node)
+            return Response(serializer.data)
+
+        except OrganizationalNode.DoesNotExist:
+            return Response(
+                {'error': 'Target node not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    def perform_destroy(self, instance):
+        """Check if node can be deleted before destroying"""
+        if not instance.can_delete():
+            raise ValidationError(
+                'Cannot delete node with children or associated records. '
+                'Please reassign or delete them first.'
+            )
+        instance.delete()

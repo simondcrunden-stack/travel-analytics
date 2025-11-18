@@ -9,6 +9,7 @@ router = DefaultRouter()
 
 # Core endpoints
 router.register(r'organizations', views.OrganizationViewSet, basename='organization')
+router.register(r'organizational-nodes', views.OrganizationalNodeViewSet, basename='organizational-node')
 router.register(r'users', views.UserViewSet, basename='user')
 router.register(r'travellers', views.TravellerViewSet, basename='traveller')
 router.register(r'bookings', views.BookingViewSet, basename='booking')

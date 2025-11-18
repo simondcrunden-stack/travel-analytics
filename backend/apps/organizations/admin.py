@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Organization
+from .models import Organization, OrganizationalNode
 
 
 @admin.register(Organization)
@@ -31,4 +31,39 @@ class OrganizationAdmin(admin.ModelAdmin):
         if db_field.name == "travel_agent":
             # Only show Travel Agent organizations in the dropdown
             kwargs["queryset"] = Organization.objects.filter(org_type='AGENT')
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+
+@admin.register(OrganizationalNode)
+class OrganizationalNodeAdmin(admin.ModelAdmin):
+    list_display = ['name', 'code', 'organization', 'node_type', 'parent', 'display_order', 'is_active']
+    list_filter = ['organization', 'node_type', 'is_active']
+    search_fields = ['name', 'code', 'organization__name']
+    ordering = ['organization', 'display_order', 'name']
+
+    fieldsets = (
+        ('Basic Information', {
+            'fields': ('organization', 'name', 'code', 'node_type')
+        }),
+        ('Hierarchy', {
+            'fields': ('parent', 'display_order')
+        }),
+        ('Status', {
+            'fields': ('is_active',)
+        }),
+        ('Computed Fields (Read-only)', {
+            'fields': ('path',),
+            'description': 'These fields are automatically computed'
+        }),
+    )
+
+    readonly_fields = ['path']
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "parent":
+            # Only show nodes from the same organization
+            if 'organization' in request.GET:
+                kwargs["queryset"] = OrganizationalNode.objects.filter(
+                    organization_id=request.GET['organization']
+                )
         return super().formfield_for_foreignkey(db_field, request, **kwargs)

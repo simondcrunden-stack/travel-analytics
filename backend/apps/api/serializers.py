@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from apps.organizations.models import Organization
+from apps.organizations.models import Organization, OrganizationalNode
 from apps.users.models import User
 from apps.bookings.models import (
     Traveller, Booking, AirBooking, AirSegment,
@@ -421,3 +421,99 @@ class CountrySerializer(serializers.ModelSerializer):
     def get_display_name(self, obj):
         """Return common_name with alpha_3 code for UI display"""
         return f"{obj.common_name} ({obj.alpha_3})"
+
+
+# ============================================================================
+# ORGANIZATIONAL NODE SERIALIZERS (Hierarchy Structure)
+# ============================================================================
+
+class OrganizationalNodeSerializer(serializers.ModelSerializer):
+    """Serializer for organizational hierarchy nodes"""
+    full_path = serializers.ReadOnlyField()
+    depth = serializers.ReadOnlyField()
+    traveller_count = serializers.SerializerMethodField()
+    budget_count = serializers.SerializerMethodField()
+    descendant_count = serializers.SerializerMethodField()
+    children = serializers.SerializerMethodField()
+
+    class Meta:
+        model = OrganizationalNode
+        fields = [
+            'id', 'organization', 'name', 'code', 'node_type',
+            'parent', 'path', 'full_path', 'depth',
+            'display_order', 'is_active',
+            'traveller_count', 'budget_count', 'descendant_count',
+            'children', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'path', 'created_at', 'updated_at']
+
+    def get_traveller_count(self, obj):
+        """Get count of travellers associated with this node"""
+        return obj.get_traveller_count()
+
+    def get_budget_count(self, obj):
+        """Get count of budgets associated with this node"""
+        return obj.get_budget_count()
+
+    def get_descendant_count(self, obj):
+        """Get count of all descendants"""
+        return obj.get_descendants().count()
+
+    def get_children(self, obj):
+        """Get immediate children (only when building tree)"""
+        # Only include children if we're building a tree structure
+        # This prevents infinite recursion
+        if self.context.get('include_children', False):
+            children = obj.children.filter(is_active=True)
+            return OrganizationalNodeSerializer(
+                children, many=True,
+                context={**self.context, 'include_children': True}
+            ).data
+        return []
+
+
+class OrganizationalNodeListSerializer(serializers.ModelSerializer):
+    """Lightweight serializer for list views"""
+    full_path = serializers.ReadOnlyField()
+    organization_name = serializers.CharField(source='organization.name', read_only=True)
+    parent_name = serializers.CharField(source='parent.name', read_only=True)
+
+    class Meta:
+        model = OrganizationalNode
+        fields = [
+            'id', 'organization', 'organization_name', 'name', 'code',
+            'node_type', 'parent', 'parent_name', 'full_path',
+            'is_active'
+        ]
+
+
+class OrganizationalNodeTreeSerializer(serializers.ModelSerializer):
+    """Serializer specifically for tree view with recursive children"""
+    children = serializers.SerializerMethodField()
+    traveller_count = serializers.SerializerMethodField()
+    budget_count = serializers.SerializerMethodField()
+    descendant_count = serializers.SerializerMethodField()
+    full_path = serializers.ReadOnlyField()
+
+    class Meta:
+        model = OrganizationalNode
+        fields = [
+            'id', 'name', 'code', 'node_type', 'parent',
+            'full_path', 'display_order', 'is_active',
+            'traveller_count', 'budget_count', 'descendant_count',
+            'children'
+        ]
+
+    def get_children(self, obj):
+        """Recursively serialize children"""
+        children = obj.children.filter(is_active=True).order_by('display_order', 'name')
+        return OrganizationalNodeTreeSerializer(children, many=True, context=self.context).data
+
+    def get_traveller_count(self, obj):
+        return obj.get_traveller_count()
+
+    def get_budget_count(self, obj):
+        return obj.get_budget_count()
+
+    def get_descendant_count(self, obj):
+        return obj.children.count()
