@@ -217,9 +217,9 @@ class OrganizationalNode(MPTTModel):
         db_table = 'organizational_nodes'
         unique_together = [['organization', 'code']]
         indexes = [
-            models.Index(fields=['organization', 'code']),
-            models.Index(fields=['organization', 'node_type']),
-            models.Index(fields=['organization', 'is_active']),
+            models.Index(fields=['organization', 'code'], name='organizatio_organiz_6b29ba_idx'),
+            models.Index(fields=['organization', 'node_type'], name='organizatio_organiz_0f618c_idx'),
+            models.Index(fields=['organization', 'is_active'], name='organizatio_organiz_b76c4c_idx'),
         ]
         verbose_name = 'Organizational Node'
         verbose_name_plural = 'Organizational Nodes'
