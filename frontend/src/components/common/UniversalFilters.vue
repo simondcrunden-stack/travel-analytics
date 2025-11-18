@@ -21,6 +21,15 @@
           </button>
         </div>
 
+        <!-- Travel Agent Badge (Admin only) -->
+        <div v-if="localFilters.travelAgent" class="flex items-center gap-2 rounded-lg bg-violet-50 px-3 py-1.5 text-sm">
+          <MdiIcon :path="mdiDomain" :size="16" class="text-violet-600" />
+          <span class="font-medium text-violet-900">{{ selectedTravelAgentName }}</span>
+          <button @click="clearTravelAgent" class="text-violet-600 hover:text-violet-800">
+            <MdiIcon :path="mdiClose" :size="16" />
+          </button>
+        </div>
+
         <!-- Organization Badge -->
         <div v-if="localFilters.organization" class="flex items-center gap-2 rounded-lg bg-purple-50 px-3 py-1.5 text-sm">
           <MdiIcon :path="mdiOfficeBuilding" :size="16" class="text-purple-600" />
@@ -120,15 +129,32 @@
     >
       <div v-if="showFilters" class="mt-4 rounded-2xl bg-white p-6 shadow-sm">
         <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
+          <!-- Travel Agent Filter (System Admin Only) -->
+          <div v-if="showOrganization && isSystemAdmin">
+            <label class="mb-2 block text-sm font-medium text-gray-700">Travel Agent</label>
+            <select
+              v-model="localFilters.travelAgent"
+              class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              @change="handleTravelAgentChange"
+            >
+              <option value="">All Travel Agents</option>
+              <option v-for="agent in travelAgents" :key="agent.id" :value="agent.id">
+                {{ agent.name }}
+              </option>
+            </select>
+          </div>
+
           <!-- Organization Filter -->
           <div v-if="showOrganization">
-            <label class="mb-2 block text-sm font-medium text-gray-700">Organization</label>
+            <label class="mb-2 block text-sm font-medium text-gray-700">
+              {{ isSystemAdmin ? 'Customer Organization' : 'Organization' }}
+            </label>
             <select
               v-model="localFilters.organization"
               class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               @change="emitFilters"
             >
-              <option value="">All Organizations</option>
+              <option value="">{{ isSystemAdmin ? 'All Customer Organizations' : 'All Organizations' }}</option>
               <option v-for="org in organizations" :key="org.id" :value="org.id">
                 {{ org.name }}
               </option>
@@ -330,6 +356,7 @@ import {
 import api from '@/services/api'
 import { bookingService, userService } from '@/services/api'
 import MultiSelect from './MultiSelect.vue'
+import { useAuthStore } from '@/stores/auth'
 
 // Props
 const props = defineProps({
@@ -373,12 +400,14 @@ const emit = defineEmits(['filters-changed'])
 // State
 const showFilters = ref(false)
 const travellers = ref([])
+const travelAgents = ref([])
 const organizations = ref([])
 const countries = ref([])
 const isLoadingCountries = ref(false)
 const showSaveButton = ref(false)
 const isSaving = ref(false)
 const homeCountry = ref('AU')
+const authStore = useAuthStore()
 
 const localFilters = reactive({
   traveller: props.filters?.traveller || '',
@@ -389,6 +418,7 @@ const localFilters = reactive({
   country: props.filters?.country || '',
   countries: props.filters?.countries || [],
   city: props.filters?.city || '',
+  travelAgent: props.filters?.travelAgent || '',
   organization: props.filters?.organization || '',
   status: props.filters?.status || '',
   supplier: props.filters?.supplier || '',
@@ -418,10 +448,20 @@ const selectedTravellerName = computed(() => {
   return traveller ? traveller.full_name : ''
 })
 
+const selectedTravelAgentName = computed(() => {
+  if (!localFilters.travelAgent) return ''
+  const agent = travelAgents.value.find((a) => a.id === localFilters.travelAgent)
+  return agent ? agent.name : ''
+})
+
 const selectedOrgName = computed(() => {
   if (!localFilters.organization) return ''
   const org = organizations.value.find((o) => o.id === localFilters.organization)
   return org ? org.name : ''
+})
+
+const isSystemAdmin = computed(() => {
+  return authStore.userType === 'ADMIN'
 })
 
 const destinationPresetLabel = computed(() => {
@@ -443,11 +483,14 @@ const destinationPresetLabel = computed(() => {
 const hasActiveFilters = computed(() => {
   return !!(
     localFilters.traveller ||
+    localFilters.travellers.length > 0 ||
     localFilters.dateFrom ||
     localFilters.dateTo ||
     localFilters.destinationPreset ||
     localFilters.country ||
+    localFilters.countries.length > 0 ||
     localFilters.city ||
+    localFilters.travelAgent ||
     localFilters.organization ||
     localFilters.status ||
     localFilters.supplier
@@ -488,6 +531,25 @@ const countryOptions = computed(() => {
     label: c.name
   }))
 })
+
+// Watch for travel agent changes to reload organizations
+watch(
+  () => localFilters.travelAgent,
+  (newAgent, oldAgent) => {
+    if (newAgent !== oldAgent) {
+      console.log('🏢 Travel agent changed from', oldAgent, 'to', newAgent)
+
+      // Clear organization when travel agent changes
+      if (localFilters.organization) {
+        console.log('🧹 Clearing organization due to travel agent change')
+        localFilters.organization = ''
+      }
+
+      // Reload organizations for the selected travel agent
+      if (props.showOrganization) loadOrganizations()
+    }
+  }
+)
 
 // Watch for organization changes to cascade filter options
 watch(
@@ -551,8 +613,20 @@ const clearTravellers = () => {
   emitFilters()
 }
 
+const clearTravelAgent = () => {
+  localFilters.travelAgent = ''
+  // Don't need to clear organization as the watcher will handle it
+  emitFilters()
+}
+
 const clearOrganization = () => {
   localFilters.organization = ''
+  emitFilters()
+}
+
+const handleTravelAgentChange = () => {
+  console.log('🔄 Travel agent changed to:', localFilters.travelAgent)
+  // The watcher will handle reloading organizations
   emitFilters()
 }
 
@@ -590,6 +664,7 @@ const clearAllFilters = () => {
   localFilters.country = ''
   localFilters.countries = []
   localFilters.city = ''
+  localFilters.travelAgent = ''
   localFilters.organization = ''
   localFilters.status = ''
   localFilters.supplier = ''
@@ -701,15 +776,48 @@ const loadTravellers = async () => {
   }
 }
 
+// Load travel agents for dropdown (system admin only)
+const loadTravelAgents = async () => {
+  if (!isSystemAdmin.value) return
+
+  try {
+    const response = await api.get('/organizations/', {
+      params: { org_type: 'AGENT' }
+    })
+    const agentData = response.data.results || response.data
+    console.log('✅ Loaded travel agents:', agentData)
+    travelAgents.value = Array.isArray(agentData) ? agentData : []
+  } catch (error) {
+    console.error('❌ Failed to load travel agents:', error)
+    travelAgents.value = []
+  }
+}
+
 // Load organizations for dropdown
 const loadOrganizations = async () => {
   try {
-    const response = await api.get('/organizations/')
+    const params = {}
+
+    // For system admins, filter by selected travel agent or show customer orgs
+    if (isSystemAdmin.value) {
+      if (localFilters.travelAgent) {
+        // Show customer orgs for selected travel agent
+        params.travel_agent = localFilters.travelAgent
+        console.log('🏢 Loading customer organizations for travel agent:', localFilters.travelAgent)
+      } else {
+        // Show all customer organizations when no travel agent selected
+        params.org_type = 'CUSTOMER'
+        console.log('🏢 Loading all customer organizations')
+      }
+    }
+    // For non-admin users, backend handles filtering automatically
+
+    const response = await api.get('/organizations/', { params })
     const orgData = response.data.results || response.data
-    console.log('Loaded organizations:', orgData)
+    console.log('✅ Loaded organizations:', orgData)
     organizations.value = Array.isArray(orgData) ? orgData : []
   } catch (error) {
-    console.error('Failed to load organizations:', error)
+    console.error('❌ Failed to load organizations:', error)
     organizations.value = []
   }
 }
@@ -780,7 +888,10 @@ const saveAsDefault = async () => {
 // Lifecycle
 onMounted(() => {
   if (props.showTraveller) loadTravellers()
-  if (props.showOrganization) loadOrganizations()
+  if (props.showOrganization) {
+    if (isSystemAdmin.value) loadTravelAgents()
+    loadOrganizations()
+  }
   loadAvailableCountries()
   loadUserPreferences()
 })

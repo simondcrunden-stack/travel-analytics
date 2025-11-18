@@ -36,30 +36,48 @@ from .serializers import (
 class OrganizationViewSet(viewsets.ReadOnlyModelViewSet):
     """
     API endpoint for organizations.
-    
+
     list: Get all organizations (filtered by user access)
     retrieve: Get specific organization details
+
+    Query parameters:
+    - org_type: Filter by organization type (AGENT, CUSTOMER)
+    - travel_agent: Filter by travel agent ID (for customer orgs)
     """
     serializer_class = OrganizationSerializer
     permission_classes = [IsAuthenticated]
-    
+
     def get_queryset(self):
         user = self.request.user
-        
+
+        # Base queryset based on user type
         if user.user_type == 'ADMIN':
-            return Organization.objects.all()
+            queryset = Organization.objects.all()
         elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
             # Return agent's org + their customer orgs
             if user.organization:
-                return Organization.objects.filter(
+                queryset = Organization.objects.filter(
                     Q(id=user.organization.id) | Q(travel_agent=user.organization)
                 )
-            return Organization.objects.all()  # Fallback for users without org
+            else:
+                queryset = Organization.objects.all()  # Fallback for users without org
         else:
             # Customer users - only their org
             if user.organization:
-                return Organization.objects.filter(id=user.organization.id)
-            return Organization.objects.none()  # Return empty if no org
+                queryset = Organization.objects.filter(id=user.organization.id)
+            else:
+                queryset = Organization.objects.none()  # Return empty if no org
+
+        # Apply additional filters from query parameters
+        org_type = self.request.query_params.get('org_type', None)
+        if org_type:
+            queryset = queryset.filter(org_type=org_type)
+
+        travel_agent_id = self.request.query_params.get('travel_agent', None)
+        if travel_agent_id:
+            queryset = queryset.filter(travel_agent_id=travel_agent_id)
+
+        return queryset
 
 
 class UserViewSet(viewsets.ReadOnlyModelViewSet):
