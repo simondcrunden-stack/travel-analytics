@@ -945,7 +945,8 @@ class BookingViewSet(viewsets.ModelViewSet):
         ).select_related('booking', 'booking__traveller').values(
             'destination_airport_iata_code',
             'booking__traveller__id',
-            'booking__total_amount_with_transactions'
+            'booking__total_amount',
+            'booking__id'
         )
 
         # Aggregate by destination
@@ -959,7 +960,7 @@ class BookingViewSet(viewsets.ModelViewSet):
             dest = ab['destination_airport_iata_code']
             destination_data[dest]['trips'] += 1
             destination_data[dest]['travellers'].add(ab['booking__traveller__id'])
-            destination_data[dest]['total_spend'] += float(ab['booking__total_amount_with_transactions'] or 0)
+            destination_data[dest]['total_spend'] += float(ab['booking__total_amount'] or 0)
 
         # Get airport coordinates for each destination
         result = []
