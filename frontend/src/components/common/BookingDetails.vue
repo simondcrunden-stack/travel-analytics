@@ -45,11 +45,12 @@
                 <!-- Air Booking -->
                 <div v-if="segment.type === 'air'" class="segment-details">
                   <div class="font-medium">{{ segment.data.route }}</div>
-                  <div v-if="segment.data.cityRoute" class="text-xs text-gray-500">
+                  <div v-if="segment.data.cityRoute" class="text-xs text-gray-500 mb-2">
                     {{ segment.data.cityRoute }}
                   </div>
-                  <div class="text-xs text-gray-500">
-                    {{ segment.data.primary_airline_name }} • {{ segment.data.fare_class_display || segment.data.travel_class }}
+                  <!-- Individual segment details -->
+                  <div v-for="seg in segment.data.segments" :key="seg.id" class="text-xs text-gray-600 mt-1">
+                    {{ seg.airline_iata_code }}{{ seg.flight_number }} {{ seg.origin_airport_iata_code }} {{ seg.destination_airport_iata_code }} {{ seg.fare_class_display || 'Economy' }}
                   </div>
                 </div>
 

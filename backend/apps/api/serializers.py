@@ -197,6 +197,7 @@ class AirSegmentSerializer(serializers.ModelSerializer):
     origin_country = serializers.SerializerMethodField()
     destination_city = serializers.SerializerMethodField()
     destination_country = serializers.SerializerMethodField()
+    fare_class_display = serializers.SerializerMethodField()
 
     class Meta:
         model = AirSegment
@@ -206,7 +207,7 @@ class AirSegmentSerializer(serializers.ModelSerializer):
             'origin_city', 'origin_country', 'destination_city', 'destination_country',
             'departure_date', 'departure_time', 'arrival_date', 'arrival_time',
             'booking_class', 'fare_basis', 'distance_km',
-            'carbon_emissions_kg'
+            'carbon_emissions_kg', 'fare_class_display'
         ]
 
     def get_origin_city(self, obj):
@@ -244,6 +245,32 @@ class AirSegmentSerializer(serializers.ModelSerializer):
             return airport.country
         except Airport.DoesNotExist:
             return None
+
+    def get_fare_class_display(self, obj):
+        """
+        Get fare class display name from FareClassMapping for this segment.
+        Returns fare_type if available, otherwise returns the travel_class display name.
+        """
+        from apps.reference_data.models import FareClassMapping
+
+        if not obj.booking_class:
+            return None
+
+        # Get booking date from parent air booking
+        booking_date = obj.air_booking.booking.booking_date
+
+        # Try to get fare type from mapping
+        fare_type = FareClassMapping.get_fare_type(
+            airline_code=obj.airline_iata_code,
+            fare_code=obj.booking_class,
+            booking_date=booking_date
+        )
+
+        if fare_type:
+            return fare_type
+
+        # Fall back to travel class from parent air booking
+        return obj.air_booking.get_travel_class_display()
 
 
 class AirBookingSerializer(serializers.ModelSerializer):
