@@ -174,12 +174,12 @@
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Destinations
               </th>
-              <th 
-                @click="sortBy('total_amount')"
+              <th
+                @click="sortBy('total_amount_with_transactions')"
                 class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
               >
                 Amount
-                <span v-if="sortField === 'total_amount'">
+                <span v-if="sortField === 'total_amount_with_transactions'">
                   {{ sortDirection === 'asc' ? '↑' : '↓' }}
                 </span>
               </th>
@@ -218,7 +218,7 @@
                   {{ getDestinations(booking) }}
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                  {{ formatCurrency(booking.total_amount) }}
+                  {{ formatCurrency(booking.total_amount_with_transactions) }}
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   {{ getCarbonEmissions(booking) }}
@@ -353,7 +353,7 @@ const sortedBookings = computed(() => {
     let bVal = b[sortField.value]
 
     // Handle numeric values
-    if (sortField.value === 'total_amount') {
+    if (sortField.value === 'total_amount_with_transactions') {
       aVal = parseFloat(aVal) || 0
       bVal = parseFloat(bVal) || 0
     }
