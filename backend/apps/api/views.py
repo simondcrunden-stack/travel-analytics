@@ -1488,6 +1488,11 @@ class BookingViewSet(viewsets.ModelViewSet):
                 cost_center_data[cost_center]['cost_of_change'] += change_cost
                 traveller_data[traveller_id]['cost_of_change'] += change_cost
 
+                # Add potential savings (lost savings)
+                potential_savings = float(air.potential_savings or 0)
+                cost_center_data[cost_center]['lost_savings'] += potential_savings
+                traveller_data[traveller_id]['lost_savings'] += potential_savings
+
                 booking_spend += air_amount
                 cost_center_data[cost_center]['total_carbon_kg'] += float(air.total_carbon_kg or 0)
                 traveller_data[traveller_id]['total_carbon_kg'] += float(air.total_carbon_kg or 0)
@@ -1535,17 +1540,11 @@ class BookingViewSet(viewsets.ModelViewSet):
             traveller_data[traveller_id]['total_spend'] += booking_spend
             traveller_data[traveller_id]['total_bookings'] += 1
 
-            # Check compliance and calculate lost savings
+            # Check compliance
             has_violations = booking.violations.exists()
             if not has_violations:
                 cost_center_data[cost_center]['compliant_bookings'] += 1
                 traveller_data[traveller_id]['compliant_bookings'] += 1
-            else:
-                # Calculate lost savings from violation variance amounts
-                for violation in booking.violations.all():
-                    lost_amount = float(violation.variance_amount or 0)
-                    cost_center_data[cost_center]['lost_savings'] += lost_amount
-                    traveller_data[traveller_id]['lost_savings'] += lost_amount
 
         # Calculate compliance rates and format results
         cost_centers = []
