@@ -46,20 +46,28 @@ class FareClassMappingAdmin(admin.ModelAdmin):
     Admin for managing airline fare class mappings with temporal validity.
 
     Use this to:
-    - Define how fare codes map to travel classes for each airline
+    - Define DEFAULT mappings (airline=blank) that apply to all airlines
+    - Define AIRLINE-SPECIFIC mappings that override defaults
     - Track fare structure changes over time with valid_from/valid_to dates
     - Update historical bookings when fare structures change
+
+    Priority: Airline-specific mappings override defaults.
     """
-    list_display = ['airline', 'fare_code', 'travel_class', 'fare_type',
+    list_display = ['mapping_type', 'airline', 'fare_code', 'travel_class', 'fare_type',
                     'valid_from', 'valid_to', 'is_active']
-    list_filter = ['airline', 'travel_class', 'is_active', 'valid_from']
+    list_filter = ['travel_class', 'is_active', 'valid_from']
     search_fields = ['airline__iata_code', 'airline__name', 'fare_code', 'fare_type']
     date_hierarchy = 'valid_from'
 
     fieldsets = (
-        ('Airline & Fare Code', {
-            'fields': ('airline', 'fare_code'),
-            'description': 'Select the airline and enter the fare class code (e.g., Y, D, O, J)'
+        ('Mapping Type', {
+            'fields': ('airline',),
+            'description': 'Leave BLANK for default mapping (applies to all airlines). '
+                          'Select airline for airline-specific override.'
+        }),
+        ('Fare Code', {
+            'fields': ('fare_code',),
+            'description': 'Enter the fare class code (e.g., Y, D, O, J)'
         }),
         ('Classification', {
             'fields': ('travel_class', 'fare_type'),
@@ -84,8 +92,16 @@ class FareClassMappingAdmin(admin.ModelAdmin):
     # Make it easier to add multiple mappings
     save_as = True
 
-    # Order by airline, fare code, and most recent first
+    # Order: defaults first, then by airline, fare code, and most recent first
     ordering = ['airline__iata_code', 'fare_code', '-valid_from']
+
+    def mapping_type(self, obj):
+        """Display whether this is a default or airline-specific mapping"""
+        if obj.airline:
+            return f"✈ {obj.airline.iata_code}"
+        return "⭐ DEFAULT"
+    mapping_type.short_description = 'Type'
+    mapping_type.admin_order_field = 'airline'
 
     def get_readonly_fields(self, request, obj=None):
         """Make airline and fare_code readonly after creation to prevent accidental changes"""

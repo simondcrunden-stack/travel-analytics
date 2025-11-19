@@ -47,9 +47,11 @@ class FareClassMapping(models.Model):
     """
     Maps airline fare codes to standardized travel classes with temporal validity.
 
-    Supports airline-specific fare class interpretations that change over time.
-    For example, Qantas "O" class might be "Restricted Economy" from 2020-2023,
-    but change to "Economy" from 2024 onwards.
+    Supports both DEFAULT and AIRLINE-SPECIFIC mappings:
+    - Default mappings (airline=NULL): Apply to all airlines (e.g., Y=Economy, J=Business)
+    - Airline-specific: Override defaults for specific airlines (e.g., Qantas O=Restricted Economy)
+
+    Lookup priority: Airline-specific first, then default.
 
     Historical bookings can be updated when fare structure changes are discovered.
     """
@@ -63,12 +65,14 @@ class FareClassMapping(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
-    # Airline-specific mapping
+    # Airline-specific mapping (NULL = default for all airlines)
     airline = models.ForeignKey(
         Airline,
         on_delete=models.CASCADE,
         related_name='fare_class_mappings',
-        help_text="Airline this fare code applies to"
+        null=True,
+        blank=True,
+        help_text="Leave blank for default mapping. Set airline for airline-specific override."
     )
 
     fare_code = models.CharField(
@@ -132,14 +136,20 @@ class FareClassMapping(models.Model):
         ]
 
     def __str__(self):
+        airline_str = self.airline.iata_code if self.airline else "DEFAULT"
         if self.valid_to:
-            return f"{self.airline.iata_code} {self.fare_code} → {self.get_travel_class_display()} ({self.valid_from} to {self.valid_to})"
-        return f"{self.airline.iata_code} {self.fare_code} → {self.get_travel_class_display()} ({self.valid_from} onwards)"
+            return f"{airline_str} {self.fare_code} → {self.get_travel_class_display()} ({self.valid_from} to {self.valid_to})"
+        return f"{airline_str} {self.fare_code} → {self.get_travel_class_display()} ({self.valid_from} onwards)"
 
     @classmethod
     def get_travel_class(cls, airline_code, fare_code, booking_date):
         """
         Look up the travel class for a specific airline fare code on a given date.
+
+        Lookup priority:
+        1. Airline-specific mapping for this airline
+        2. Default mapping (airline=NULL)
+        3. None if not found
 
         Args:
             airline_code (str): IATA airline code (e.g., 'QF', 'UA')
@@ -151,9 +161,12 @@ class FareClassMapping(models.Model):
 
         Example:
             >>> FareClassMapping.get_travel_class('QF', 'O', date(2024, 1, 15))
-            'RESTRICTED_ECONOMY'
+            'RESTRICTED_ECONOMY'  # Returns airline-specific if exists
+            >>> FareClassMapping.get_travel_class('UA', 'Y', date(2024, 1, 15))
+            'ECONOMY'  # Returns default if no airline-specific mapping
         """
         try:
+            # First, try airline-specific mapping
             mapping = cls.objects.filter(
                 airline__iata_code=airline_code,
                 fare_code=fare_code,
@@ -165,14 +178,31 @@ class FareClassMapping(models.Model):
 
             if mapping:
                 logger.debug(
-                    f"Found fare class mapping: {airline_code} {fare_code} "
+                    f"Found airline-specific fare class mapping: {airline_code} {fare_code} "
                     f"on {booking_date} → {mapping.travel_class}"
                 )
                 return mapping.travel_class
 
+            # If no airline-specific mapping, try default mapping
+            default_mapping = cls.objects.filter(
+                airline__isnull=True,  # Default mappings
+                fare_code=fare_code,
+                valid_from__lte=booking_date,
+                is_active=True
+            ).filter(
+                models.Q(valid_to__isnull=True) | models.Q(valid_to__gte=booking_date)
+            ).first()
+
+            if default_mapping:
+                logger.debug(
+                    f"Found default fare class mapping: {fare_code} "
+                    f"on {booking_date} → {default_mapping.travel_class}"
+                )
+                return default_mapping.travel_class
+
             logger.warning(
                 f"No fare class mapping found for {airline_code} {fare_code} "
-                f"on {booking_date}. Using fare code as-is."
+                f"on {booking_date}. No default mapping exists either."
             )
             return None
 
@@ -185,10 +215,15 @@ class FareClassMapping(models.Model):
         """
         Look up the fare type/brand for a specific airline fare code on a given date.
 
+        Lookup priority:
+        1. Airline-specific mapping
+        2. Default mapping (airline=NULL)
+
         Returns:
             str: Fare type (e.g., 'Red e-Deal', 'Flex'), or None if not found
         """
         try:
+            # First, try airline-specific mapping
             mapping = cls.objects.filter(
                 airline__iata_code=airline_code,
                 fare_code=fare_code,
@@ -198,7 +233,20 @@ class FareClassMapping(models.Model):
                 models.Q(valid_to__isnull=True) | models.Q(valid_to__gte=booking_date)
             ).first()
 
-            return mapping.fare_type if mapping else None
+            if mapping:
+                return mapping.fare_type
+
+            # If no airline-specific mapping, try default
+            default_mapping = cls.objects.filter(
+                airline__isnull=True,
+                fare_code=fare_code,
+                valid_from__lte=booking_date,
+                is_active=True
+            ).filter(
+                models.Q(valid_to__isnull=True) | models.Q(valid_to__gte=booking_date)
+            ).first()
+
+            return default_mapping.fare_type if default_mapping else None
 
         except Exception as e:
             logger.error(f"Error looking up fare type: {e}")
