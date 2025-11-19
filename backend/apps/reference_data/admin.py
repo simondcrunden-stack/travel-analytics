@@ -1,6 +1,6 @@
 from django.contrib import admin
 from .models import (
-    Airport, Airline, CurrencyExchangeRate, Country,
+    Airport, Airline, FareClassMapping, CurrencyExchangeRate, Country,
     HotelChain, CarRentalCompany, Hotel, HotelAlias
 )
 
@@ -29,7 +29,7 @@ class AirlineAdmin(admin.ModelAdmin):
     list_display = ['iata_code', 'name', 'country', 'alliance']
     list_filter = ['alliance', 'country']
     search_fields = ['iata_code', 'name', 'country']
-    
+
     fieldsets = (
         ('Basic Information', {
             'fields': ('iata_code', 'name')
@@ -38,6 +38,60 @@ class AirlineAdmin(admin.ModelAdmin):
             'fields': ('country', 'alliance')
         }),
     )
+
+
+@admin.register(FareClassMapping)
+class FareClassMappingAdmin(admin.ModelAdmin):
+    """
+    Admin for managing airline fare class mappings with temporal validity.
+
+    Use this to:
+    - Define how fare codes map to travel classes for each airline
+    - Track fare structure changes over time with valid_from/valid_to dates
+    - Update historical bookings when fare structures change
+    """
+    list_display = ['airline', 'fare_code', 'travel_class', 'fare_type',
+                    'valid_from', 'valid_to', 'is_active']
+    list_filter = ['airline', 'travel_class', 'is_active', 'valid_from']
+    search_fields = ['airline__iata_code', 'airline__name', 'fare_code', 'fare_type']
+    date_hierarchy = 'valid_from'
+
+    fieldsets = (
+        ('Airline & Fare Code', {
+            'fields': ('airline', 'fare_code'),
+            'description': 'Select the airline and enter the fare class code (e.g., Y, D, O, J)'
+        }),
+        ('Classification', {
+            'fields': ('travel_class', 'fare_type'),
+            'description': 'Standardized travel class and optional fare brand name'
+        }),
+        ('Validity Period', {
+            'fields': ('valid_from', 'valid_to'),
+            'description': 'Date range when this mapping is valid. Leave valid_to blank for ongoing mappings.'
+        }),
+        ('Status', {
+            'fields': ('is_active',)
+        }),
+        ('Notes', {
+            'fields': ('notes',),
+            'classes': ('collapse',),
+            'description': 'Document fare structure changes, special conditions, etc.'
+        }),
+    )
+
+    readonly_fields = ['created_at', 'updated_at']
+
+    # Make it easier to add multiple mappings
+    save_as = True
+
+    # Order by airline, fare code, and most recent first
+    ordering = ['airline__iata_code', 'fare_code', '-valid_from']
+
+    def get_readonly_fields(self, request, obj=None):
+        """Make airline and fare_code readonly after creation to prevent accidental changes"""
+        if obj:  # Editing existing object
+            return self.readonly_fields + ['airline', 'fare_code']
+        return self.readonly_fields
 
 
 @admin.register(CurrencyExchangeRate)

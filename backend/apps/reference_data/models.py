@@ -34,13 +34,175 @@ class Airline(models.Model):
     name = models.CharField(max_length=200)
     country = models.CharField(max_length=100, blank=True)
     alliance = models.CharField(max_length=50, blank=True)  # Star Alliance, OneWorld, etc.
-    
+
     class Meta:
         db_table = 'airlines'
         ordering = ['iata_code']
-    
+
     def __str__(self):
         return f"{self.iata_code} - {self.name}"
+
+
+class FareClassMapping(models.Model):
+    """
+    Maps airline fare codes to standardized travel classes with temporal validity.
+
+    Supports airline-specific fare class interpretations that change over time.
+    For example, Qantas "O" class might be "Restricted Economy" from 2020-2023,
+    but change to "Economy" from 2024 onwards.
+
+    Historical bookings can be updated when fare structure changes are discovered.
+    """
+    TRAVEL_CLASS_CHOICES = [
+        ('FIRST', 'First Class'),
+        ('BUSINESS', 'Business Class'),
+        ('PREMIUM_ECONOMY', 'Premium Economy'),
+        ('ECONOMY', 'Economy'),
+        ('RESTRICTED_ECONOMY', 'Restricted Economy'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # Airline-specific mapping
+    airline = models.ForeignKey(
+        Airline,
+        on_delete=models.CASCADE,
+        related_name='fare_class_mappings',
+        help_text="Airline this fare code applies to"
+    )
+
+    fare_code = models.CharField(
+        max_length=10,
+        help_text="Fare class code (e.g., 'Y', 'D', 'O', 'J')"
+    )
+
+    # Standardized classification
+    travel_class = models.CharField(
+        max_length=30,
+        choices=TRAVEL_CLASS_CHOICES,
+        help_text="Standardized travel class category"
+    )
+
+    # Fare type/brand (e.g., "Red e-Deal", "Flex", "Business Saver")
+    fare_type = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Fare brand or type name used by the airline"
+    )
+
+    # Temporal validity - fare structures change over time
+    valid_from = models.DateField(
+        help_text="Date from which this mapping is valid (inclusive)"
+    )
+
+    valid_to = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Date until which this mapping is valid (inclusive). NULL = ongoing"
+    )
+
+    # Status
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Set to False to disable this mapping"
+    )
+
+    # Metadata
+    notes = models.TextField(
+        blank=True,
+        help_text="Notes about this fare class, changes, or special conditions"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'fare_class_mappings'
+        ordering = ['airline', 'fare_code', '-valid_from']
+        indexes = [
+            models.Index(fields=['airline', 'fare_code']),
+            models.Index(fields=['airline', 'fare_code', 'valid_from', 'valid_to']),
+            models.Index(fields=['is_active']),
+        ]
+        # Prevent overlapping date ranges for same airline/fare_code
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(valid_to__isnull=True) | models.Q(valid_to__gte=models.F('valid_from')),
+                name='valid_to_after_valid_from'
+            )
+        ]
+
+    def __str__(self):
+        if self.valid_to:
+            return f"{self.airline.iata_code} {self.fare_code} → {self.get_travel_class_display()} ({self.valid_from} to {self.valid_to})"
+        return f"{self.airline.iata_code} {self.fare_code} → {self.get_travel_class_display()} ({self.valid_from} onwards)"
+
+    @classmethod
+    def get_travel_class(cls, airline_code, fare_code, booking_date):
+        """
+        Look up the travel class for a specific airline fare code on a given date.
+
+        Args:
+            airline_code (str): IATA airline code (e.g., 'QF', 'UA')
+            fare_code (str): Fare class code (e.g., 'Y', 'D', 'O')
+            booking_date (date): Date of the booking
+
+        Returns:
+            str: Travel class code (e.g., 'ECONOMY', 'BUSINESS'), or None if not found
+
+        Example:
+            >>> FareClassMapping.get_travel_class('QF', 'O', date(2024, 1, 15))
+            'RESTRICTED_ECONOMY'
+        """
+        try:
+            mapping = cls.objects.filter(
+                airline__iata_code=airline_code,
+                fare_code=fare_code,
+                valid_from__lte=booking_date,
+                is_active=True
+            ).filter(
+                models.Q(valid_to__isnull=True) | models.Q(valid_to__gte=booking_date)
+            ).first()
+
+            if mapping:
+                logger.debug(
+                    f"Found fare class mapping: {airline_code} {fare_code} "
+                    f"on {booking_date} → {mapping.travel_class}"
+                )
+                return mapping.travel_class
+
+            logger.warning(
+                f"No fare class mapping found for {airline_code} {fare_code} "
+                f"on {booking_date}. Using fare code as-is."
+            )
+            return None
+
+        except Exception as e:
+            logger.error(f"Error looking up fare class mapping: {e}")
+            return None
+
+    @classmethod
+    def get_fare_type(cls, airline_code, fare_code, booking_date):
+        """
+        Look up the fare type/brand for a specific airline fare code on a given date.
+
+        Returns:
+            str: Fare type (e.g., 'Red e-Deal', 'Flex'), or None if not found
+        """
+        try:
+            mapping = cls.objects.filter(
+                airline__iata_code=airline_code,
+                fare_code=fare_code,
+                valid_from__lte=booking_date,
+                is_active=True
+            ).filter(
+                models.Q(valid_to__isnull=True) | models.Q(valid_to__gte=booking_date)
+            ).first()
+
+            return mapping.fare_type if mapping else None
+
+        except Exception as e:
+            logger.error(f"Error looking up fare type: {e}")
+            return None
 
 
 class CurrencyExchangeRate(models.Model):
