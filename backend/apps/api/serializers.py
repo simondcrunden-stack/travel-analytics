@@ -346,12 +346,14 @@ class ServiceFeeSerializer(serializers.ModelSerializer):
 
 class BookingTransactionSerializer(serializers.ModelSerializer):
     """Booking transactions (exchanges, refunds, modifications, etc.)"""
+    created_by_name = serializers.CharField(source='created_by.__str__', read_only=True)
+
     class Meta:
         model = BookingTransaction
         fields = [
             'id', 'transaction_type', 'transaction_date', 'transaction_reference',
             'status', 'currency', 'base_amount', 'taxes', 'fees', 'total_amount',
-            'description', 'processed_by_name'
+            'reason', 'notes', 'created_by_name'
         ]
 
 

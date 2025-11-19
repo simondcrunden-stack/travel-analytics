@@ -158,7 +158,8 @@
             <tr v-for="transaction in sortedTransactions" :key="transaction.id" class="segment-row">
               <td>
                 <div class="text-sm font-medium">{{ formatTransactionType(transaction.transaction_type) }}</div>
-                <div v-if="transaction.description" class="text-xs text-gray-500">{{ transaction.description }}</div>
+                <div v-if="transaction.reason" class="text-xs text-gray-500">{{ transaction.reason }}</div>
+                <div v-if="transaction.notes" class="text-xs text-gray-400 mt-1">{{ transaction.notes }}</div>
               </td>
               <td class="text-sm">{{ formatDate(transaction.transaction_date) }}</td>
               <td class="text-sm">{{ transaction.transaction_reference || '-' }}</td>
