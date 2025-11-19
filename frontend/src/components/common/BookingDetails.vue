@@ -16,6 +16,7 @@
               <th>Date</th>
               <th>Details</th>
               <th>Duration/Nights/Days</th>
+              <th>Lost Savings</th>
               <th>Amount</th>
               <th>Carbon</th>
             </tr>
@@ -44,10 +45,7 @@
               <td>
                 <!-- Air Booking -->
                 <div v-if="segment.type === 'air'" class="segment-details">
-                  <div class="font-medium">{{ segment.data.route }}</div>
-                  <div v-if="segment.data.cityRoute" class="text-xs text-gray-500 mb-2">
-                    {{ segment.data.cityRoute }}
-                  </div>
+                  <div class="font-medium mb-1">{{ segment.data.route }}</div>
                   <!-- Individual segment details -->
                   <div v-for="seg in segment.data.segments" :key="seg.id" class="text-xs text-gray-600 mt-1">
                     {{ seg.airline_iata_code }}{{ seg.flight_number }} {{ seg.origin_airport_iata_code }} {{ seg.destination_airport_iata_code }} {{ seg.fare_class_display || 'Economy' }}
@@ -80,6 +78,14 @@
                 <span v-else-if="segment.type === 'car'" class="text-sm">
                   {{ segment.data.number_of_days }} day{{ segment.data.number_of_days > 1 ? 's' : '' }}
                 </span>
+              </td>
+
+              <!-- Lost Savings Column -->
+              <td>
+                <span v-if="segment.type === 'air' && segment.data.potential_savings > 0" class="text-sm text-red-600 font-semibold">
+                  {{ formatCurrency(segment.data.potential_savings, segment.currency) }}
+                </span>
+                <span v-else class="text-xs text-gray-400">-</span>
               </td>
 
               <!-- Amount Column -->
