@@ -571,7 +571,7 @@ class BookingListSerializer(serializers.ModelSerializer):
 
         # Add service fees with transactions
         for fee in obj.service_fees.all():
-            fee_amount = float(fee.fee_amount_base or fee.fee_amount or 0)
+            fee_amount = float(fee.fee_amount or 0)
 
             # Add transactions for this service fee
             fee_content_type = ContentType.objects.get_for_model(ServiceFee)
