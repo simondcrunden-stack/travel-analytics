@@ -966,13 +966,13 @@ class BookingViewSet(viewsets.ModelViewSet):
         result = []
         for dest_code, data in destination_data.items():
             try:
-                airport = Airport.objects.select_related('country').get(iata_code=dest_code)
+                airport = Airport.objects.get(iata_code=dest_code)
                 if airport.latitude and airport.longitude:
                     result.append({
                         'code': dest_code,
                         'name': airport.name,
                         'city': airport.city,
-                        'country': airport.country.common_name if airport.country else 'Unknown',
+                        'country': airport.country or 'Unknown',
                         'latitude': float(airport.latitude),
                         'longitude': float(airport.longitude),
                         'trips': data['trips'],
