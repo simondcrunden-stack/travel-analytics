@@ -1,7 +1,7 @@
 <template>
   <div class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
     <!-- Backdrop -->
-    <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="$emit('cancel')"></div>
+    <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="$emit('close')"></div>
 
     <!-- Modal -->
     <div class="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
@@ -16,7 +16,7 @@
               </h3>
             </div>
             <button
-              @click="$emit('cancel')"
+              @click="$emit('close')"
               class="text-gray-400 hover:text-gray-500 focus:outline-none"
             >
               <span class="mdi mdi-close text-xl"></span>
@@ -166,7 +166,7 @@
           <div class="flex justify-end space-x-3 pt-4 border-t border-gray-200">
             <button
               type="button"
-              @click="$emit('cancel')"
+              @click="$emit('close')"
               class="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500"
             >
               Cancel
