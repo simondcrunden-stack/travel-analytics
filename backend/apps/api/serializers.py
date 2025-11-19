@@ -3,7 +3,7 @@ from apps.organizations.models import Organization, OrganizationalNode
 from apps.users.models import User
 from apps.bookings.models import (
     Traveller, Booking, AirBooking, AirSegment,
-    AccommodationBooking, CarHireBooking, Invoice, ServiceFee
+    AccommodationBooking, CarHireBooking, Invoice, ServiceFee, BookingTransaction
 )
 from apps.budgets.models import FiscalYear, Budget, BudgetAlert
 from apps.compliance.models import (
@@ -333,16 +333,39 @@ class CarHireBookingSerializer(serializers.ModelSerializer):
         ]
 
 
+class ServiceFeeSerializer(serializers.ModelSerializer):
+    """Service fees charged on bookings"""
+    class Meta:
+        model = ServiceFee
+        fields = [
+            'id', 'fee_type', 'fee_date', 'invoice_number',
+            'fee_amount', 'gst_amount', 'currency', 'booking_channel',
+            'description'
+        ]
+
+
+class BookingTransactionSerializer(serializers.ModelSerializer):
+    """Booking transactions (exchanges, refunds, modifications, etc.)"""
+    class Meta:
+        model = BookingTransaction
+        fields = [
+            'id', 'transaction_type', 'transaction_date', 'transaction_reference',
+            'status', 'currency', 'base_amount', 'taxes', 'fees', 'total_amount',
+            'description', 'processed_by_name'
+        ]
+
+
 class BookingListSerializer(serializers.ModelSerializer):
     """For list views - now includes nested details for charts"""
     traveller_name = serializers.CharField(source='traveller.__str__', read_only=True)
     organization_name = serializers.CharField(source='organization.name', read_only=True)
-    
+
     # Add nested details for frontend charts
     air_bookings = AirBookingSerializer(many=True, read_only=True)
     accommodation_bookings = AccommodationBookingSerializer(many=True, read_only=True)
     car_hire_bookings = CarHireBookingSerializer(many=True, read_only=True)
-    
+    service_fees = ServiceFeeSerializer(many=True, read_only=True)
+
     # Computed field for primary booking type
     primary_booking_type = serializers.SerializerMethodField()
 
@@ -352,6 +375,9 @@ class BookingListSerializer(serializers.ModelSerializer):
     # Computed field for trip type (DOMESTIC or INTERNATIONAL)
     trip_type = serializers.SerializerMethodField()
 
+    # Get all transactions related to this booking's components
+    transactions = serializers.SerializerMethodField()
+
     class Meta:
         model = Booking
         fields = [
@@ -360,7 +386,7 @@ class BookingListSerializer(serializers.ModelSerializer):
             'status', 'traveller_name', 'organization_name',
             'currency', 'total_amount', 'total_amount_with_transactions',
             'policy_compliant', 'air_bookings', 'accommodation_bookings',
-            'car_hire_bookings',
+            'car_hire_bookings', 'service_fees', 'transactions',
             'primary_booking_type', 'trip_type'
         ]
 
@@ -510,6 +536,55 @@ class BookingListSerializer(serializers.ModelSerializer):
             total += car_amount
 
         return round(total, 2)
+
+    def get_transactions(self, obj):
+        """
+        Get all transactions related to this booking's components.
+        Collects transactions from air_bookings, accommodation_bookings, car_hire_bookings, and service_fees.
+        """
+        from django.contrib.contenttypes.models import ContentType
+        from apps.bookings.models import BookingTransaction, AirBooking, AccommodationBooking, CarHireBooking, ServiceFee
+
+        all_transactions = []
+
+        # Get transactions for air bookings
+        air_content_type = ContentType.objects.get_for_model(AirBooking)
+        for air in obj.air_bookings.all():
+            air_transactions = BookingTransaction.objects.filter(
+                content_type=air_content_type,
+                object_id=air.id
+            )
+            all_transactions.extend(air_transactions)
+
+        # Get transactions for accommodation bookings
+        accom_content_type = ContentType.objects.get_for_model(AccommodationBooking)
+        for accom in obj.accommodation_bookings.all():
+            accom_transactions = BookingTransaction.objects.filter(
+                content_type=accom_content_type,
+                object_id=accom.id
+            )
+            all_transactions.extend(accom_transactions)
+
+        # Get transactions for car hire bookings
+        car_content_type = ContentType.objects.get_for_model(CarHireBooking)
+        for car in obj.car_hire_bookings.all():
+            car_transactions = BookingTransaction.objects.filter(
+                content_type=car_content_type,
+                object_id=car.id
+            )
+            all_transactions.extend(car_transactions)
+
+        # Get transactions for service fees
+        service_fee_content_type = ContentType.objects.get_for_model(ServiceFee)
+        for fee in obj.service_fees.all():
+            fee_transactions = BookingTransaction.objects.filter(
+                content_type=service_fee_content_type,
+                object_id=fee.id
+            )
+            all_transactions.extend(fee_transactions)
+
+        # Serialize the transactions
+        return BookingTransactionSerializer(all_transactions, many=True).data
 
 
 class BookingDetailSerializer(serializers.ModelSerializer):
