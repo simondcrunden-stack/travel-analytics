@@ -253,11 +253,12 @@ class AirBookingSerializer(serializers.ModelSerializer):
     origin_country = serializers.SerializerMethodField()
     destination_city = serializers.SerializerMethodField()
     destination_country = serializers.SerializerMethodField()
+    fare_class_display = serializers.SerializerMethodField()
 
     class Meta:
         model = AirBooking
         fields = [
-            'id', 'trip_type', 'travel_class', 'ticket_number',
+            'id', 'trip_type', 'travel_class', 'fare_class_display', 'ticket_number',
             'primary_airline_iata_code', 'primary_airline_name',
             'origin_airport_iata_code', 'destination_airport_iata_code',
             'origin_city', 'origin_country', 'destination_city', 'destination_country',
@@ -308,6 +309,36 @@ class AirBookingSerializer(serializers.ModelSerializer):
             return airport.country
         except Airport.DoesNotExist:
             return None
+
+    def get_fare_class_display(self, obj):
+        """
+        Get fare class display name from FareClassMapping.
+        Returns fare_type if available, otherwise returns the travel_class display name.
+        """
+        from apps.reference_data.models import FareClassMapping
+
+        # Get the first segment's booking class (fare code)
+        first_segment = obj.segments.first()
+        if not first_segment or not first_segment.booking_class:
+            # Fall back to travel_class display
+            return obj.get_travel_class_display()
+
+        # Get booking date from parent booking
+        booking_date = obj.booking.booking_date
+
+        # Look up fare type from mapping
+        fare_type = FareClassMapping.get_fare_type(
+            airline_code=obj.primary_airline_iata_code or first_segment.airline_iata_code,
+            fare_code=first_segment.booking_class,
+            booking_date=booking_date
+        )
+
+        # If fare_type is found and not empty, use it
+        if fare_type:
+            return fare_type
+
+        # Otherwise fall back to travel_class display
+        return obj.get_travel_class_display()
 
 
 class AccommodationBookingSerializer(serializers.ModelSerializer):

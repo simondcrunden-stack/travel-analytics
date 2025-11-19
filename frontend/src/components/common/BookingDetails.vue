@@ -49,7 +49,7 @@
                     {{ segment.data.cityRoute }}
                   </div>
                   <div class="text-xs text-gray-500">
-                    {{ segment.data.primary_airline_name }} • {{ segment.data.travel_class }}
+                    {{ segment.data.primary_airline_name }} • {{ segment.data.fare_class_display || segment.data.travel_class }}
                   </div>
                 </div>
 
