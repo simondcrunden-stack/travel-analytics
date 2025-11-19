@@ -358,44 +358,44 @@ class AirBooking(models.Model):
     def calculate_potential_savings(self):
         """
         Calculate potential savings if lowest fare was used instead
-        
+
         Returns:
             Decimal: Savings amount in base currency, or None if can't calculate
         """
-        if not self.lowest_fare_available or not self.booking.base_fare:
+        if not self.lowest_fare_available or not self.total_fare:
             return None
-        
+
         try:
             from apps.reference_data.models import CurrencyExchangeRate
-            
+
             # Convert lowest fare to booking currency if needed
-            if self.lowest_fare_currency != self.booking.currency:
+            if self.lowest_fare_currency != self.currency:
                 rate = CurrencyExchangeRate.get_rate(
                     from_currency=self.lowest_fare_currency,
-                    to_currency=self.booking.currency,
+                    to_currency=self.currency,
                     date=self.booking.booking_date
                 )
                 if rate is None:
                     logger.warning(
                         f"No exchange rate found for {self.lowest_fare_currency} to "
-                        f"{self.booking.currency} on {self.booking.booking_date}"
+                        f"{self.currency} on {self.booking.booking_date}"
                     )
                     return None
-                    
+
                 lowest_in_booking_currency = Decimal(str(self.lowest_fare_available)) * Decimal(str(rate))
             else:
                 lowest_in_booking_currency = Decimal(str(self.lowest_fare_available))
-            
-            # Calculate savings (only if positive)
-            savings = Decimal(str(self.booking.base_fare)) - lowest_in_booking_currency
-            
+
+            # Calculate savings (total_fare - lowest_fare_available)
+            savings = Decimal(str(self.total_fare)) - lowest_in_booking_currency
+
             logger.info(
                 f"Savings calculation for {self.booking.agent_booking_reference}: "
-                f"Base fare {self.booking.base_fare} - Lowest {lowest_in_booking_currency} = {savings}"
+                f"Total fare {self.total_fare} - Lowest {lowest_in_booking_currency} = {savings}"
             )
-            
+
             return max(savings, Decimal('0.00'))  # Only return positive savings
-            
+
         except Exception as e:
             logger.error(f"Error calculating potential savings: {e}")
             return None
