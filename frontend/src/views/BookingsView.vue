@@ -392,10 +392,47 @@ const filteredBookings = computed(() => {
       return true
     }
 
-    // Search in destinations
+    // Search in destinations (airport codes)
     const destinations = getDestinations(booking)
     if (destinations.toLowerCase().includes(query)) {
       return true
+    }
+
+    // Search in air booking cities and countries
+    if (booking.air_bookings && booking.air_bookings.length > 0) {
+      for (const airBooking of booking.air_bookings) {
+        if (airBooking.origin_city?.toLowerCase().includes(query)) return true
+        if (airBooking.origin_country?.toLowerCase().includes(query)) return true
+        if (airBooking.destination_city?.toLowerCase().includes(query)) return true
+        if (airBooking.destination_country?.toLowerCase().includes(query)) return true
+
+        // Also search in segment cities/countries
+        if (airBooking.segments) {
+          for (const segment of airBooking.segments) {
+            if (segment.origin_city?.toLowerCase().includes(query)) return true
+            if (segment.origin_country?.toLowerCase().includes(query)) return true
+            if (segment.destination_city?.toLowerCase().includes(query)) return true
+            if (segment.destination_country?.toLowerCase().includes(query)) return true
+          }
+        }
+      }
+    }
+
+    // Search in accommodation cities and countries
+    if (booking.accommodation_bookings && booking.accommodation_bookings.length > 0) {
+      for (const accom of booking.accommodation_bookings) {
+        if (accom.city?.toLowerCase().includes(query)) return true
+        if (accom.country?.toLowerCase().includes(query)) return true
+      }
+    }
+
+    // Search in car hire cities and countries
+    if (booking.car_hire_bookings && booking.car_hire_bookings.length > 0) {
+      for (const car of booking.car_hire_bookings) {
+        if (car.pickup_city?.toLowerCase().includes(query)) return true
+        if (car.dropoff_city?.toLowerCase().includes(query)) return true
+        if (car.country?.toLowerCase().includes(query)) return true
+      }
     }
 
     return false

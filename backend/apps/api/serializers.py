@@ -193,20 +193,66 @@ class TravellerDetailSerializer(serializers.ModelSerializer):
 # ============================================================================
 
 class AirSegmentSerializer(serializers.ModelSerializer):
+    origin_city = serializers.SerializerMethodField()
+    origin_country = serializers.SerializerMethodField()
+    destination_city = serializers.SerializerMethodField()
+    destination_country = serializers.SerializerMethodField()
+
     class Meta:
         model = AirSegment
         fields = [
             'id', 'segment_number', 'airline_iata_code', 'airline_name',
-            'flight_number', 'origin_airport_iata_code', 'destination_airport_iata_code',  # Updated
+            'flight_number', 'origin_airport_iata_code', 'destination_airport_iata_code',
+            'origin_city', 'origin_country', 'destination_city', 'destination_country',
             'departure_date', 'departure_time', 'arrival_date', 'arrival_time',
             'booking_class', 'fare_basis', 'distance_km',
             'carbon_emissions_kg'
         ]
 
+    def get_origin_city(self, obj):
+        """Get origin airport city"""
+        from apps.reference_data.models import Airport
+        try:
+            airport = Airport.objects.get(iata_code=obj.origin_airport_iata_code)
+            return airport.city
+        except Airport.DoesNotExist:
+            return None
+
+    def get_origin_country(self, obj):
+        """Get origin airport country"""
+        from apps.reference_data.models import Airport
+        try:
+            airport = Airport.objects.get(iata_code=obj.origin_airport_iata_code)
+            return airport.country
+        except Airport.DoesNotExist:
+            return None
+
+    def get_destination_city(self, obj):
+        """Get destination airport city"""
+        from apps.reference_data.models import Airport
+        try:
+            airport = Airport.objects.get(iata_code=obj.destination_airport_iata_code)
+            return airport.city
+        except Airport.DoesNotExist:
+            return None
+
+    def get_destination_country(self, obj):
+        """Get destination airport country"""
+        from apps.reference_data.models import Airport
+        try:
+            airport = Airport.objects.get(iata_code=obj.destination_airport_iata_code)
+            return airport.country
+        except Airport.DoesNotExist:
+            return None
+
 
 class AirBookingSerializer(serializers.ModelSerializer):
     segments = AirSegmentSerializer(many=True, read_only=True)
     total_carbon_kg = serializers.SerializerMethodField()
+    origin_city = serializers.SerializerMethodField()
+    origin_country = serializers.SerializerMethodField()
+    destination_city = serializers.SerializerMethodField()
+    destination_country = serializers.SerializerMethodField()
 
     class Meta:
         model = AirBooking
@@ -214,6 +260,7 @@ class AirBookingSerializer(serializers.ModelSerializer):
             'id', 'trip_type', 'travel_class', 'ticket_number',
             'primary_airline_iata_code', 'primary_airline_name',
             'origin_airport_iata_code', 'destination_airport_iata_code',
+            'origin_city', 'origin_country', 'destination_city', 'destination_country',
             'lowest_fare_available', 'lowest_fare_currency', 'potential_savings',
             'segments', 'total_carbon_kg', 'base_fare', 'taxes', 'fees', 'gst_amount', 'total_fare', 'currency'
         ]
@@ -225,6 +272,42 @@ class AirBookingSerializer(serializers.ModelSerializer):
             for segment in obj.segments.all()
         )
         return round(total, 2)
+
+    def get_origin_city(self, obj):
+        """Get origin airport city"""
+        from apps.reference_data.models import Airport
+        try:
+            airport = Airport.objects.get(iata_code=obj.origin_airport_iata_code)
+            return airport.city
+        except Airport.DoesNotExist:
+            return None
+
+    def get_origin_country(self, obj):
+        """Get origin airport country"""
+        from apps.reference_data.models import Airport
+        try:
+            airport = Airport.objects.get(iata_code=obj.origin_airport_iata_code)
+            return airport.country
+        except Airport.DoesNotExist:
+            return None
+
+    def get_destination_city(self, obj):
+        """Get destination airport city"""
+        from apps.reference_data.models import Airport
+        try:
+            airport = Airport.objects.get(iata_code=obj.destination_airport_iata_code)
+            return airport.city
+        except Airport.DoesNotExist:
+            return None
+
+    def get_destination_country(self, obj):
+        """Get destination airport country"""
+        from apps.reference_data.models import Airport
+        try:
+            airport = Airport.objects.get(iata_code=obj.destination_airport_iata_code)
+            return airport.country
+        except Airport.DoesNotExist:
+            return None
 
 
 class AccommodationBookingSerializer(serializers.ModelSerializer):
