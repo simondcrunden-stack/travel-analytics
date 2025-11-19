@@ -32,19 +32,24 @@
 
               <!-- Date Column -->
               <td>
-                <div class="text-sm">{{ formatDate(segment.date) }}</div>
+                <div class="text-sm">
+                  <div>Depart: {{ formatDate(segment.date) }}</div>
+                  <div v-if="segment.returnDate && segment.returnDate !== segment.date" class="text-xs text-gray-500 mt-1">
+                    Return: {{ formatDate(segment.returnDate) }}
+                  </div>
+                </div>
               </td>
 
               <!-- Details Column -->
               <td>
-                <!-- Air Segment -->
+                <!-- Air Booking -->
                 <div v-if="segment.type === 'air'" class="segment-details">
-                  <div class="font-medium">{{ segment.data.origin_airport_iata_code }} → {{ segment.data.destination_airport_iata_code }}</div>
-                  <div class="text-xs text-gray-500">
-                    {{ segment.data.origin_city }} → {{ segment.data.destination_city }}
+                  <div class="font-medium">{{ segment.data.route }}</div>
+                  <div v-if="segment.data.cityRoute" class="text-xs text-gray-500">
+                    {{ segment.data.cityRoute }}
                   </div>
                   <div class="text-xs text-gray-500">
-                    {{ segment.data.airline_name }} {{ segment.data.flight_number }} • {{ segment.data.booking_class }}
+                    {{ segment.data.primary_airline_name }} • {{ segment.data.travel_class }}
                   </div>
                 </div>
 
@@ -66,7 +71,7 @@
               <!-- Duration/Nights/Days Column -->
               <td>
                 <span v-if="segment.type === 'air'" class="text-sm">
-                  {{ formatTime(segment.data.departure_time) }} - {{ formatTime(segment.data.arrival_time) }}
+                  {{ segment.data.segments.length }} segment{{ segment.data.segments.length > 1 ? 's' : '' }}
                 </span>
                 <span v-else-if="segment.type === 'accommodation'" class="text-sm">
                   {{ segment.data.number_of_nights }} night{{ segment.data.number_of_nights > 1 ? 's' : '' }}
@@ -208,22 +213,69 @@ const props = defineProps({
 const allSegments = computed(() => {
   const segments = []
 
-  // Add air segments
+  // Add air bookings (at booking level, not segment level)
   if (props.booking.air_bookings) {
     props.booking.air_bookings.forEach(airBooking => {
-      if (airBooking.segments) {
-        airBooking.segments.forEach(segment => {
-          segments.push({
-            id: `air-${segment.id}`,
-            type: 'air',
-            typeName: 'Flight',
-            date: segment.departure_date,
-            data: segment,
-            amount: null, // Air segments don't have individual amounts
-            carbon: segment.carbon_emissions_kg,
-            currency: airBooking.currency,
-            sortOrder: 1 // Air first
+      if (airBooking.segments && airBooking.segments.length > 0) {
+        // Sort segments by departure date
+        const sortedSegs = [...airBooking.segments].sort((a, b) =>
+          new Date(a.departure_date) - new Date(b.departure_date)
+        )
+
+        const firstSegment = sortedSegs[0]
+        const lastSegment = sortedSegs[sortedSegs.length - 1]
+
+        // Build route string (e.g., "MEL → SIN → MEL" or "MEL → SIN")
+        let route = ''
+        if (sortedSegs.length === 1) {
+          // One-way
+          route = `${firstSegment.origin_airport_iata_code} → ${firstSegment.destination_airport_iata_code}`
+        } else {
+          // Multi-segment - show all unique airports
+          const airports = [firstSegment.origin_airport_iata_code]
+          sortedSegs.forEach(seg => {
+            airports.push(seg.destination_airport_iata_code)
           })
+          route = airports.join(' → ')
+        }
+
+        // Get city route for subtitle
+        let cityRoute = ''
+        if (firstSegment.origin_city && lastSegment.destination_city) {
+          if (sortedSegs.length === 1) {
+            cityRoute = `${firstSegment.origin_city} → ${lastSegment.destination_city}`
+          } else {
+            const cities = [firstSegment.origin_city]
+            sortedSegs.forEach(seg => {
+              if (seg.destination_city) cities.push(seg.destination_city)
+            })
+            cityRoute = cities.join(' → ')
+          }
+        }
+
+        // Sum carbon emissions from all segments
+        const totalCarbon = sortedSegs.reduce((sum, seg) =>
+          sum + (parseFloat(seg.carbon_emissions_kg) || 0), 0
+        )
+
+        segments.push({
+          id: `air-${airBooking.id}`,
+          type: 'air',
+          typeName: 'Flight',
+          date: firstSegment.departure_date,
+          returnDate: lastSegment.arrival_date,
+          data: {
+            ...airBooking,
+            route: route,
+            cityRoute: cityRoute,
+            departureDate: firstSegment.departure_date,
+            returnDate: lastSegment.arrival_date,
+            segments: sortedSegs
+          },
+          amount: airBooking.total_fare || airBooking.base_fare,
+          carbon: Math.round(totalCarbon),
+          currency: airBooking.currency,
+          sortOrder: 1 // Air first
         })
       }
     })
@@ -237,6 +289,7 @@ const allSegments = computed(() => {
         type: 'accommodation',
         typeName: 'Hotel',
         date: accom.check_in_date,
+        returnDate: accom.check_out_date,
         data: accom,
         amount: accom.nightly_rate ? accom.nightly_rate * accom.number_of_nights : accom.total_amount_base,
         carbon: null,
@@ -254,6 +307,7 @@ const allSegments = computed(() => {
         type: 'car',
         typeName: 'Car Hire',
         date: car.pickup_date,
+        returnDate: car.dropoff_date,
         data: car,
         amount: car.daily_rate ? car.daily_rate * car.number_of_days : car.total_amount_base,
         carbon: null,
