@@ -907,6 +907,88 @@ class BookingViewSet(viewsets.ModelViewSet):
         return Response(country_data)
 
     @action(detail=False, methods=['get'])
+    def trip_map_data(self, request):
+        """
+        Get aggregated trip data for map visualization.
+
+        Returns destinations with:
+        - Coordinates (latitude/longitude)
+        - Number of trips
+        - Number of unique travellers
+        - Total spend
+        - Average spend per trip
+
+        Uses the same queryset logic as get_queryset() for security.
+        """
+        from collections import defaultdict
+        from django.db.models import Count, Sum, Avg
+
+        user = request.user
+
+        # Build base queryset using same logic as get_queryset()
+        if user.user_type == 'ADMIN':
+            base_queryset = Booking.objects.all()
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            base_queryset = Booking.objects.filter(
+                Q(organization=user.organization) |
+                Q(organization__travel_agent=user.organization)
+            )
+        else:
+            base_queryset = Booking.objects.filter(organization=user.organization)
+
+        # Apply advanced filters from request
+        base_queryset = self._apply_advanced_filters(base_queryset, user)
+
+        # Get all air bookings with destination airports
+        air_bookings = AirBooking.objects.filter(
+            booking__in=base_queryset
+        ).select_related('booking', 'booking__traveller').values(
+            'destination_airport_iata_code',
+            'booking__traveller__id',
+            'booking__total_amount_with_transactions'
+        )
+
+        # Aggregate by destination
+        destination_data = defaultdict(lambda: {
+            'trips': 0,
+            'travellers': set(),
+            'total_spend': 0
+        })
+
+        for ab in air_bookings:
+            dest = ab['destination_airport_iata_code']
+            destination_data[dest]['trips'] += 1
+            destination_data[dest]['travellers'].add(ab['booking__traveller__id'])
+            destination_data[dest]['total_spend'] += float(ab['booking__total_amount_with_transactions'] or 0)
+
+        # Get airport coordinates for each destination
+        result = []
+        for dest_code, data in destination_data.items():
+            try:
+                airport = Airport.objects.select_related('country').get(iata_code=dest_code)
+                if airport.latitude and airport.longitude:
+                    result.append({
+                        'code': dest_code,
+                        'name': airport.name,
+                        'city': airport.city,
+                        'country': airport.country.common_name if airport.country else 'Unknown',
+                        'latitude': float(airport.latitude),
+                        'longitude': float(airport.longitude),
+                        'trips': data['trips'],
+                        'travellers': len(data['travellers']),
+                        'total_spend': round(data['total_spend'], 2),
+                        'avg_spend': round(data['total_spend'] / data['trips'], 2) if data['trips'] > 0 else 0
+                    })
+            except Airport.DoesNotExist:
+                # Skip destinations without airport data
+                continue
+
+        # Sort by number of trips (descending)
+        result.sort(key=lambda x: x['trips'], reverse=True)
+
+        return Response(result)
+
+    @action(detail=False, methods=['get'])
     def supplier_autocomplete(self, request):
         """
         Get autocomplete suggestions for suppliers based on type.

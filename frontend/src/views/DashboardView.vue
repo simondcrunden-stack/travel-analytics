@@ -154,6 +154,42 @@
         </div>
       </div>
 
+      <!-- Charts Row -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+        <!-- Spend by Category Chart -->
+        <div class="bg-white rounded-lg shadow p-6">
+          <h2 class="text-lg font-semibold text-gray-900 mb-4">
+            Spend by Category
+          </h2>
+          <div class="h-64">
+            <canvas ref="categoryChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Monthly Trend Chart -->
+        <div class="bg-white rounded-lg shadow p-6">
+          <h2 class="text-lg font-semibold text-gray-900 mb-4">
+            Monthly Spend Trend
+          </h2>
+          <div class="h-64">
+            <canvas ref="trendChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Trip Destinations Map -->
+      <div class="mt-6">
+        <div class="bg-white rounded-lg shadow p-6">
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-semibold text-gray-900">Trip Destinations</h2>
+            <span class="text-sm text-gray-500">{{ mapData.length }} destinations</span>
+          </div>
+          <div class="h-96">
+            <trip-map :map-data="mapData" :loading="mapLoading" :error="mapError" />
+          </div>
+        </div>
+      </div>
+
       <!-- Compliance & Emissions Summary -->
       <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
         <!-- Compliance Rate -->
@@ -484,29 +520,6 @@
         </div>
       </div>
 
-      <!-- Charts Row -->
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-        <!-- Spend by Category Chart -->
-        <div class="bg-white rounded-lg shadow p-6">
-          <h2 class="text-lg font-semibold text-gray-900 mb-4">
-            Spend by Category
-          </h2>
-          <div class="h-64">
-            <canvas ref="categoryChart"></canvas>
-          </div>
-        </div>
-
-        <!-- Monthly Trend Chart -->
-        <div class="bg-white rounded-lg shadow p-6">
-          <h2 class="text-lg font-semibold text-gray-900 mb-4">
-            Monthly Spend Trend
-          </h2>
-          <div class="h-64">
-            <canvas ref="trendChart"></canvas>
-          </div>
-        </div>
-      </div>
-
       <!-- Recent Bookings -->
       <div class="bg-white rounded-lg shadow mt-6">
         <div class="p-6 border-b border-gray-200">
@@ -583,6 +596,7 @@ import { ref, onMounted, nextTick } from 'vue'
 import { Chart } from 'chart.js/auto'
 import bookingService from '@/services/bookingService'
 import UniversalFilters from '@/components/common/UniversalFilters.vue'
+import TripMap from '@/components/dashboard/TripMap.vue'
 
 // State
 const loading = ref(true)
@@ -644,6 +658,11 @@ const selectedRankingCategory = ref('cost_centers')  // cost_centers, travellers
 const recentBookings = ref([])
 const monthlyData = ref([])
 
+// Map state
+const mapData = ref([])
+const mapLoading = ref(false)
+const mapError = ref(null)
+
 // Filter state
 const activeFilters = ref({})
 
@@ -692,6 +711,21 @@ const loadData = async () => {
     } catch (rankingsErr) {
       console.log('ℹ️ [DashboardView] No rankings data available:', rankingsErr.message)
       // Keep default empty rankings
+    }
+
+    // Get trip map data (non-blocking - fail silently if no data)
+    mapLoading.value = true
+    mapError.value = null
+    try {
+      const tripMapData = await bookingService.getTripMapData(activeFilters.value)
+      mapData.value = tripMapData
+      console.log('✅ [DashboardView] Trip map data loaded:', tripMapData.length, 'destinations')
+    } catch (mapErr) {
+      console.log('ℹ️ [DashboardView] No trip map data available:', mapErr.message)
+      mapError.value = 'Unable to load map data'
+      mapData.value = []
+    } finally {
+      mapLoading.value = false
     }
 
     // Get recent bookings for the table

@@ -167,6 +167,12 @@ export default {
       return acc
     }, {})
   },
+  // Trip map data for visualization
+  async getTripMapData(params = {}) {
+    const backendParams = transformFiltersForBackend(params)
+    const response = await api.get('/bookings/trip_map_data/', { params: backendParams })
+    return response.data
+  },
 
   // Helper: Format currency
   formatCurrency(amount, currency = 'AUD') {
