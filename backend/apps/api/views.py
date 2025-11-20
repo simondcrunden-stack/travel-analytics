@@ -2393,3 +2393,535 @@ class PreferredAirlineViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(preferred_airline)
         return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def compliance_report(self, request):
+        """
+        Calculate preferred airline compliance metrics.
+
+        Returns spending and booking counts broken down by:
+        - Overall compliance rate
+        - Compliance by cost center
+        - Compliance by traveller
+        - Non-compliant bookings (off-preferred airline)
+
+        Query params:
+        - organization: Filter by organization ID (required)
+        - booking_date__gte: Start date for bookings (optional)
+        - booking_date__lte: End date for bookings (optional)
+        - travel_date__gte: Travel start date (optional)
+        - travel_date__lte: Travel end date (optional)
+        - market_type: Filter by DOMESTIC or INTERNATIONAL (optional)
+
+        Returns:
+        {
+            "summary": {
+                "total_spend": 1000000,
+                "preferred_spend": 850000,
+                "non_preferred_spend": 150000,
+                "compliance_rate": 85.0,
+                "total_bookings": 500,
+                "preferred_bookings": 425,
+                "non_preferred_bookings": 75
+            },
+            "by_cost_center": [...],
+            "by_traveller": [...],
+            "non_compliant_bookings": [...]
+        }
+        """
+        from django.utils import timezone
+        from collections import defaultdict
+
+        # Get organization from query params
+        organization_id = request.query_params.get('organization')
+        if not organization_id:
+            return Response(
+                {'error': 'organization parameter is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Get date range filters
+        booking_date_gte = request.query_params.get('booking_date__gte')
+        booking_date_lte = request.query_params.get('booking_date__lte')
+        travel_date_gte = request.query_params.get('travel_date__gte')
+        travel_date_lte = request.query_params.get('travel_date__lte')
+        market_type_filter = request.query_params.get('market_type')
+
+        # Get active preferred airline contracts for this organization
+        today = timezone.now().date()
+        preferred_airlines = PreferredAirline.objects.filter(
+            organization_id=organization_id,
+            is_active=True,
+            contract_start_date__lte=today,
+            contract_end_date__gte=today
+        )
+
+        # Build a lookup for preferred airlines by market type
+        preferred_by_market = {
+            'DOMESTIC': [],
+            'INTERNATIONAL': []
+        }
+        for pa in preferred_airlines:
+            preferred_by_market[pa.market_type].append({
+                'iata_code': pa.airline_iata_code,
+                'markets_served': pa.markets_served,
+                'routes_covered': pa.routes_covered
+            })
+
+        # Get all bookings for the organization with filters
+        bookings_qs = Booking.objects.filter(organization_id=organization_id)
+
+        if booking_date_gte:
+            bookings_qs = bookings_qs.filter(booking_date__gte=booking_date_gte)
+        if booking_date_lte:
+            bookings_qs = bookings_qs.filter(booking_date__lte=booking_date_lte)
+        if travel_date_gte:
+            bookings_qs = bookings_qs.filter(travel_date__gte=travel_date_gte)
+        if travel_date_lte:
+            bookings_qs = bookings_qs.filter(travel_date__lte=travel_date_lte)
+
+        bookings = bookings_qs.select_related('traveller', 'organization').prefetch_related(
+            'air_bookings__segments'
+        )
+
+        # Initialize aggregations
+        summary = {
+            'total_spend': 0,
+            'preferred_spend': 0,
+            'non_preferred_spend': 0,
+            'total_bookings': 0,
+            'preferred_bookings': 0,
+            'non_preferred_bookings': 0
+        }
+
+        cost_center_data = defaultdict(lambda: {
+            'cost_center': '',
+            'cost_center_name': '',
+            'total_spend': 0,
+            'preferred_spend': 0,
+            'non_preferred_spend': 0,
+            'total_bookings': 0,
+            'preferred_bookings': 0,
+            'non_preferred_bookings': 0,
+            'compliance_rate': 0
+        })
+
+        traveller_data = defaultdict(lambda: {
+            'traveller_id': '',
+            'traveller_name': '',
+            'cost_center': '',
+            'total_spend': 0,
+            'preferred_spend': 0,
+            'non_preferred_spend': 0,
+            'total_bookings': 0,
+            'preferred_bookings': 0,
+            'non_preferred_bookings': 0,
+            'compliance_rate': 0
+        })
+
+        non_compliant_bookings = []
+
+        # Helper function to determine if booking is domestic or international
+        def get_booking_market_type(air_booking):
+            """Determine if air booking is DOMESTIC or INTERNATIONAL"""
+            home_country = air_booking.booking.organization.home_country or 'AUS'
+
+            # Get home country airports
+            home_country_obj = Country.objects.filter(alpha_3=home_country).first()
+            if not home_country_obj:
+                return 'INTERNATIONAL'  # Default to international if can't determine
+
+            domestic_airports = list(Airport.objects.filter(
+                country=home_country_obj.name
+            ).values_list('iata_code', flat=True))
+
+            # Check if all segments are domestic
+            for segment in air_booking.segments.all():
+                origin_domestic = segment.origin_airport_iata_code in domestic_airports
+                dest_domestic = segment.destination_airport_iata_code in domestic_airports
+
+                if not (origin_domestic and dest_domestic):
+                    return 'INTERNATIONAL'
+
+            return 'DOMESTIC'
+
+        # Helper function to check if booking is on preferred airline
+        def is_preferred_airline(air_booking, market_type):
+            """Check if air booking is on a preferred airline for this market type"""
+            primary_airline = air_booking.primary_airline_iata_code
+
+            if not primary_airline:
+                return False
+
+            # Check if airline is in preferred list for this market type
+            preferred_list = preferred_by_market.get(market_type, [])
+
+            for preferred in preferred_list:
+                if preferred['iata_code'] == primary_airline:
+                    # Found matching airline - could add more sophisticated route/market matching here
+                    return True
+
+            return False
+
+        # Process each booking
+        for booking in bookings:
+            if not booking.air_bookings.exists():
+                continue  # Skip non-air bookings
+
+            cost_center = booking.traveller.cost_center if booking.traveller and booking.traveller.cost_center else 'Unassigned'
+            traveller_id = str(booking.traveller.id) if booking.traveller else 'Unknown'
+            traveller_name = str(booking.traveller) if booking.traveller else 'Unknown'
+
+            # Process air bookings
+            for air_booking in booking.air_bookings.all():
+                # Determine market type
+                market_type = get_booking_market_type(air_booking)
+
+                # Skip if filtered by market type
+                if market_type_filter and market_type != market_type_filter:
+                    continue
+
+                # Calculate spend for this air booking
+                air_spend = float(air_booking.total_fare or 0)
+
+                # Add transactions
+                air_content_type = ContentType.objects.get_for_model(AirBooking)
+                air_transactions = BookingTransaction.objects.filter(
+                    content_type=air_content_type,
+                    object_id=air_booking.id,
+                    status__in=['CONFIRMED', 'PENDING']
+                )
+                transaction_total = sum(float(t.total_amount_base or t.total_amount or 0) for t in air_transactions)
+                air_spend += transaction_total
+
+                # Check if on preferred airline
+                is_preferred = is_preferred_airline(air_booking, market_type)
+
+                # Update summary
+                summary['total_spend'] += air_spend
+                summary['total_bookings'] += 1
+
+                if is_preferred:
+                    summary['preferred_spend'] += air_spend
+                    summary['preferred_bookings'] += 1
+                else:
+                    summary['non_preferred_spend'] += air_spend
+                    summary['non_preferred_bookings'] += 1
+
+                    # Add to non-compliant list
+                    non_compliant_bookings.append({
+                        'booking_id': str(booking.id),
+                        'booking_reference': booking.agent_booking_reference,
+                        'traveller_name': traveller_name,
+                        'cost_center': cost_center,
+                        'airline_code': air_booking.primary_airline_iata_code,
+                        'airline_name': air_booking.primary_airline_name,
+                        'market_type': market_type,
+                        'travel_date': booking.travel_date.isoformat() if booking.travel_date else None,
+                        'total_fare': air_spend,
+                        'origin': air_booking.origin_airport_iata_code,
+                        'destination': air_booking.destination_airport_iata_code
+                    })
+
+                # Update cost center aggregation
+                if cost_center not in cost_center_data:
+                    cost_center_data[cost_center]['cost_center'] = cost_center
+
+                cost_center_data[cost_center]['total_spend'] += air_spend
+                cost_center_data[cost_center]['total_bookings'] += 1
+
+                if is_preferred:
+                    cost_center_data[cost_center]['preferred_spend'] += air_spend
+                    cost_center_data[cost_center]['preferred_bookings'] += 1
+                else:
+                    cost_center_data[cost_center]['non_preferred_spend'] += air_spend
+                    cost_center_data[cost_center]['non_preferred_bookings'] += 1
+
+                # Update traveller aggregation
+                if traveller_id not in traveller_data:
+                    traveller_data[traveller_id]['traveller_id'] = traveller_id
+                    traveller_data[traveller_id]['traveller_name'] = traveller_name
+                    traveller_data[traveller_id]['cost_center'] = cost_center
+
+                traveller_data[traveller_id]['total_spend'] += air_spend
+                traveller_data[traveller_id]['total_bookings'] += 1
+
+                if is_preferred:
+                    traveller_data[traveller_id]['preferred_spend'] += air_spend
+                    traveller_data[traveller_id]['preferred_bookings'] += 1
+                else:
+                    traveller_data[traveller_id]['non_preferred_spend'] += air_spend
+                    traveller_data[traveller_id]['non_preferred_bookings'] += 1
+
+        # Calculate compliance rates
+        if summary['total_spend'] > 0:
+            summary['compliance_rate'] = round((summary['preferred_spend'] / summary['total_spend']) * 100, 1)
+        else:
+            summary['compliance_rate'] = 0
+
+        # Format cost center data
+        cost_centers = []
+        for cc_data in cost_center_data.values():
+            if cc_data['total_spend'] > 0:
+                cc_data['compliance_rate'] = round((cc_data['preferred_spend'] / cc_data['total_spend']) * 100, 1)
+            cost_centers.append(cc_data)
+
+        # Sort by non-preferred spend (worst offenders first)
+        cost_centers.sort(key=lambda x: x['non_preferred_spend'], reverse=True)
+
+        # Format traveller data
+        travellers = []
+        for t_data in traveller_data.values():
+            if t_data['traveller_id'] == 'Unknown':
+                continue
+            if t_data['total_spend'] > 0:
+                t_data['compliance_rate'] = round((t_data['preferred_spend'] / t_data['total_spend']) * 100, 1)
+            travellers.append(t_data)
+
+        # Sort by non-preferred spend (worst offenders first)
+        travellers.sort(key=lambda x: x['non_preferred_spend'], reverse=True)
+
+        # Sort non-compliant bookings by fare (highest first)
+        non_compliant_bookings.sort(key=lambda x: x['total_fare'], reverse=True)
+
+        return Response({
+            'summary': summary,
+            'by_cost_center': cost_centers,
+            'by_traveller': travellers,
+            'non_compliant_bookings': non_compliant_bookings[:100]  # Limit to top 100
+        })
+
+    @action(detail=False, methods=['get'])
+    def market_share_performance(self, request):
+        """
+        Calculate actual vs target market share for each preferred airline.
+
+        Returns performance metrics for each preferred airline showing:
+        - Target market share % and revenue
+        - Actual market share % and revenue
+        - Variance from target
+        - Performance status (EXCEEDING, MEETING, BELOW_TARGET)
+
+        Query params:
+        - organization: Filter by organization ID (required)
+        - booking_date__gte: Start date for bookings (optional)
+        - booking_date__lte: End date for bookings (optional)
+        - travel_date__gte: Travel start date (optional)
+        - travel_date__lte: Travel end date (optional)
+        - market_type: Filter by DOMESTIC or INTERNATIONAL (optional)
+
+        Returns:
+        {
+            "preferred_airlines": [
+                {
+                    "airline_code": "QF",
+                    "airline_name": "Qantas Airways",
+                    "market_type": "DOMESTIC",
+                    "target_market_share": 85.0,
+                    "target_revenue": 850000.00,
+                    "actual_market_share": 78.5,
+                    "actual_revenue": 785000.00,
+                    "market_share_variance": -6.5,
+                    "revenue_variance": -65000.00,
+                    "booking_count": 425,
+                    "performance_status": "BELOW_TARGET"
+                },
+                ...
+            ],
+            "totals": {
+                "total_market_revenue": 1000000.00,
+                "preferred_airlines_revenue": 850000.00,
+                "other_airlines_revenue": 150000.00
+            }
+        }
+        """
+        from django.utils import timezone
+        from collections import defaultdict
+
+        # Get organization from query params
+        organization_id = request.query_params.get('organization')
+        if not organization_id:
+            return Response(
+                {'error': 'organization parameter is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Get date range filters
+        booking_date_gte = request.query_params.get('booking_date__gte')
+        booking_date_lte = request.query_params.get('booking_date__lte')
+        travel_date_gte = request.query_params.get('travel_date__gte')
+        travel_date_lte = request.query_params.get('travel_date__lte')
+        market_type_filter = request.query_params.get('market_type')
+
+        # Get active preferred airline contracts for this organization
+        today = timezone.now().date()
+        preferred_airlines = PreferredAirline.objects.filter(
+            organization_id=organization_id,
+            is_active=True,
+            contract_start_date__lte=today,
+            contract_end_date__gte=today
+        )
+
+        if market_type_filter:
+            preferred_airlines = preferred_airlines.filter(market_type=market_type_filter)
+
+        # Initialize performance tracking for each preferred airline
+        airline_performance = {}
+        for pa in preferred_airlines:
+            airline_performance[pa.airline_iata_code] = {
+                'airline_code': pa.airline_iata_code,
+                'airline_name': pa.airline_name,
+                'market_type': pa.market_type,
+                'target_market_share': float(pa.target_market_share),
+                'target_revenue': float(pa.target_revenue) if pa.target_revenue else None,
+                'actual_revenue': 0,
+                'booking_count': 0,
+                'contract_id': str(pa.id),
+                'contract_start_date': pa.contract_start_date.isoformat(),
+                'contract_end_date': pa.contract_end_date.isoformat()
+            }
+
+        # Track total market revenue by market type
+        market_revenue = {
+            'DOMESTIC': 0,
+            'INTERNATIONAL': 0
+        }
+
+        # Get all bookings for the organization with filters
+        bookings_qs = Booking.objects.filter(organization_id=organization_id)
+
+        if booking_date_gte:
+            bookings_qs = bookings_qs.filter(booking_date__gte=booking_date_gte)
+        if booking_date_lte:
+            bookings_qs = bookings_qs.filter(booking_date__lte=booking_date_lte)
+        if travel_date_gte:
+            bookings_qs = bookings_qs.filter(travel_date__gte=travel_date_gte)
+        if travel_date_lte:
+            bookings_qs = bookings_qs.filter(travel_date__lte=travel_date_lte)
+
+        bookings = bookings_qs.select_related('traveller', 'organization').prefetch_related(
+            'air_bookings__segments'
+        )
+
+        # Helper function to determine if booking is domestic or international
+        def get_booking_market_type(air_booking):
+            """Determine if air booking is DOMESTIC or INTERNATIONAL"""
+            home_country = air_booking.booking.organization.home_country or 'AUS'
+
+            # Get home country airports
+            home_country_obj = Country.objects.filter(alpha_3=home_country).first()
+            if not home_country_obj:
+                return 'INTERNATIONAL'
+
+            domestic_airports = list(Airport.objects.filter(
+                country=home_country_obj.name
+            ).values_list('iata_code', flat=True))
+
+            # Check if all segments are domestic
+            for segment in air_booking.segments.all():
+                origin_domestic = segment.origin_airport_iata_code in domestic_airports
+                dest_domestic = segment.destination_airport_iata_code in domestic_airports
+
+                if not (origin_domestic and dest_domestic):
+                    return 'INTERNATIONAL'
+
+            return 'DOMESTIC'
+
+        # Process each booking
+        for booking in bookings:
+            if not booking.air_bookings.exists():
+                continue
+
+            for air_booking in booking.air_bookings.all():
+                # Determine market type
+                market_type = get_booking_market_type(air_booking)
+
+                # Skip if filtered by market type
+                if market_type_filter and market_type != market_type_filter:
+                    continue
+
+                # Calculate spend for this air booking
+                air_spend = float(air_booking.total_fare or 0)
+
+                # Add transactions
+                air_content_type = ContentType.objects.get_for_model(AirBooking)
+                air_transactions = BookingTransaction.objects.filter(
+                    content_type=air_content_type,
+                    object_id=air_booking.id,
+                    status__in=['CONFIRMED', 'PENDING']
+                )
+                transaction_total = sum(float(t.total_amount_base or t.total_amount or 0) for t in air_transactions)
+                air_spend += transaction_total
+
+                # Add to total market revenue for this market type
+                market_revenue[market_type] += air_spend
+
+                # Check if this booking is on a preferred airline
+                airline_code = air_booking.primary_airline_iata_code
+                if airline_code and airline_code in airline_performance:
+                    # Check if market type matches
+                    if airline_performance[airline_code]['market_type'] == market_type:
+                        airline_performance[airline_code]['actual_revenue'] += air_spend
+                        airline_performance[airline_code]['booking_count'] += 1
+
+        # Calculate market share and variance for each preferred airline
+        results = []
+        for perf in airline_performance.values():
+            market_type = perf['market_type']
+            total_market = market_revenue[market_type]
+
+            # Calculate actual market share
+            if total_market > 0:
+                perf['actual_market_share'] = round((perf['actual_revenue'] / total_market) * 100, 1)
+            else:
+                perf['actual_market_share'] = 0
+
+            # Calculate variances
+            perf['market_share_variance'] = round(
+                perf['actual_market_share'] - perf['target_market_share'], 1
+            )
+
+            if perf['target_revenue']:
+                perf['revenue_variance'] = round(perf['actual_revenue'] - perf['target_revenue'], 2)
+                perf['revenue_variance_percent'] = round(
+                    (perf['revenue_variance'] / perf['target_revenue']) * 100, 1
+                ) if perf['target_revenue'] > 0 else 0
+            else:
+                perf['revenue_variance'] = None
+                perf['revenue_variance_percent'] = None
+
+            # Determine performance status
+            if perf['market_share_variance'] >= 0:
+                perf['performance_status'] = 'EXCEEDING' if perf['market_share_variance'] > 2 else 'MEETING'
+            else:
+                perf['performance_status'] = 'BELOW_TARGET'
+
+            results.append(perf)
+
+        # Sort by market share variance (worst performers first for visibility)
+        results.sort(key=lambda x: x['market_share_variance'])
+
+        # Calculate totals
+        total_revenue = sum(market_revenue.values())
+        preferred_revenue = sum(p['actual_revenue'] for p in results)
+        other_revenue = total_revenue - preferred_revenue
+
+        return Response({
+            'preferred_airlines': results,
+            'totals': {
+                'total_market_revenue': round(total_revenue, 2),
+                'preferred_airlines_revenue': round(preferred_revenue, 2),
+                'other_airlines_revenue': round(other_revenue, 2),
+                'preferred_market_share': round((preferred_revenue / total_revenue * 100), 1) if total_revenue > 0 else 0
+            },
+            'by_market_type': {
+                'domestic': {
+                    'total_revenue': round(market_revenue['DOMESTIC'], 2),
+                    'preferred_count': len([p for p in results if p['market_type'] == 'DOMESTIC'])
+                },
+                'international': {
+                    'total_revenue': round(market_revenue['INTERNATIONAL'], 2),
+                    'preferred_count': len([p for p in results if p['market_type'] == 'INTERNATIONAL'])
+                }
+            }
+        })
