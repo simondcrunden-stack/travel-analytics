@@ -1,11 +1,16 @@
 <script setup>
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import bookingService from '@/services/bookingService'
+import preferredAirlineService from '@/services/preferredAirlineService'
 import { Chart, registerables } from 'chart.js'
 import UniversalFilters from '@/components/common/UniversalFilters.vue'
+import { useAuthStore } from '@/stores/auth'
 
 // Register Chart.js components
 Chart.register(...registerables)
+
+// Get user organization from auth store
+const authStore = useAuthStore()
 
 // State
 const loading = ref(true)
@@ -20,6 +25,13 @@ const summary = ref({
 const currentFilters = ref({})
 const currentPage = ref(1)
 const itemsPerPage = ref(20)
+
+// Preferred Airlines state
+const loadingPreferredAirlines = ref(false)
+const complianceData = ref(null)
+const marketShareData = ref(null)
+const showComplianceSection = ref(true)
+const showMarketShareSection = ref(true)
 
 // Chart refs
 const airlineChartRef = ref(null)
@@ -63,7 +75,10 @@ const summaryStats = computed(() => {
 const handleFiltersChanged = async (filters) => {
   console.log('✈️ [AirView] Filters changed:', filters)
   currentFilters.value = filters
-  await loadData(filters)
+  await Promise.all([
+    loadData(filters),
+    loadPreferredAirlineData(filters)
+  ])
 }
 
 // Methods
@@ -94,6 +109,47 @@ const loadData = async (filters = {}) => {
     await nextTick()
     await nextTick()
     renderCharts()
+  }
+}
+
+// Load preferred airline data
+const loadPreferredAirlineData = async (filters = {}) => {
+  if (!authStore.user || !authStore.user.organization) {
+    console.log('⚠️ [AirView] No organization found for user, skipping preferred airline data')
+    return
+  }
+
+  try {
+    loadingPreferredAirlines.value = true
+
+    const params = {
+      organization: authStore.user.organization.id,
+      ...filters
+    }
+
+    console.log('🔍 [AirView] Loading preferred airline data with params:', params)
+
+    // Load compliance report and market share performance in parallel
+    const [compliance, marketShare] = await Promise.all([
+      preferredAirlineService.getComplianceReport(params),
+      preferredAirlineService.getMarketSharePerformance(params)
+    ])
+
+    complianceData.value = compliance
+    marketShareData.value = marketShare
+
+    console.log('✅ [AirView] Preferred airline data loaded:', {
+      compliance: compliance.summary,
+      marketShare: marketShare.totals
+    })
+
+  } catch (err) {
+    console.error('❌ [AirView] Error loading preferred airline data:', err)
+    // Don't show error to user - just hide sections if no data
+    complianceData.value = null
+    marketShareData.value = null
+  } finally {
+    loadingPreferredAirlines.value = false
   }
 }
 
@@ -371,7 +427,10 @@ const getTotalCarbon = (booking) => {
 
 // Lifecycle
 onMounted(async () => {
-  await loadData()
+  await Promise.all([
+    loadData(),
+    loadPreferredAirlineData()
+  ])
 })
 </script>
 
@@ -461,6 +520,207 @@ onMounted(async () => {
           </div>
           <div class="bg-orange-100 p-3 rounded-full">
             <span class="mdi mdi-leaf text-orange-600 text-2xl"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Preferred Airline Compliance Section -->
+    <div v-if="!loading && !error && complianceData && complianceData.summary.total_bookings > 0" class="space-y-6">
+      <!-- Section Header -->
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-xl font-bold text-gray-900">Preferred Airline Compliance</h2>
+          <p class="text-sm text-gray-500 mt-1">Track bookings on and off preferred airlines</p>
+        </div>
+        <button
+          @click="showComplianceSection = !showComplianceSection"
+          class="text-gray-400 hover:text-gray-600"
+        >
+          <span class="mdi" :class="showComplianceSection ? 'mdi-chevron-up' : 'mdi-chevron-down'"></span>
+        </button>
+      </div>
+
+      <div v-show="showComplianceSection" class="space-y-6">
+        <!-- Compliance Summary Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <!-- Overall Compliance Rate -->
+          <div class="bg-white rounded-xl shadow-sm p-6">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-sm font-medium text-gray-600">Compliance Rate</p>
+                <p class="text-3xl font-bold mt-2" :class="complianceData.summary.compliance_rate >= 80 ? 'text-green-600' : complianceData.summary.compliance_rate >= 60 ? 'text-yellow-600' : 'text-red-600'">
+                  {{ complianceData.summary.compliance_rate.toFixed(1) }}%
+                </p>
+              </div>
+              <div :class="complianceData.summary.compliance_rate >= 80 ? 'bg-green-100' : complianceData.summary.compliance_rate >= 60 ? 'bg-yellow-100' : 'bg-red-100'" class="p-3 rounded-full">
+                <span class="mdi mdi-check-circle" :class="complianceData.summary.compliance_rate >= 80 ? 'text-green-600' : complianceData.summary.compliance_rate >= 60 ? 'text-yellow-600' : 'text-red-600'" class="text-2xl"></span>
+              </div>
+            </div>
+            <div class="mt-4 text-xs text-gray-500">
+              {{ complianceData.summary.preferred_bookings }} of {{ complianceData.summary.total_bookings }} bookings on preferred airlines
+            </div>
+          </div>
+
+          <!-- Preferred Spend -->
+          <div class="bg-white rounded-xl shadow-sm p-6">
+            <p class="text-sm font-medium text-gray-600">Preferred Airline Spend</p>
+            <p class="text-2xl font-bold text-green-600 mt-2">
+              {{ formatCurrency(complianceData.summary.preferred_spend) }}
+            </p>
+            <div class="mt-2 text-xs text-gray-500">
+              of {{ formatCurrency(complianceData.summary.total_spend) }} total
+            </div>
+          </div>
+
+          <!-- Non-Preferred Spend -->
+          <div class="bg-white rounded-xl shadow-sm p-6">
+            <p class="text-sm font-medium text-gray-600">Off-Preferred Spend</p>
+            <p class="text-2xl font-bold text-red-600 mt-2">
+              {{ formatCurrency(complianceData.summary.non_preferred_spend) }}
+            </p>
+            <div class="mt-2 text-xs text-gray-500">
+              {{ complianceData.summary.non_preferred_bookings }} bookings
+            </div>
+          </div>
+        </div>
+
+        <!-- Worst Offending Cost Centers -->
+        <div v-if="complianceData.by_cost_center && complianceData.by_cost_center.length > 0" class="bg-white rounded-xl shadow-sm overflow-hidden">
+          <div class="border-b border-gray-200 px-6 py-4">
+            <h3 class="text-lg font-semibold text-gray-900">Compliance by Cost Center</h3>
+            <p class="text-sm text-gray-500 mt-1">Cost centers with highest off-preferred spend</p>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+              <thead class="bg-gray-50">
+                <tr>
+                  <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cost Center</th>
+                  <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total Spend</th>
+                  <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Off-Preferred</th>
+                  <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Compliance Rate</th>
+                </tr>
+              </thead>
+              <tbody class="bg-white divide-y divide-gray-200">
+                <tr v-for="cc in complianceData.by_cost_center.slice(0, 5)" :key="cc.cost_center" class="hover:bg-gray-50">
+                  <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ cc.cost_center }}</td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{{ formatCurrency(cc.total_spend) }}</td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-red-600 font-semibold">{{ formatCurrency(cc.non_preferred_spend) }}</td>
+                  <td class="px-6 py-4 whitespace-nowrap text-right">
+                    <span class="px-2 py-1 text-xs font-semibold rounded-full" :class="cc.compliance_rate >= 80 ? 'bg-green-100 text-green-800' : cc.compliance_rate >= 60 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'">
+                      {{ cc.compliance_rate.toFixed(1) }}%
+                    </span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Worst Offending Travelers -->
+        <div v-if="complianceData.by_traveller && complianceData.by_traveller.length > 0" class="bg-white rounded-xl shadow-sm overflow-hidden">
+          <div class="border-b border-gray-200 px-6 py-4">
+            <h3 class="text-lg font-semibold text-gray-900">Compliance by Traveller</h3>
+            <p class="text-sm text-gray-500 mt-1">Travelers with highest off-preferred spend</p>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+              <thead class="bg-gray-50">
+                <tr>
+                  <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Traveller</th>
+                  <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cost Center</th>
+                  <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total Spend</th>
+                  <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Off-Preferred</th>
+                  <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Compliance Rate</th>
+                </tr>
+              </thead>
+              <tbody class="bg-white divide-y divide-gray-200">
+                <tr v-for="t in complianceData.by_traveller.slice(0, 5)" :key="t.traveller_id" class="hover:bg-gray-50">
+                  <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ t.traveller_name }}</td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ t.cost_center }}</td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{{ formatCurrency(t.total_spend) }}</td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-red-600 font-semibold">{{ formatCurrency(t.non_preferred_spend) }}</td>
+                  <td class="px-6 py-4 whitespace-nowrap text-right">
+                    <span class="px-2 py-1 text-xs font-semibold rounded-full" :class="t.compliance_rate >= 80 ? 'bg-green-100 text-green-800' : t.compliance_rate >= 60 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'">
+                      {{ t.compliance_rate.toFixed(1) }}%
+                    </span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Market Share Performance Section -->
+    <div v-if="!loading && !error && marketShareData && marketShareData.preferred_airlines.length > 0" class="space-y-6">
+      <!-- Section Header -->
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-xl font-bold text-gray-900">Market Share Performance</h2>
+          <p class="text-sm text-gray-500 mt-1">Target vs actual performance for preferred airlines</p>
+        </div>
+        <button
+          @click="showMarketShareSection = !showMarketShareSection"
+          class="text-gray-400 hover:text-gray-600"
+        >
+          <span class="mdi" :class="showMarketShareSection ? 'mdi-chevron-up' : 'mdi-chevron-down'"></span>
+        </button>
+      </div>
+
+      <div v-show="showMarketShareSection" class="space-y-6">
+        <!-- Market Share Cards -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div v-for="airline in marketShareData.preferred_airlines" :key="airline.airline_code" class="bg-white rounded-xl shadow-sm p-6">
+            <div class="flex items-center justify-between mb-4">
+              <div>
+                <h3 class="text-lg font-semibold text-gray-900">{{ airline.airline_name }}</h3>
+                <p class="text-xs text-gray-500">{{ airline.market_type }}</p>
+              </div>
+              <span class="px-2 py-1 text-xs font-semibold rounded-full" :class="
+                airline.performance_status === 'EXCEEDING' ? 'bg-green-100 text-green-800' :
+                airline.performance_status === 'MEETING' ? 'bg-blue-100 text-blue-800' :
+                'bg-red-100 text-red-800'
+              ">
+                {{ airline.performance_status === 'EXCEEDING' ? 'Exceeding' : airline.performance_status === 'MEETING' ? 'Meeting' : 'Below Target' }}
+              </span>
+            </div>
+
+            <!-- Market Share Progress -->
+            <div class="space-y-2">
+              <div class="flex justify-between text-sm">
+                <span class="text-gray-600">Market Share</span>
+                <span class="font-semibold" :class="airline.market_share_variance >= 0 ? 'text-green-600' : 'text-red-600'">
+                  {{ airline.actual_market_share.toFixed(1) }}% / {{ airline.target_market_share.toFixed(1) }}%
+                </span>
+              </div>
+              <div class="w-full bg-gray-200 rounded-full h-2">
+                <div class="h-2 rounded-full transition-all" :class="airline.market_share_variance >= 0 ? 'bg-green-500' : 'bg-red-500'"
+                  :style="{ width: Math.min((airline.actual_market_share / airline.target_market_share * 100), 100) + '%' }">
+                </div>
+              </div>
+              <p class="text-xs" :class="airline.market_share_variance >= 0 ? 'text-green-600' : 'text-red-600'">
+                {{ airline.market_share_variance > 0 ? '+' : '' }}{{ airline.market_share_variance.toFixed(1) }}% variance
+              </p>
+            </div>
+
+            <!-- Revenue -->
+            <div class="mt-4 pt-4 border-t border-gray-200">
+              <div class="flex justify-between text-sm">
+                <span class="text-gray-600">Revenue</span>
+                <span class="font-semibold text-gray-900">{{ formatCurrency(airline.actual_revenue) }}</span>
+              </div>
+              <div v-if="airline.target_revenue" class="text-xs text-gray-500 mt-1">
+                Target: {{ formatCurrency(airline.target_revenue) }}
+                <span v-if="airline.revenue_variance" :class="airline.revenue_variance >= 0 ? 'text-green-600' : 'text-red-600'">
+                  ({{ airline.revenue_variance > 0 ? '+' : '' }}{{ formatCurrency(airline.revenue_variance) }})
+                </span>
+              </div>
+              <div class="text-xs text-gray-500 mt-1">
+                {{ airline.booking_count }} bookings
+              </div>
+            </div>
           </div>
         </div>
       </div>
