@@ -84,7 +84,7 @@ export function transformFiltersForBackend(filters) {
   // Pass-through filters (no transformation needed)
   const passThroughFilters = ['organization', 'status', 'city', 'supplier']
   passThroughFilters.forEach(key => {
-    if (filters[key]) {
+    if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
       backendParams[key] = filters[key]
     }
   })
@@ -154,7 +154,7 @@ export function transformFiltersFromBackend(backendParams) {
   // Pass-through filters
   const passThroughFilters = ['organization', 'status', 'city', 'supplier']
   passThroughFilters.forEach(key => {
-    if (backendParams[key]) {
+    if (backendParams[key] !== undefined && backendParams[key] !== null && backendParams[key] !== '') {
       frontendFilters[key] = backendParams[key]
     }
   })
