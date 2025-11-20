@@ -3,7 +3,8 @@ from apps.organizations.models import Organization, OrganizationalNode
 from apps.users.models import User
 from apps.bookings.models import (
     Traveller, Booking, AirBooking, AirSegment,
-    AccommodationBooking, CarHireBooking, Invoice, ServiceFee, BookingTransaction
+    AccommodationBooking, CarHireBooking, Invoice, ServiceFee, BookingTransaction,
+    PreferredAirline
 )
 from apps.budgets.models import FiscalYear, Budget, BudgetAlert
 from apps.compliance.models import (
@@ -1032,3 +1033,70 @@ class OrganizationalNodeTreeSerializer(serializers.ModelSerializer):
 
     def get_descendant_count(self, obj):
         return obj.children.count()
+
+
+# ============================================================================
+# PREFERRED AIRLINE SERIALIZERS
+# ============================================================================
+
+class PreferredAirlineSerializer(serializers.ModelSerializer):
+    """
+    Serializer for PreferredAirline model.
+    Used for airline deals analysis and market share tracking.
+    """
+    organization_name = serializers.CharField(source='organization.name', read_only=True)
+    created_by_name = serializers.CharField(source='created_by.__str__', read_only=True)
+    market_type_display = serializers.CharField(source='get_market_type_display', read_only=True)
+
+    # Computed field for contract status (Active, Expired, Future)
+    contract_status = serializers.SerializerMethodField()
+
+    # Days until contract end
+    days_until_expiry = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PreferredAirline
+        fields = [
+            'id', 'organization', 'organization_name',
+            'airline_iata_code', 'airline_name',
+            'market_type', 'market_type_display',
+            'markets_served', 'routes_covered',
+            'target_market_share', 'target_revenue',
+            'contract_start_date', 'contract_end_date',
+            'contract_status', 'days_until_expiry',
+            'is_active', 'notes',
+            'created_by', 'created_by_name',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def get_contract_status(self, obj):
+        """
+        Determine contract status based on dates and is_active flag.
+        Returns: ACTIVE, EXPIRED, FUTURE, or INACTIVE
+        """
+        from django.utils import timezone
+        today = timezone.now().date()
+
+        if not obj.is_active:
+            return 'INACTIVE'
+        elif obj.contract_end_date < today:
+            return 'EXPIRED'
+        elif obj.contract_start_date > today:
+            return 'FUTURE'
+        else:
+            return 'ACTIVE'
+
+    def get_days_until_expiry(self, obj):
+        """
+        Calculate days until contract expires.
+        Returns None if contract already expired or is inactive.
+        """
+        from django.utils import timezone
+        today = timezone.now().date()
+
+        if not obj.is_active or obj.contract_end_date < today:
+            return None
+
+        delta = obj.contract_end_date - today
+        return delta.days

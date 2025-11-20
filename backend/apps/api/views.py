@@ -12,7 +12,8 @@ from apps.organizations.models import Organization, OrganizationalNode
 from apps.users.models import User
 from apps.bookings.models import (
     Traveller, Booking, AirBooking, AirSegment,
-    AccommodationBooking, CarHireBooking, Invoice, ServiceFee, BookingTransaction
+    AccommodationBooking, CarHireBooking, Invoice, ServiceFee, BookingTransaction,
+    PreferredAirline
 )
 from apps.budgets.models import FiscalYear, Budget, BudgetAlert
 from apps.compliance.models import ComplianceViolation, TravelRiskAlert
@@ -30,7 +31,8 @@ from .serializers import (
     ComplianceViolationSerializer, TravelRiskAlertSerializer,
     AirportSerializer, AirlineSerializer, CurrencyExchangeRateSerializer,
     CommissionSerializer, ServiceFeeSerializer, CountrySerializer,
-    OrganizationalNodeSerializer, OrganizationalNodeListSerializer, OrganizationalNodeTreeSerializer
+    OrganizationalNodeSerializer, OrganizationalNodeListSerializer, OrganizationalNodeTreeSerializer,
+    PreferredAirlineSerializer
 )
 
 
@@ -2221,3 +2223,173 @@ class OrganizationalNodeViewSet(viewsets.ModelViewSet):
                 'Please reassign or delete them first.'
             )
         instance.delete()
+
+
+# ============================================================================
+# PREFERRED AIRLINE VIEWSET
+# ============================================================================
+
+class PreferredAirlineViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for managing preferred airline contracts.
+
+    Supports:
+    - List all preferred airlines for accessible organizations
+    - Retrieve specific preferred airline details
+    - Create new preferred airline contracts
+    - Update existing contracts
+    - Delete contracts
+    - Filter by organization, market_type, airline, contract status
+
+    Query parameters:
+    - organization: Filter by organization ID
+    - market_type: Filter by DOMESTIC or INTERNATIONAL
+    - airline_iata_code: Filter by airline code
+    - is_active: Filter by active status (true/false)
+    - contract_status: Filter by ACTIVE, EXPIRED, FUTURE, INACTIVE
+    """
+    serializer_class = PreferredAirlineSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['organization', 'market_type', 'airline_iata_code', 'is_active']
+    search_fields = ['airline_name', 'airline_iata_code', 'notes']
+    ordering_fields = ['airline_name', 'contract_start_date', 'contract_end_date', 'target_market_share', 'target_revenue', 'created_at']
+    ordering = ['organization', 'market_type', 'airline_name']
+
+    def get_queryset(self):
+        """
+        Filter preferred airlines based on user's organization access.
+        Only show airlines for organizations the user has access to.
+        """
+        user = self.request.user
+
+        if user.user_type == 'ADMIN':
+            queryset = PreferredAirline.objects.all()
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            # Travel agents see preferred airlines for their customer organizations
+            if user.organization:
+                queryset = PreferredAirline.objects.filter(
+                    Q(organization=user.organization) |
+                    Q(organization__travel_agent=user.organization)
+                )
+            else:
+                queryset = PreferredAirline.objects.all()
+        else:
+            # Customer users see only their organization's preferred airlines
+            if user.organization:
+                queryset = PreferredAirline.objects.filter(organization=user.organization)
+            else:
+                queryset = PreferredAirline.objects.none()
+
+        # Filter by contract_status if provided (custom filter)
+        contract_status = self.request.query_params.get('contract_status', None)
+        if contract_status:
+            from django.utils import timezone
+            today = timezone.now().date()
+
+            if contract_status == 'ACTIVE':
+                queryset = queryset.filter(
+                    is_active=True,
+                    contract_start_date__lte=today,
+                    contract_end_date__gte=today
+                )
+            elif contract_status == 'EXPIRED':
+                queryset = queryset.filter(
+                    is_active=True,
+                    contract_end_date__lt=today
+                )
+            elif contract_status == 'FUTURE':
+                queryset = queryset.filter(
+                    is_active=True,
+                    contract_start_date__gt=today
+                )
+            elif contract_status == 'INACTIVE':
+                queryset = queryset.filter(is_active=False)
+
+        return queryset.select_related('organization', 'created_by')
+
+    def perform_create(self, serializer):
+        """Set created_by to current user when creating a new preferred airline"""
+        serializer.save(created_by=self.request.user)
+
+    @action(detail=False, methods=['get'])
+    def active_contracts(self, request):
+        """
+        Get all currently active preferred airline contracts.
+        A contract is active if:
+        - is_active = True
+        - current date is between contract_start_date and contract_end_date
+
+        Query params supported:
+        - organization: Filter by organization ID
+        - market_type: Filter by DOMESTIC or INTERNATIONAL
+        """
+        from django.utils import timezone
+        today = timezone.now().date()
+
+        queryset = self.filter_queryset(self.get_queryset())
+
+        # Filter for currently active contracts
+        queryset = queryset.filter(
+            is_active=True,
+            contract_start_date__lte=today,
+            contract_end_date__gte=today
+        )
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def expiring_soon(self, request):
+        """
+        Get preferred airline contracts expiring within the next N days.
+
+        Query params:
+        - days: Number of days to look ahead (default: 30)
+        - organization: Filter by organization ID
+        """
+        from django.utils import timezone
+        from datetime import timedelta
+
+        today = timezone.now().date()
+        days_ahead = int(request.query_params.get('days', 30))
+        expiry_threshold = today + timedelta(days=days_ahead)
+
+        queryset = self.filter_queryset(self.get_queryset())
+
+        # Filter for contracts expiring soon
+        queryset = queryset.filter(
+            is_active=True,
+            contract_start_date__lte=today,
+            contract_end_date__gte=today,
+            contract_end_date__lte=expiry_threshold
+        )
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def deactivate(self, request, pk=None):
+        """
+        Deactivate a preferred airline contract.
+        Sets is_active to False.
+        """
+        preferred_airline = self.get_object()
+        preferred_airline.is_active = False
+        preferred_airline.save()
+
+        serializer = self.get_serializer(preferred_airline)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def activate(self, request, pk=None):
+        """
+        Activate a preferred airline contract.
+        Sets is_active to True.
+        """
+        preferred_airline = self.get_object()
+        preferred_airline.is_active = True
+        preferred_airline.save()
+
+        serializer = self.get_serializer(preferred_airline)
+        return Response(serializer.data)
