@@ -796,10 +796,10 @@ class BookingViewSet(viewsets.ModelViewSet):
         total_spend = Decimal('0')
 
         if booking_type == 'AIR':
-            # Sum only air booking amounts
+            # Sum only air booking base fares (excluding taxes and GST)
             total_spend = AirBooking.objects.filter(
                 booking_id__in=booking_ids
-            ).aggregate(total=Sum('total_fare'))['total'] or Decimal('0')
+            ).aggregate(total=Sum('base_fare'))['total'] or Decimal('0')
         elif booking_type == 'HOTEL':
             # Sum only accommodation amounts
             total_spend = AccommodationBooking.objects.filter(
@@ -1393,8 +1393,8 @@ class BookingViewSet(viewsets.ModelViewSet):
             # AIR BOOKINGS
             if booking.air_bookings.exists():
                 for air in booking.air_bookings.all():
-                    # Calculate air spend (original booking amount)
-                    air_amount = float(air.total_fare or 0)
+                    # Calculate air spend (base fare only, excluding taxes/GST)
+                    air_amount = float(air.base_fare or 0)
 
                     # Add any exchange tickets, refunds, or other transactions for this air booking
                     air_content_type = ContentType.objects.get_for_model(AirBooking)
@@ -1595,9 +1595,9 @@ class BookingViewSet(viewsets.ModelViewSet):
             # Calculate booking spend
             booking_spend = 0
 
-            # Add air spend (including exchange tickets, refunds, etc.)
+            # Add air spend (base fare only, excluding taxes/GST, plus transactions)
             for air in booking.air_bookings.all():
-                air_amount = float(air.total_fare or 0)
+                air_amount = float(air.base_fare or 0)
 
                 # Add any exchange tickets, refunds, or other transactions
                 air_content_type = ContentType.objects.get_for_model(AirBooking)
@@ -2711,8 +2711,8 @@ class PreferredAirlineViewSet(viewsets.ModelViewSet):
                 if market_type_filter and market_type != market_type_filter:
                     continue
 
-                # Calculate spend for this air booking
-                air_spend = float(air_booking.total_fare or 0)
+                # Calculate spend for this air booking (base fare only, excluding taxes/GST)
+                air_spend = float(air_booking.base_fare or 0)
 
                 # Add transactions
                 air_content_type = ContentType.objects.get_for_model(AirBooking)
@@ -2970,8 +2970,8 @@ class PreferredAirlineViewSet(viewsets.ModelViewSet):
                 if market_type_filter and market_type != market_type_filter:
                     continue
 
-                # Calculate spend for this air booking
-                air_spend = float(air_booking.total_fare or 0)
+                # Calculate spend for this air booking (base fare only, excluding taxes/GST)
+                air_spend = float(air_booking.base_fare or 0)
 
                 # Add transactions
                 air_content_type = ContentType.objects.get_for_model(AirBooking)
