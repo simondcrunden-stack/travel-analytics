@@ -151,6 +151,9 @@ const loadPreferredAirlineData = async (filters = {}) => {
 
   } catch (err) {
     console.error('❌ [AirView] Error loading preferred airline data:', err)
+    console.error('❌ [AirView] Error response:', err.response?.data)
+    console.error('❌ [AirView] Error status:', err.response?.status)
+    console.error('❌ [AirView] Request params that were sent:', params)
     // Don't show error to user - just hide sections if no data
     complianceData.value = null
     marketShareData.value = null

@@ -61,7 +61,9 @@ export default {
 
   // Get compliance report
   async getComplianceReport(params = {}) {
+    console.log('🔍 [preferredAirlineService] getComplianceReport - input params:', params)
     const backendParams = transformFiltersForBackend(params)
+    console.log('🔍 [preferredAirlineService] getComplianceReport - transformed params:', backendParams)
     const response = await api.get('/preferred-airlines/compliance_report/', {
       params: backendParams
     })
@@ -70,7 +72,9 @@ export default {
 
   // Get market share performance
   async getMarketSharePerformance(params = {}) {
+    console.log('🔍 [preferredAirlineService] getMarketSharePerformance - input params:', params)
     const backendParams = transformFiltersForBackend(params)
+    console.log('🔍 [preferredAirlineService] getMarketSharePerformance - transformed params:', backendParams)
     const response = await api.get('/preferred-airlines/market_share_performance/', {
       params: backendParams
     })
