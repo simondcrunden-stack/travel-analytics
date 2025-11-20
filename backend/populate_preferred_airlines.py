@@ -49,6 +49,7 @@ preferred_airlines = [
         'markets_served': ['ALL'],
         'routes_covered': ['ALL'],  # All domestic routes
         'target_market_share': Decimal('85.00'),
+        'target_revenue': Decimal('850000.00'),  # $850k annual revenue target
         'notes': 'Primary domestic carrier. Target 85% market share on all domestic routes.'
     },
     {
@@ -58,6 +59,7 @@ preferred_airlines = [
         'markets_served': ['ALL'],
         'routes_covered': ['ALL'],
         'target_market_share': Decimal('10.00'),
+        'target_revenue': Decimal('100000.00'),  # $100k annual revenue target
         'notes': 'Secondary domestic carrier. Primarily for competitive pricing and schedule flexibility.'
     },
     {
@@ -67,6 +69,7 @@ preferred_airlines = [
         'markets_served': ['SG', 'UK', 'FR', 'DE'],  # Singapore, UK, France, Germany
         'routes_covered': ['MEL-SIN', 'SYD-SIN', 'BNE-SIN', 'PER-SIN'],
         'target_market_share': Decimal('80.00'),
+        'target_revenue': Decimal('1200000.00'),  # $1.2M annual revenue target
         'notes': 'Primary carrier for Singapore and European connections via Singapore hub.'
     },
     {
@@ -76,6 +79,7 @@ preferred_airlines = [
         'markets_served': ['AE', 'UK', 'FR', 'DE', 'IT', 'ES'],  # Middle East and Europe
         'routes_covered': ['MEL-DXB', 'SYD-DXB', 'BNE-DXB', 'PER-DXB'],
         'target_market_share': Decimal('15.00'),
+        'target_revenue': Decimal('225000.00'),  # $225k annual revenue target
         'notes': 'Secondary carrier for Middle East and European routes via Dubai hub.'
     },
     {
@@ -85,6 +89,7 @@ preferred_airlines = [
         'markets_served': ['US', 'UK', 'NZ', 'JP', 'SG'],
         'routes_covered': ['MEL-LAX', 'SYD-LAX', 'MEL-LHR', 'SYD-LHR', 'MEL-AKL', 'SYD-AKL'],
         'target_market_share': Decimal('70.00'),
+        'target_revenue': Decimal('1050000.00'),  # $1.05M annual revenue target
         'notes': 'Primary international carrier for trans-Pacific, UK, and trans-Tasman routes.'
     },
 ]
@@ -115,7 +120,9 @@ for airline_data in preferred_airlines:
             existing.save()
 
             print(f"✏️  UPDATED: {airline_data['airline_name']} - {airline_data['market_type']}")
-            print(f"    Target: {airline_data['target_market_share']}% market share")
+            print(f"    Target Market Share: {airline_data['target_market_share']}%")
+            if airline_data.get('target_revenue'):
+                print(f"    Target Revenue: ${airline_data['target_revenue']:,.0f}")
             updated_count += 1
         else:
             # Create new record
@@ -134,7 +141,9 @@ for airline_data in preferred_airlines:
             )
 
             print(f"✅ CREATED: {airline_data['airline_name']} - {airline_data['market_type']}")
-            print(f"    Target: {airline_data['target_market_share']}% market share")
+            print(f"    Target Market Share: {airline_data['target_market_share']}%")
+            if airline_data.get('target_revenue'):
+                print(f"    Target Revenue: ${airline_data['target_revenue']:,.0f}")
             created_count += 1
 
         # Show routes/markets
@@ -172,7 +181,9 @@ if all_preferred.exists():
     for pref in all_preferred:
         status = "✅ Active" if pref.is_contract_active() else "❌ Inactive"
         print(f"\n{status} | {pref.airline_name} ({pref.airline_iata_code}) - {pref.market_type}")
-        print(f"         Target: {pref.target_market_share}%")
+        print(f"         Target Market Share: {pref.target_market_share}%")
+        if pref.target_revenue:
+            print(f"         Target Revenue: ${pref.target_revenue:,.0f}")
         print(f"         Period: {pref.contract_start_date} → {pref.contract_end_date}")
 else:
     print("(None found)")

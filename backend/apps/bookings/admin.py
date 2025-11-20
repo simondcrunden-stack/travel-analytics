@@ -1247,6 +1247,7 @@ class PreferredAirlineAdmin(admin.ModelAdmin):
         'airline_display',
         'market_type',
         'target_market_share',
+        'target_revenue_display',
         'contract_period',
         'status_badge',
     ]
@@ -1299,6 +1300,7 @@ class PreferredAirlineAdmin(admin.ModelAdmin):
         ('Contract Terms', {
             'fields': (
                 'target_market_share',
+                'target_revenue',
                 'contract_start_date',
                 'contract_end_date',
                 'is_active',
@@ -1330,6 +1332,16 @@ class PreferredAirlineAdmin(admin.ModelAdmin):
             obj.airline_name,
             obj.airline_iata_code
         )
+
+    @admin.display(description='Target Revenue')
+    def target_revenue_display(self, obj):
+        """Display target revenue with currency formatting"""
+        if obj.target_revenue:
+            return format_html(
+                '<span style="color: #28A745; font-weight: bold;">${:,.0f}</span>',
+                obj.target_revenue
+            )
+        return format_html('<em style="color: #999;">Not set</em>')
 
     @admin.display(description='Contract Period')
     def contract_period(self, obj):
@@ -1435,6 +1447,13 @@ class PreferredAirlineAdmin(admin.ModelAdmin):
                 'style': 'width: 120px;'
             })
             form.base_fields['target_market_share'].help_text = 'Target percentage (e.g., 85.00 for 85%)'
+
+        if 'target_revenue' in form.base_fields:
+            form.base_fields['target_revenue'].widget.attrs.update({
+                'placeholder': '500000.00',
+                'style': 'width: 150px;'
+            })
+            form.base_fields['target_revenue'].help_text = 'Target revenue in base currency (e.g., 500000 for $500k)'
 
         # Auto-populate created_by on create
         if not obj and 'created_by' in form.base_fields:

@@ -1871,6 +1871,15 @@ class PreferredAirline(models.Model):
         help_text="Target market share percentage (e.g., 85.00 for 85%)"
     )
 
+    target_revenue = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal('0.00'))],
+        help_text="Target revenue amount in base currency (e.g., 500000.00 for $500,000)"
+    )
+
     # =============================================================================
     # CONTRACT PERIOD
     # =============================================================================
