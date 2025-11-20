@@ -1337,9 +1337,10 @@ class PreferredAirlineAdmin(admin.ModelAdmin):
     def target_revenue_display(self, obj):
         """Display target revenue with currency formatting"""
         if obj.target_revenue:
+            formatted_amount = f'{obj.target_revenue:,.0f}'
             return format_html(
-                '<span style="color: #28A745; font-weight: bold;">${:,.0f}</span>',
-                obj.target_revenue
+                '<span style="color: #28A745; font-weight: bold;">${}</span>',
+                formatted_amount
             )
         return format_html('<em style="color: #999;">Not set</em>')
 
