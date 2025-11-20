@@ -15,7 +15,7 @@
  * - travellers (array) → travellers (comma-separated string)
  * - countries (array) → countries (comma-separated string)
  * - destinationPreset → destination_preset
- * - organization, status, city, supplier → pass through as-is
+ * - organization, status, city, supplier, booking_type → pass through as-is
  *
  * @param {Object} filters - Filters object from UniversalFilters component
  * @returns {Object} Transformed filters for backend API
@@ -82,7 +82,7 @@ export function transformFiltersForBackend(filters) {
   }
 
   // Pass-through filters (no transformation needed)
-  const passThroughFilters = ['organization', 'status', 'city', 'supplier']
+  const passThroughFilters = ['organization', 'status', 'city', 'supplier', 'booking_type']
   passThroughFilters.forEach(key => {
     if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
       backendParams[key] = filters[key]
@@ -152,7 +152,7 @@ export function transformFiltersFromBackend(backendParams) {
   }
 
   // Pass-through filters
-  const passThroughFilters = ['organization', 'status', 'city', 'supplier']
+  const passThroughFilters = ['organization', 'status', 'city', 'supplier', 'booking_type']
   passThroughFilters.forEach(key => {
     if (backendParams[key] !== undefined && backendParams[key] !== null && backendParams[key] !== '') {
       frontendFilters[key] = backendParams[key]
@@ -214,6 +214,7 @@ export function countActiveFilters(filters) {
   if (filters.status) count++
   if (filters.city) count++
   if (filters.supplier) count++
+  if (filters.booking_type) count++
 
   return count
 }

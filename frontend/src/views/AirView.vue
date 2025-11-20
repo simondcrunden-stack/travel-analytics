@@ -95,6 +95,8 @@ const loadData = async (filters = {}) => {
       booking_type: 'AIR'
     }
 
+    console.log('✈️ [AirView] Final filters being sent to API:', airFilters)
+
     // bookingService handles filter transformation automatically
     const data = await bookingService.getBookings(airFilters)
     bookings.value = data.results || []
