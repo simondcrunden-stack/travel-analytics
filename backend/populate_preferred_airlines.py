@@ -134,6 +134,7 @@ for airline_data in preferred_airlines:
                 markets_served=airline_data['markets_served'],
                 routes_covered=airline_data['routes_covered'],
                 target_market_share=airline_data['target_market_share'],
+                target_revenue=airline_data.get('target_revenue'),
                 contract_start_date=contract_start,
                 contract_end_date=contract_end,
                 is_active=True,
