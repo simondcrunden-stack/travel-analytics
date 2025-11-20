@@ -1604,6 +1604,170 @@ class BookingViewSet(viewsets.ModelViewSet):
 
         return Response(rankings)
 
+    @action(detail=False, methods=['get'])
+    def airline_deals_analysis(self, request):
+        """
+        Analyze airline deals with market share calculations.
+        Groups by country (default) or route segments (when trip_type=DOMESTIC).
+        Returns base fare, bookings, segments, and % restricted economy.
+        """
+        user = request.user
+
+        # Build base queryset
+        if user.user_type == 'ADMIN':
+            base_queryset = Booking.objects.all()
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            base_queryset = Booking.objects.filter(
+                Q(organization=user.organization) |
+                Q(organization__travel_agent=user.organization)
+            )
+        else:
+            base_queryset = Booking.objects.filter(organization=user.organization)
+
+        # Apply filters from query params (similar to get_queryset logic)
+        organization_id = request.query_params.get('organization')
+        if organization_id:
+            base_queryset = base_queryset.filter(organization_id=organization_id)
+
+        traveller_id = request.query_params.get('traveller')
+        if traveller_id:
+            base_queryset = base_queryset.filter(traveller_id=traveller_id)
+
+        status = request.query_params.get('status')
+        if status:
+            base_queryset = base_queryset.filter(status=status)
+
+        # Get trip_type filter to determine grouping
+        trip_type = request.query_params.get('trip_type')  # DOMESTIC or INTERNATIONAL
+
+        # Only include bookings with air bookings
+        bookings = base_queryset.filter(
+            air_bookings__isnull=False
+        ).prefetch_related(
+            'air_bookings__segments'
+        ).distinct()
+
+        # Determine if we should group by segments (domestic) or countries (international/all)
+        group_by_segments = (trip_type == 'DOMESTIC')
+
+        # Data structure to store aggregated results
+        grouped_data = {}
+
+        # Totals for market share calculation
+        total_base_fare = 0
+        total_bookings = 0
+        total_segments = 0
+
+        # First pass: collect data
+        for booking in bookings:
+            for air in booking.air_bookings.all():
+                base_fare = float(air.base_fare or 0)
+                total_base_fare += base_fare
+                total_bookings += 1
+
+                # Get segments for this air booking
+                segments_list = list(air.segments.all())
+                num_segments = len(segments_list)
+                total_segments += num_segments
+
+                # Determine grouping key
+                if group_by_segments:
+                    # Group by route segment (domestic)
+                    for seg in segments_list:
+                        route_key = f"{seg.origin_airport_iata_code} → {seg.destination_airport_iata_code}"
+
+                        if route_key not in grouped_data:
+                            grouped_data[route_key] = {
+                                'route': route_key,
+                                'base_fare': 0,
+                                'bookings': 0,
+                                'segments': 0,
+                                'restricted_economy_count': 0,
+                                'total_with_class': 0
+                            }
+
+                        # Add base fare proportionally to each segment
+                        segment_base_fare = base_fare / num_segments if num_segments > 0 else 0
+                        grouped_data[route_key]['base_fare'] += segment_base_fare
+                        grouped_data[route_key]['bookings'] += 1
+                        grouped_data[route_key]['segments'] += 1
+
+                        # Check if restricted economy
+                        if air.travel_class == 'RESTRICTED_ECONOMY':
+                            grouped_data[route_key]['restricted_economy_count'] += 1
+                        if air.travel_class:
+                            grouped_data[route_key]['total_with_class'] += 1
+                else:
+                    # Group by country (international)
+                    # Use destination country from segments
+                    countries = set()
+                    for seg in segments_list:
+                        try:
+                            from apps.reference_data.models import Airport
+                            airport = Airport.objects.get(iata_code=seg.destination_airport_iata_code)
+                            if airport.country:
+                                countries.add(airport.country)
+                        except Airport.DoesNotExist:
+                            pass
+
+                    # If no countries found, use "Unknown"
+                    if not countries:
+                        countries = {'Unknown'}
+
+                    for country in countries:
+                        if country not in grouped_data:
+                            grouped_data[country] = {
+                                'country': country,
+                                'base_fare': 0,
+                                'bookings': 0,
+                                'segments': 0,
+                                'restricted_economy_count': 0,
+                                'total_with_class': 0
+                            }
+
+                        # Distribute base fare across countries
+                        country_base_fare = base_fare / len(countries)
+                        grouped_data[country]['base_fare'] += country_base_fare
+                        grouped_data[country]['bookings'] += 1
+                        grouped_data[country]['segments'] += num_segments
+
+                        # Check if restricted economy
+                        if air.travel_class == 'RESTRICTED_ECONOMY':
+                            grouped_data[country]['restricted_economy_count'] += 1
+                        if air.travel_class:
+                            grouped_data[country]['total_with_class'] += 1
+
+        # Second pass: calculate market shares and percentages
+        results = []
+        for key, data in grouped_data.items():
+            base_fare_share = (data['base_fare'] / total_base_fare * 100) if total_base_fare > 0 else 0
+            bookings_share = (data['bookings'] / total_bookings * 100) if total_bookings > 0 else 0
+            segments_share = (data['segments'] / total_segments * 100) if total_segments > 0 else 0
+            restricted_economy_pct = (data['restricted_economy_count'] / data['total_with_class'] * 100) if data['total_with_class'] > 0 else 0
+
+            result = {
+                'grouping': data.get('route') or data.get('country'),
+                'base_fare_amount': round(data['base_fare'], 2),
+                'base_fare_share': round(base_fare_share, 1),
+                'bookings': data['bookings'],
+                'bookings_share': round(bookings_share, 1),
+                'segments': data['segments'],
+                'segments_share': round(segments_share, 1),
+                'restricted_economy_pct': round(restricted_economy_pct, 1)
+            }
+            results.append(result)
+
+        # Sort by base fare amount (descending)
+        results.sort(key=lambda x: x['base_fare_amount'], reverse=True)
+
+        return Response({
+            'grouped_by': 'segments' if group_by_segments else 'countries',
+            'total_base_fare': round(total_base_fare, 2),
+            'total_bookings': total_bookings,
+            'total_segments': total_segments,
+            'results': results
+        })
+
 
 # ============================================================================
 # BUDGET VIEWSETS

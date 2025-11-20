@@ -174,6 +174,13 @@ export default {
     return response.data
   },
 
+  // Airline deals analysis with market share
+  async getAirlineDealsAnalysis(params = {}) {
+    const backendParams = transformFiltersForBackend(params)
+    const response = await api.get('/bookings/airline_deals_analysis/', { params: backendParams })
+    return response.data
+  },
+
   // Helper: Format currency
   formatCurrency(amount, currency = 'AUD') {
     return new Intl.NumberFormat('en-AU', {

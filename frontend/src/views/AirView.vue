@@ -20,6 +20,13 @@ const summary = ref({
 const currentFilters = ref({})
 const currentPage = ref(1)
 const itemsPerPage = ref(20)
+const dealsAnalysis = ref({
+  grouped_by: 'countries',
+  total_base_fare: 0,
+  total_bookings: 0,
+  total_segments: 0,
+  results: []
+})
 
 // Chart refs
 const airlineChartRef = ref(null)
@@ -82,6 +89,16 @@ const loadData = async (filters = {}) => {
     if (data.summary) {
       summary.value = data.summary
       console.log('📊 [AirView] Backend summary:', summary.value)
+    }
+
+    // Load airline deals analysis
+    try {
+      const analysis = await bookingService.getAirlineDealsAnalysis(filters)
+      dealsAnalysis.value = analysis
+      console.log('📊 [AirView] Deals analysis:', analysis)
+    } catch (analysisErr) {
+      console.error('⚠️ [AirView] Error loading deals analysis:', analysisErr)
+      // Non-critical, continue with the rest of the data
     }
 
     console.log('✅ [AirView] Loaded', bookings.value.length, 'bookings,', airBookings.value.length, 'with flights')
@@ -496,6 +513,94 @@ onMounted(async () => {
       </div>
       <div class="p-6" style="height: 400px;">
         <canvas ref="routeChartRef"></canvas>
+      </div>
+    </div>
+
+    <!-- Airline Deals Analysis Table -->
+    <div v-if="!loading && !error && dealsAnalysis.results.length > 0" class="bg-white rounded-xl shadow-sm overflow-hidden">
+      <div class="p-6 border-b border-gray-200">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-lg font-semibold text-gray-900">Airline Deals Analysis</h2>
+            <p class="text-sm text-gray-600 mt-1">
+              Grouped by {{ dealsAnalysis.grouped_by === 'segments' ? 'Route Segments' : 'Countries' }}
+              <span class="text-gray-400 mx-2">•</span>
+              {{ dealsAnalysis.results.length }} {{ dealsAnalysis.grouped_by === 'segments' ? 'routes' : 'countries' }}
+            </p>
+          </div>
+          <div class="text-right">
+            <div class="text-sm text-gray-600">Total Base Fare</div>
+            <div class="text-xl font-bold text-gray-900">{{ formatCurrency(dealsAnalysis.total_base_fare) }}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                {{ dealsAnalysis.grouped_by === 'segments' ? 'Route' : 'Country' }}
+              </th>
+              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Base Fare
+              </th>
+              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Market Share
+              </th>
+              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Bookings
+              </th>
+              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Booking %
+              </th>
+              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Segments
+              </th>
+              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Segment %
+              </th>
+              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                % Restricted Economy
+              </th>
+            </tr>
+          </thead>
+          <tbody class="bg-white divide-y divide-gray-200">
+            <tr v-for="row in dealsAnalysis.results" :key="row.grouping" class="hover:bg-gray-50">
+              <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                {{ row.grouping }}
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-right font-semibold text-gray-900">
+                {{ formatCurrency(row.base_fare_amount) }}
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">
+                <span class="text-xs text-gray-500">({{ row.base_fare_share }}%)</span>
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+                {{ row.bookings }}
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">
+                <span class="text-xs text-gray-500">({{ row.bookings_share }}%)</span>
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+                {{ row.segments }}
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">
+                <span class="text-xs text-gray-500">({{ row.segments_share }}%)</span>
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-right">
+                <span :class="row.restricted_economy_pct > 50 ? 'text-red-600 font-semibold' : 'text-gray-600'">
+                  {{ row.restricted_economy_pct }}%
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div v-if="dealsAnalysis.results.length === 0" class="text-center py-12">
+          <span class="mdi mdi-chart-bar text-gray-300 text-6xl"></span>
+          <p class="text-gray-500 mt-4">No data available for analysis</p>
+        </div>
       </div>
     </div>
 
