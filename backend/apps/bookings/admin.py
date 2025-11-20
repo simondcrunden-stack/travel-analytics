@@ -11,8 +11,9 @@ from django.core.serializers.json import DjangoJSONEncoder
 from django.http import HttpResponse
 from decimal import Decimal
 from .models import (
-    Traveller, Booking, AirBooking, AirSegment, 
-    AccommodationBooking, CarHireBooking, Invoice, ServiceFee, BookingTransaction, BookingAuditLog
+    Traveller, Booking, AirBooking, AirSegment,
+    AccommodationBooking, CarHireBooking, Invoice, ServiceFee, BookingTransaction, BookingAuditLog,
+    PreferredAirline
 )
 
 
@@ -1228,3 +1229,221 @@ class ServiceFeeAdmin(admin.ModelAdmin):
         if 'import_batch' in form.base_fields:
             form.base_fields['import_batch'].required = False
         return form
+
+
+# ============================================================================
+# PREFERRED AIRLINE ADMIN
+# ============================================================================
+
+@admin.register(PreferredAirline)
+class PreferredAirlineAdmin(admin.ModelAdmin):
+    """
+    Admin interface for managing preferred airline contracts.
+    Supports airline deals analysis and market share tracking.
+    """
+
+    list_display = [
+        'organization',
+        'airline_display',
+        'market_type',
+        'target_market_share',
+        'contract_period',
+        'status_badge',
+    ]
+
+    list_filter = [
+        'market_type',
+        'is_active',
+        'organization',
+        'airline_iata_code',
+        'contract_start_date',
+    ]
+
+    search_fields = [
+        'airline_name',
+        'airline_iata_code',
+        'organization__name',
+        'organization__code',
+        'notes',
+    ]
+
+    date_hierarchy = 'contract_start_date'
+
+    readonly_fields = [
+        'created_by',
+        'created_at',
+        'updated_at',
+        'routes_display',
+        'markets_display',
+    ]
+
+    fieldsets = (
+        ('Organization', {
+            'fields': ('organization',)
+        }),
+        ('Airline Details', {
+            'fields': ('airline_iata_code', 'airline_name')
+        }),
+        ('Market Scope', {
+            'fields': (
+                'market_type',
+                'markets_served',
+                'markets_display',
+                'routes_covered',
+                'routes_display',
+            ),
+            'description': 'Define which markets and routes this contract covers. '
+                          'For domestic: use ["ALL"] or specific routes like ["MEL-SYD", "MEL-BNE"]. '
+                          'For international: specify countries like ["UK", "USA", "SG"].'
+        }),
+        ('Contract Terms', {
+            'fields': (
+                'target_market_share',
+                'contract_start_date',
+                'contract_end_date',
+                'is_active',
+            )
+        }),
+        ('Additional Information', {
+            'fields': ('notes',),
+            'classes': ('collapse',),
+        }),
+        ('Audit Trail', {
+            'fields': (
+                'created_by',
+                'created_at',
+                'updated_at',
+            ),
+            'classes': ('collapse',),
+        }),
+    )
+
+    # =============================================================================
+    # CUSTOM DISPLAY METHODS
+    # =============================================================================
+
+    @admin.display(description='Airline', ordering='airline_name')
+    def airline_display(self, obj):
+        """Display airline name with IATA code"""
+        return format_html(
+            '<strong>{}</strong> <span style="color: #666;">({})</span>',
+            obj.airline_name,
+            obj.airline_iata_code
+        )
+
+    @admin.display(description='Contract Period')
+    def contract_period(self, obj):
+        """Display contract start and end dates"""
+        return format_html(
+            '{} → {}',
+            obj.contract_start_date.strftime('%Y-%m-%d'),
+            obj.contract_end_date.strftime('%Y-%m-%d')
+        )
+
+    @admin.display(description='Status')
+    def status_badge(self, obj):
+        """Display active status with color-coded badge"""
+        from django.utils import timezone
+        today = timezone.now().date()
+
+        if not obj.is_active:
+            color = '#DC3545'  # Red
+            status = 'Inactive'
+        elif obj.contract_end_date < today:
+            color = '#FFA500'  # Orange
+            status = 'Expired'
+        elif obj.contract_start_date > today:
+            color = '#17A2B8'  # Cyan
+            status = 'Future'
+        else:
+            color = '#28A745'  # Green
+            status = 'Active'
+
+        return format_html(
+            '<span style="background-color: {}; color: white; padding: 3px 10px; '
+            'border-radius: 3px; font-size: 11px; font-weight: bold;">{}</span>',
+            color,
+            status
+        )
+
+    @admin.display(description='Routes Covered')
+    def routes_display(self, obj):
+        """Display routes in a readable format"""
+        if not obj.routes_covered:
+            return format_html('<em style="color: #999;">None specified (covers all)</em>')
+
+        if 'ALL' in obj.routes_covered:
+            return format_html('<strong>ALL ROUTES</strong>')
+
+        routes_html = '<br>'.join(obj.routes_covered[:10])  # Show first 10
+        if len(obj.routes_covered) > 10:
+            routes_html += f'<br><em>... and {len(obj.routes_covered) - 10} more</em>'
+
+        return format_html(routes_html)
+
+    @admin.display(description='Markets Served')
+    def markets_display(self, obj):
+        """Display markets in a readable format"""
+        if not obj.markets_served:
+            return format_html('<em style="color: #999;">None specified (covers all)</em>')
+
+        if 'ALL' in obj.markets_served:
+            return format_html('<strong>ALL MARKETS</strong>')
+
+        markets_html = ', '.join(obj.markets_served)
+        return format_html(markets_html)
+
+    # =============================================================================
+    # ACTIONS
+    # =============================================================================
+
+    @admin.action(description='Mark as Active')
+    def mark_active(self, request, queryset):
+        updated = queryset.update(is_active=True)
+        self.message_user(request, f'{updated} preferred airline(s) marked as active.')
+
+    @admin.action(description='Mark as Inactive')
+    def mark_inactive(self, request, queryset):
+        updated = queryset.update(is_active=False)
+        self.message_user(request, f'{updated} preferred airline(s) marked as inactive.')
+
+    actions = [mark_active, mark_inactive]
+
+    # =============================================================================
+    # FORM CUSTOMIZATION
+    # =============================================================================
+
+    def get_form(self, request, obj=None, **kwargs):
+        """Customize form fields"""
+        form = super().get_form(request, obj, **kwargs)
+
+        # Set helpful placeholders
+        if 'airline_iata_code' in form.base_fields:
+            form.base_fields['airline_iata_code'].widget.attrs.update({
+                'placeholder': 'e.g., QF, VA, SQ',
+                'style': 'width: 100px; text-transform: uppercase;'
+            })
+
+        if 'airline_name' in form.base_fields:
+            form.base_fields['airline_name'].widget.attrs.update({
+                'placeholder': 'e.g., Qantas Airways, Virgin Australia'
+            })
+
+        if 'target_market_share' in form.base_fields:
+            form.base_fields['target_market_share'].widget.attrs.update({
+                'placeholder': '85.00',
+                'style': 'width: 120px;'
+            })
+            form.base_fields['target_market_share'].help_text = 'Target percentage (e.g., 85.00 for 85%)'
+
+        # Auto-populate created_by on create
+        if not obj and 'created_by' in form.base_fields:
+            form.base_fields['created_by'].initial = request.user
+
+        return form
+
+    def save_model(self, request, obj, form, change):
+        """Auto-set created_by on creation"""
+        if not change:  # Only on creation
+            obj.created_by = request.user
+        super().save_model(request, obj, form, change)

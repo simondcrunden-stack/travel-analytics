@@ -1780,3 +1780,215 @@ refunds = BookingTransaction.objects.filter(
     total_amount__lt=0  # Negative amounts
 )
 """
+
+
+# ============================================================================
+# PREFERRED AIRLINE SUPPLIER TRACKING
+# ============================================================================
+
+class PreferredAirline(models.Model):
+    """
+    Tracks preferred airline contracts and target market shares for customer organizations.
+
+    Used for:
+    - Airline deals analysis and compliance tracking
+    - Market share calculations (% of revenue on preferred airlines)
+    - Route-level performance monitoring
+    - Restricted economy fare tracking
+
+    Example:
+        Qantas - Domestic contract with 85% target market share
+        Singapore Airlines - International (UK, USA, SG routes) with 80% target
+    """
+
+    MARKET_TYPE_CHOICES = [
+        ('DOMESTIC', 'Domestic'),
+        ('INTERNATIONAL', 'International'),
+    ]
+
+    # =============================================================================
+    # IDENTIFICATION
+    # =============================================================================
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    organization = models.ForeignKey(
+        'organizations.Organization',
+        on_delete=models.CASCADE,
+        related_name='preferred_airlines',
+        help_text="Customer organization with this preferred airline contract"
+    )
+
+    # =============================================================================
+    # AIRLINE DETAILS
+    # =============================================================================
+    airline_iata_code = models.CharField(
+        max_length=3,
+        help_text="IATA airline code (e.g., QF for Qantas, SQ for Singapore Airlines)"
+    )
+
+    airline_name = models.CharField(
+        max_length=200,
+        help_text="Full airline name (e.g., Qantas Airways, Singapore Airlines)"
+    )
+
+    # =============================================================================
+    # MARKET SCOPE
+    # =============================================================================
+    market_type = models.CharField(
+        max_length=20,
+        choices=MARKET_TYPE_CHOICES,
+        db_index=True,
+        help_text="Whether this contract is for domestic or international travel"
+    )
+
+    # For international airlines: which countries/markets they service
+    # For domestic: typically null or ['ALL']
+    markets_served = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="List of country codes served (e.g., ['UK', 'USA', 'SG']). For domestic, use ['ALL'] or leave empty."
+    )
+
+    # Specific routes covered by this contract
+    # Examples: ['MEL-SYD', 'SYD-BNE', 'MEL-BNE'] or ['ALL'] for all domestic routes
+    routes_covered = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Specific routes covered (e.g., ['MEL-SYD', 'SYD-BNE']) or ['ALL'] for all routes"
+    )
+
+    # =============================================================================
+    # CONTRACT TARGETS
+    # =============================================================================
+    target_market_share = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('0.00'))],
+        help_text="Target market share percentage (e.g., 85.00 for 85%)"
+    )
+
+    # =============================================================================
+    # CONTRACT PERIOD
+    # =============================================================================
+    contract_start_date = models.DateField(
+        db_index=True,
+        help_text="Date this airline contract becomes effective"
+    )
+
+    contract_end_date = models.DateField(
+        db_index=True,
+        help_text="Date this airline contract expires"
+    )
+
+    is_active = models.BooleanField(
+        default=True,
+        db_index=True,
+        help_text="Whether this contract is currently active"
+    )
+
+    # =============================================================================
+    # ADDITIONAL DETAILS
+    # =============================================================================
+    notes = models.TextField(
+        blank=True,
+        help_text="Additional contract details, terms, or special conditions"
+    )
+
+    # =============================================================================
+    # AUDIT TRAIL
+    # =============================================================================
+    created_by = models.ForeignKey(
+        'users.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='preferred_airlines_created',
+        help_text="User who created this preferred airline record"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    # =============================================================================
+    # META
+    # =============================================================================
+    class Meta:
+        db_table = 'preferred_airlines'
+        ordering = ['organization', 'market_type', 'airline_name']
+        indexes = [
+            models.Index(fields=['organization', 'market_type']),
+            models.Index(fields=['organization', 'is_active']),
+            models.Index(fields=['airline_iata_code']),
+            models.Index(fields=['contract_start_date', 'contract_end_date']),
+        ]
+        unique_together = [
+            ['organization', 'airline_iata_code', 'market_type', 'contract_start_date']
+        ]
+        verbose_name = 'Preferred Airline'
+        verbose_name_plural = 'Preferred Airlines'
+
+    # =============================================================================
+    # METHODS
+    # =============================================================================
+    def __str__(self):
+        return f"{self.organization.code} - {self.airline_name} ({self.market_type})"
+
+    def is_contract_active(self, check_date=None):
+        """
+        Check if contract is active on a specific date
+
+        Args:
+            check_date: Date to check (defaults to today)
+
+        Returns:
+            bool: True if contract is active on the given date
+        """
+        from django.utils import timezone
+        if check_date is None:
+            check_date = timezone.now().date()
+
+        return (
+            self.is_active and
+            self.contract_start_date <= check_date <= self.contract_end_date
+        )
+
+    def covers_route(self, origin_code, destination_code):
+        """
+        Check if this preferred airline contract covers a specific route
+
+        Args:
+            origin_code: Origin airport IATA code (e.g., 'MEL')
+            destination_code: Destination airport IATA code (e.g., 'SYD')
+
+        Returns:
+            bool: True if route is covered by this contract
+        """
+        # If no specific routes defined or 'ALL', covers everything
+        if not self.routes_covered or 'ALL' in self.routes_covered:
+            return True
+
+        # Check both directions (MEL-SYD and SYD-MEL)
+        route_forward = f"{origin_code}-{destination_code}"
+        route_reverse = f"{destination_code}-{origin_code}"
+
+        return route_forward in self.routes_covered or route_reverse in self.routes_covered
+
+    def covers_market(self, country_code):
+        """
+        Check if this preferred airline contract covers a specific market/country
+
+        Args:
+            country_code: ISO country code (e.g., 'UK', 'USA', 'SG')
+
+        Returns:
+            bool: True if market is covered by this contract
+        """
+        # If no specific markets defined or 'ALL', covers everything
+        if not self.markets_served or 'ALL' in self.markets_served:
+            return True
+
+        return country_code in self.markets_served
