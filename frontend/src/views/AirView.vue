@@ -125,13 +125,14 @@ const loadPreferredAirlineData = async (filters = {}) => {
     return
   }
 
+  // Build params outside try block so it's accessible in catch
+  const params = {
+    organization: authStore.user.organization.id,
+    ...filters
+  }
+
   try {
     loadingPreferredAirlines.value = true
-
-    const params = {
-      organization: authStore.user.organization.id,
-      ...filters
-    }
 
     console.log('🔍 [AirView] Loading preferred airline data with params:', params)
 
