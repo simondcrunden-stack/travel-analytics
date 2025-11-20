@@ -171,7 +171,7 @@ const renderCharts = () => {
   if (classChart) classChart.destroy()
   if (routeChart) routeChart.destroy()
 
-  // Airline Distribution Chart - Calculate from AIR FARE ONLY
+  // Airline Distribution Chart - Calculate from total fare including transactions
   const airlineData = {}
   airBookings.value.forEach(booking => {
     (booking.air_bookings || []).forEach(air => {
@@ -179,8 +179,8 @@ const renderCharts = () => {
       if (!airlineData[airline]) {
         airlineData[airline] = 0
       }
-      // Use air.total_fare instead of booking.total_amount
-      const amount = parseFloat(air.total_fare || 0)
+      // Use total_with_transactions (includes exchanges, refunds, voids, etc.)
+      const amount = parseFloat(air.total_with_transactions || air.total_fare || 0)
       airlineData[airline] += amount
     })
   })
@@ -224,7 +224,7 @@ const renderCharts = () => {
     })
   }
 
-  // Travel Class Distribution Chart - Calculate from AIR FARE ONLY
+  // Travel Class Distribution Chart - Calculate from total fare including transactions
   const classData = {}
   airBookings.value.forEach(booking => {
     (booking.air_bookings || []).forEach(air => {
@@ -232,8 +232,8 @@ const renderCharts = () => {
       if (!classData[travelClass]) {
         classData[travelClass] = 0
       }
-      // Use air.total_fare instead of booking.total_amount
-      const amount = parseFloat(air.total_fare || 0)
+      // Use total_with_transactions (includes exchanges, refunds, voids, etc.)
+      const amount = parseFloat(air.total_with_transactions || air.total_fare || 0)
       classData[travelClass] += amount
     })
   })
@@ -287,7 +287,7 @@ const renderCharts = () => {
     })
   }
 
-  // Top Routes Chart - Calculate from AIR FARE ONLY, limit to 10
+  // Top Routes Chart - Calculate from total fare including transactions, limit to 10
   const routeData = {}
   airBookings.value.forEach(booking => {
     (booking.air_bookings || []).forEach(air => {
@@ -295,8 +295,8 @@ const renderCharts = () => {
       if (!routeData[route]) {
         routeData[route] = 0
       }
-      // Use air.total_fare instead of booking.total_amount
-      const amount = parseFloat(air.total_fare || 0)
+      // Use total_with_transactions (includes exchanges, refunds, voids, etc.)
+      const amount = parseFloat(air.total_with_transactions || air.total_fare || 0)
       routeData[route] += amount
     })
   })
@@ -389,11 +389,12 @@ const getRoute = (booking) => {
 }
 
 const getAirFare = (booking) => {
-  // Return total of all air fares for this booking
+  // Return total of all air fares including transactions for this booking
   if (!booking.air_bookings || booking.air_bookings.length === 0) return 0
 
   return booking.air_bookings.reduce((total, air) => {
-    return total + parseFloat(air.total_fare || 0)
+    // Use total_with_transactions (includes exchanges, refunds, voids, etc.)
+    return total + parseFloat(air.total_with_transactions || air.total_fare || 0)
   }, 0)
 }
 
