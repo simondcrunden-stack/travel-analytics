@@ -553,8 +553,8 @@ onMounted(async () => {
                   {{ complianceData.summary.compliance_rate.toFixed(1) }}%
                 </p>
               </div>
-              <div :class="complianceData.summary.compliance_rate >= 80 ? 'bg-green-100' : complianceData.summary.compliance_rate >= 60 ? 'bg-yellow-100' : 'bg-red-100'" class="p-3 rounded-full">
-                <span class="mdi mdi-check-circle" :class="complianceData.summary.compliance_rate >= 80 ? 'text-green-600' : complianceData.summary.compliance_rate >= 60 ? 'text-yellow-600' : 'text-red-600'" class="text-2xl"></span>
+              <div :class="['p-3', 'rounded-full', complianceData.summary.compliance_rate >= 80 ? 'bg-green-100' : complianceData.summary.compliance_rate >= 60 ? 'bg-yellow-100' : 'bg-red-100']">
+                <span :class="['mdi', 'mdi-check-circle', 'text-2xl', complianceData.summary.compliance_rate >= 80 ? 'text-green-600' : complianceData.summary.compliance_rate >= 60 ? 'text-yellow-600' : 'text-red-600']"></span>
               </div>
             </div>
             <div class="mt-4 text-xs text-gray-500">
