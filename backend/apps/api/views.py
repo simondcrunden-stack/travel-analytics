@@ -774,10 +774,68 @@ class BookingViewSet(viewsets.ModelViewSet):
 
         # Calculate summary statistics on the filtered queryset
         from decimal import Decimal
+        from django.contrib.contenttypes.models import ContentType
 
+        # Start with base booking amounts
         total_spend = queryset.aggregate(
             total=Sum('total_amount')
         )['total'] or Decimal('0')
+
+        # Add transaction amounts (exchanges, refunds, voids, reissues)
+        # Get all booking IDs from the filtered queryset
+        booking_ids = list(queryset.values_list('id', flat=True))
+
+        if booking_ids:
+            # Get content types for all booking-related models
+            booking_ct = ContentType.objects.get_for_model(Booking)
+            air_booking_ct = ContentType.objects.get_for_model(AirBooking)
+            accommodation_ct = ContentType.objects.get_for_model(AccommodationBooking)
+            car_hire_ct = ContentType.objects.get_for_model(CarHireBooking)
+
+            # Get all transactions for these bookings
+            # Include both booking-level and sub-booking level transactions
+            booking_transactions = BookingTransaction.objects.filter(
+                content_type=booking_ct,
+                object_id__in=booking_ids,
+                status__in=['CONFIRMED', 'PENDING']
+            ).aggregate(total=Sum('total_amount_base'))['total'] or Decimal('0')
+
+            # Get sub-booking transactions
+            # For air bookings
+            air_booking_ids = AirBooking.objects.filter(
+                booking_id__in=booking_ids
+            ).values_list('id', flat=True)
+
+            air_transactions = BookingTransaction.objects.filter(
+                content_type=air_booking_ct,
+                object_id__in=air_booking_ids,
+                status__in=['CONFIRMED', 'PENDING']
+            ).aggregate(total=Sum('total_amount_base'))['total'] or Decimal('0')
+
+            # For accommodation bookings
+            accommodation_ids = AccommodationBooking.objects.filter(
+                booking_id__in=booking_ids
+            ).values_list('id', flat=True)
+
+            accommodation_transactions = BookingTransaction.objects.filter(
+                content_type=accommodation_ct,
+                object_id__in=accommodation_ids,
+                status__in=['CONFIRMED', 'PENDING']
+            ).aggregate(total=Sum('total_amount_base'))['total'] or Decimal('0')
+
+            # For car hire bookings
+            car_hire_ids = CarHireBooking.objects.filter(
+                booking_id__in=booking_ids
+            ).values_list('id', flat=True)
+
+            car_hire_transactions = BookingTransaction.objects.filter(
+                content_type=car_hire_ct,
+                object_id__in=car_hire_ids,
+                status__in=['CONFIRMED', 'PENDING']
+            ).aggregate(total=Sum('total_amount_base'))['total'] or Decimal('0')
+
+            # Add all transactions to total spend
+            total_spend += booking_transactions + air_transactions + accommodation_transactions + car_hire_transactions
 
         # Calculate total emissions from air bookings
         # NOTE: We calculate from segments (same logic as serializer) because

@@ -89,11 +89,17 @@ const loadData = async (filters = {}) => {
 
     console.log('🌐 [AirView] Loading air travel data with filters:', filters)
 
+    // Add booking_type filter to only get air bookings
+    const airFilters = {
+      ...filters,
+      booking_type: 'AIR'
+    }
+
     // bookingService handles filter transformation automatically
-    const data = await bookingService.getBookings(filters)
+    const data = await bookingService.getBookings(airFilters)
     bookings.value = data.results || []
 
-    // Use backend summary statistics
+    // Use backend summary statistics (now includes transactions)
     if (data.summary) {
       summary.value = data.summary
       console.log('📊 [AirView] Backend summary:', summary.value)
@@ -476,7 +482,7 @@ onMounted(async () => {
         <div class="flex items-center justify-between">
           <div>
             <p class="text-sm font-medium text-gray-600">Total Flights</p>
-            <p class="text-3xl font-bold text-gray-900 mt-2">{{ summaryStats.total_bookings }}</p>
+            <p class="text-3xl font-bold text-gray-900 mt-2">{{ (summary.booking_count || 0).toLocaleString() }}</p>
           </div>
           <div class="bg-blue-100 p-3 rounded-full">
             <span class="mdi mdi-airplane text-blue-600 text-2xl"></span>
@@ -484,12 +490,13 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- Total Spend -->
+      <!-- Total Spend (includes transactions) -->
       <div class="bg-white rounded-xl shadow-sm p-6">
         <div class="flex items-center justify-between">
           <div>
             <p class="text-sm font-medium text-gray-600">Total Spend</p>
-            <p class="text-3xl font-bold text-gray-900 mt-2">{{ formatCurrency(summaryStats.total_spend) }}</p>
+            <p class="text-3xl font-bold text-gray-900 mt-2">{{ formatCurrency(summary.total_spend) }}</p>
+            <p class="text-xs text-gray-500 mt-1">incl. exchanges & refunds</p>
           </div>
           <div class="bg-green-100 p-3 rounded-full">
             <span class="mdi mdi-currency-usd text-green-600 text-2xl"></span>
@@ -497,12 +504,12 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- Average Spend -->
+      <!-- Average Spend (includes transactions) -->
       <div class="bg-white rounded-xl shadow-sm p-6">
         <div class="flex items-center justify-between">
           <div>
             <p class="text-sm font-medium text-gray-600">Average Spend</p>
-            <p class="text-3xl font-bold text-gray-900 mt-2">{{ formatCurrency(summaryStats.avg_spend) }}</p>
+            <p class="text-3xl font-bold text-gray-900 mt-2">{{ formatCurrency(summary.booking_count > 0 ? summary.total_spend / summary.booking_count : 0) }}</p>
           </div>
           <div class="bg-purple-100 p-3 rounded-full">
             <span class="mdi mdi-chart-line text-purple-600 text-2xl"></span>
@@ -515,7 +522,7 @@ onMounted(async () => {
         <div class="flex items-center justify-between">
           <div>
             <p class="text-sm font-medium text-gray-600">Carbon Emissions</p>
-            <p class="text-3xl font-bold text-gray-900 mt-2">{{ summaryStats.total_carbon_kg.toFixed(0) }}</p>
+            <p class="text-3xl font-bold text-gray-900 mt-2">{{ Math.round(summary.total_emissions || 0).toLocaleString() }}</p>
             <p class="text-xs text-gray-500 mt-1">kg CO₂</p>
           </div>
           <div class="bg-orange-100 p-3 rounded-full">
