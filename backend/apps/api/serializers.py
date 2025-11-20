@@ -282,6 +282,7 @@ class AirBookingSerializer(serializers.ModelSerializer):
     destination_city = serializers.SerializerMethodField()
     destination_country = serializers.SerializerMethodField()
     fare_class_display = serializers.SerializerMethodField()
+    total_with_transactions = serializers.SerializerMethodField()
 
     class Meta:
         model = AirBooking
@@ -291,7 +292,8 @@ class AirBookingSerializer(serializers.ModelSerializer):
             'origin_airport_iata_code', 'destination_airport_iata_code',
             'origin_city', 'origin_country', 'destination_city', 'destination_country',
             'lowest_fare_available', 'lowest_fare_currency', 'potential_savings',
-            'segments', 'total_carbon_kg', 'base_fare', 'taxes', 'fees', 'gst_amount', 'total_fare', 'currency'
+            'segments', 'total_carbon_kg', 'base_fare', 'taxes', 'fees', 'gst_amount',
+            'total_fare', 'total_with_transactions', 'currency'
         ]
 
     def get_total_carbon_kg(self, obj):
@@ -365,8 +367,36 @@ class AirBookingSerializer(serializers.ModelSerializer):
         if fare_type:
             return fare_type
 
-        # Otherwise fall back to travel_class display
+        # Fall back to travel_class display
         return obj.get_travel_class_display()
+
+    def get_total_with_transactions(self, obj):
+        """
+        Calculate total fare including all transactions (exchanges, refunds, voids, etc.)
+        Returns total_fare + sum of all related transaction amounts
+        """
+        from django.contrib.contenttypes.models import ContentType
+        from apps.bookings.models import BookingTransaction
+        from decimal import Decimal
+
+        # Start with base total_fare
+        total = Decimal(str(obj.total_fare or 0))
+
+        # Add transactions for this air booking
+        air_content_type = ContentType.objects.get_for_model(obj.__class__)
+        transactions = BookingTransaction.objects.filter(
+            content_type=air_content_type,
+            object_id=obj.id,
+            status__in=['CONFIRMED', 'PENDING']
+        )
+
+        transaction_total = sum(
+            Decimal(str(t.total_amount_base or t.total_amount or 0))
+            for t in transactions
+        )
+
+        total += transaction_total
+        return float(total)
 
 
 class AccommodationBookingSerializer(serializers.ModelSerializer):
