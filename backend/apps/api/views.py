@@ -474,6 +474,7 @@ class BookingViewSet(viewsets.ModelViewSet):
         travel_consultant = self.request.query_params.get('travel_consultant', '')
         travel_consultants = self.request.query_params.get('travel_consultants', '')
         supplier = self.request.query_params.get('supplier', '')
+        booking_type = self.request.query_params.get('booking_type', '')
         
         # ========================================================================
         # TRAVELLERS FILTER (Multi-select)
@@ -482,7 +483,18 @@ class BookingViewSet(viewsets.ModelViewSet):
             traveller_ids = [t.strip() for t in travellers.split(',') if t.strip()]
             if traveller_ids:
                 queryset = queryset.filter(traveller_id__in=traveller_ids)
-        
+
+        # ========================================================================
+        # BOOKING TYPE FILTER
+        # ========================================================================
+        if booking_type:
+            if booking_type == 'AIR':
+                queryset = queryset.filter(air_bookings__isnull=False).distinct()
+            elif booking_type == 'HOTEL':
+                queryset = queryset.filter(accommodation_bookings__isnull=False).distinct()
+            elif booking_type == 'CAR':
+                queryset = queryset.filter(car_hire_bookings__isnull=False).distinct()
+
         # ========================================================================
         # COUNTRIES FILTER (Multi-select) - SMART LOGIC
         # ========================================================================
