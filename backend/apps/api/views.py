@@ -1439,9 +1439,16 @@ class BookingViewSet(viewsets.ModelViewSet):
 
         # Process each booking
         for booking in bookings:
+            # Track booking-level domestic/international status
+            # A booking is international if ANY component is international
+            # Only if ALL components are domestic is the booking domestic
+            booking_is_domestic = True  # Default to domestic unless we find international components
+            has_travel_components = False  # Track if booking has any travel components
+
             # AIR BOOKINGS
             if booking.air_bookings.exists():
                 for air in booking.air_bookings.all():
+                    has_travel_components = True
                     # Calculate air spend (total fare including taxes/GST for dashboard)
                     air_amount = float(air.total_fare or 0)
 
@@ -1498,6 +1505,7 @@ class BookingViewSet(viewsets.ModelViewSet):
                         summary['air_spend_domestic'] += air_amount
                     else:
                         summary['air_spend_international'] += air_amount
+                        booking_is_domestic = False  # Mark booking as international
 
                     # Add carbon emissions
                     summary['total_carbon_kg'] += float(air.total_carbon_kg or 0)
@@ -1505,6 +1513,7 @@ class BookingViewSet(viewsets.ModelViewSet):
             # ACCOMMODATION BOOKINGS
             if booking.accommodation_bookings.exists():
                 for accom in booking.accommodation_bookings.all():
+                    has_travel_components = True
                     # total_amount_base is already the total (nightly_rate * nights), don't multiply again
                     accom_amount = float(accom.total_amount_base or 0)
                     # Fallback: calculate from nightly rate if total_amount_base is not set
@@ -1541,10 +1550,12 @@ class BookingViewSet(viewsets.ModelViewSet):
                         summary['accommodation_spend_domestic'] += accom_amount
                     else:
                         summary['accommodation_spend_international'] += accom_amount
+                        booking_is_domestic = False  # Mark booking as international
 
             # CAR HIRE BOOKINGS
             if booking.car_hire_bookings.exists():
                 for car in booking.car_hire_bookings.all():
+                    has_travel_components = True
                     car_amount = float(car.total_amount_base or car.total_cost or 0)
 
                     # Add any modifications, cancellations, or other transactions for this car hire
@@ -1575,8 +1586,9 @@ class BookingViewSet(viewsets.ModelViewSet):
                         summary['car_hire_spend_domestic'] += car_amount
                     else:
                         summary['car_hire_spend_international'] += car_amount
+                        booking_is_domestic = False  # Mark booking as international
 
-            # SERVICE FEES
+            # SERVICE FEES - Classified based on booking-level domestic/international status
             if booking.service_fees.exists():
                 for fee in booking.service_fees.all():
                     fee_amount = float(fee.fee_amount or 0)
@@ -1596,7 +1608,14 @@ class BookingViewSet(viewsets.ModelViewSet):
                     summary['service_fees_spend'] += fee_amount
                     summary['service_fees_count'] += 1
 
-            # OTHER PRODUCTS (Insurance, Cruise, etc.)
+                    # Apply booking-level classification
+                    if has_travel_components:
+                        if booking_is_domestic:
+                            summary['total_spend_domestic'] += fee_amount
+                        else:
+                            summary['total_spend_international'] += fee_amount
+
+            # OTHER PRODUCTS (Insurance, Cruise, etc.) - Classified based on booking-level domestic/international status
             if booking.other_products.exists():
                 from apps.bookings.models import OtherProduct
                 for other in booking.other_products.all():
@@ -1617,10 +1636,21 @@ class BookingViewSet(viewsets.ModelViewSet):
                     summary['other_products_spend'] += other_amount
                     summary['other_products_count'] += 1
 
+                    # Apply booking-level classification
+                    if has_travel_components:
+                        if booking_is_domestic:
+                            summary['total_spend_domestic'] += other_amount
+                        else:
+                            summary['total_spend_international'] += other_amount
+
         # Calculate total spend
         summary['total_spend'] = summary['air_spend'] + summary['accommodation_spend'] + summary['car_hire_spend'] + summary['service_fees_spend'] + summary['other_products_spend']
-        summary['total_spend_domestic'] = summary['air_spend_domestic'] + summary['accommodation_spend_domestic'] + summary['car_hire_spend_domestic']
-        summary['total_spend_international'] = summary['air_spend_international'] + summary['accommodation_spend_international'] + summary['car_hire_spend_international']
+
+        # Calculate domestic/international totals
+        # Note: total_spend_domestic and total_spend_international already include service fees and other products (added incrementally above)
+        # Now add the travel components (air, accommodation, car hire)
+        summary['total_spend_domestic'] += summary['air_spend_domestic'] + summary['accommodation_spend_domestic'] + summary['car_hire_spend_domestic']
+        summary['total_spend_international'] += summary['air_spend_international'] + summary['accommodation_spend_international'] + summary['car_hire_spend_international']
 
         # Get compliance data
         violations = ComplianceViolation.objects.filter(booking__in=bookings)
