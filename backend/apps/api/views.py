@@ -1117,25 +1117,104 @@ class BookingViewSet(viewsets.ModelViewSet):
         # Get all air bookings with destination airports
         air_bookings = AirBooking.objects.filter(
             booking__in=base_queryset
-        ).select_related('booking', 'booking__traveller').values(
-            'destination_airport_iata_code',
-            'booking__traveller__id',
-            'booking__total_amount',
-            'booking__id'
-        )
+        ).select_related('booking', 'booking__traveller')
 
         # Aggregate by destination
         destination_data = defaultdict(lambda: {
             'trips': 0,
             'travellers': set(),
-            'total_spend': 0
+            'total_spend': 0,
+            'bookings': set()  # Track unique bookings per destination
         })
 
         for ab in air_bookings:
-            dest = ab['destination_airport_iata_code']
+            dest = ab.destination_airport_iata_code
             destination_data[dest]['trips'] += 1
-            destination_data[dest]['travellers'].add(ab['booking__traveller__id'])
-            destination_data[dest]['total_spend'] += float(ab['booking__total_amount'] or 0)
+            destination_data[dest]['travellers'].add(ab.booking.traveller.id if ab.booking.traveller else None)
+            destination_data[dest]['bookings'].add(ab.booking.id)
+
+        # Calculate complete spend for each booking (including transactions, service fees, other products)
+        booking_totals = {}
+        for booking_id_list in [data['bookings'] for data in destination_data.values()]:
+            for booking_id in booking_id_list:
+                if booking_id not in booking_totals:
+                    # Calculate total for this booking
+                    booking = Booking.objects.prefetch_related(
+                        'air_bookings',
+                        'accommodation_bookings',
+                        'car_hire_bookings',
+                        'service_fees',
+                        'other_products'
+                    ).get(id=booking_id)
+
+                    total = 0
+
+                    # Air bookings with transactions
+                    for air in booking.air_bookings.all():
+                        air_amount = float(air.total_fare or 0)
+                        air_content_type = ContentType.objects.get_for_model(AirBooking)
+                        air_transactions = BookingTransaction.objects.filter(
+                            content_type=air_content_type,
+                            object_id=air.id,
+                            status__in=['CONFIRMED', 'PENDING']
+                        )
+                        air_amount += sum(float(t.total_amount_base or t.total_amount or 0) for t in air_transactions)
+                        total += air_amount
+
+                    # Accommodation bookings with transactions
+                    for accom in booking.accommodation_bookings.all():
+                        accom_amount = float(accom.total_amount_base or 0)
+                        accom_content_type = ContentType.objects.get_for_model(AccommodationBooking)
+                        accom_transactions = BookingTransaction.objects.filter(
+                            content_type=accom_content_type,
+                            object_id=accom.id,
+                            status__in=['CONFIRMED', 'PENDING']
+                        )
+                        accom_amount += sum(float(t.total_amount_base or t.total_amount or 0) for t in accom_transactions)
+                        total += accom_amount
+
+                    # Car hire bookings with transactions
+                    for car in booking.car_hire_bookings.all():
+                        car_amount = float(car.total_amount_base or 0)
+                        car_content_type = ContentType.objects.get_for_model(CarHireBooking)
+                        car_transactions = BookingTransaction.objects.filter(
+                            content_type=car_content_type,
+                            object_id=car.id,
+                            status__in=['CONFIRMED', 'PENDING']
+                        )
+                        car_amount += sum(float(t.total_amount_base or t.total_amount or 0) for t in car_transactions)
+                        total += car_amount
+
+                    # Service fees with transactions
+                    for fee in booking.service_fees.all():
+                        fee_amount = float(fee.fee_amount or 0)
+                        fee_content_type = ContentType.objects.get_for_model(ServiceFee)
+                        fee_transactions = BookingTransaction.objects.filter(
+                            content_type=fee_content_type,
+                            object_id=fee.id,
+                            status__in=['CONFIRMED', 'PENDING']
+                        )
+                        fee_amount += sum(float(t.total_amount_base or t.total_amount or 0) for t in fee_transactions)
+                        total += fee_amount
+
+                    # Other products with transactions
+                    for other in booking.other_products.all():
+                        other_amount = float(other.amount_base or other.amount or 0)
+                        other_content_type = ContentType.objects.get_for_model(OtherProduct)
+                        other_transactions = BookingTransaction.objects.filter(
+                            content_type=other_content_type,
+                            object_id=other.id,
+                            status__in=['CONFIRMED', 'PENDING']
+                        )
+                        other_amount += sum(float(t.total_amount_base or t.total_amount or 0) for t in other_transactions)
+                        total += other_amount
+
+                    booking_totals[booking_id] = total
+
+        # Add booking totals to destination data
+        for ab in air_bookings:
+            dest = ab.destination_airport_iata_code
+            destination_data[dest]['total_spend'] += booking_totals.get(ab.booking.id, 0)
 
         # Get airport coordinates for each destination
         result = []
