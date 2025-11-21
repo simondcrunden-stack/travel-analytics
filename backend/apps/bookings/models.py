@@ -217,27 +217,34 @@ class Booking(models.Model):
         Returns: Decimal total amount
         """
         total = Decimal('0.00')
-        
+
         # Sum all air bookings
         for air in self.air_bookings.all():
             if air.total_fare:
                 total += air.total_fare
-        
+
         # Sum all accommodation bookings
         for hotel in self.accommodation_bookings.all():
             if hotel.total_amount_base:
                 total += hotel.total_amount_base
-        
+
         # Sum all car hire bookings
         for car in self.car_hire_bookings.all():
             if car.total_amount_base:
                 total += car.total_amount_base
-        
+
         # Sum all service fees
         for fee in self.service_fees.all():
             if fee.fee_amount:
                 total += fee.fee_amount
-        
+
+        # Sum all other products
+        for other in self.other_products.all():
+            if other.amount_base:
+                total += other.amount_base
+            elif other.amount:
+                total += other.amount
+
         return total
 
 
@@ -1037,6 +1044,236 @@ class ServiceFee(models.Model):
     
     def __str__(self):
         return f"{self.get_fee_type_display()} - {self.organization.code} - ${self.fee_amount}"
+
+# ============================================================================
+# PRODUCT TYPE MAPPING - For handling import variations
+# ============================================================================
+
+class ProductTypeMapping(models.Model):
+    """
+    Maps various source system product type names to canonical types.
+
+    Handles naming variations during imports:
+    - Air/Airfare/Flight → AirBooking
+    - Accommodation/Hotel → AccommodationBooking
+    - Insurance/Cruise/etc → OtherProduct
+
+    This prevents import failures when encountering new or variant product type names.
+    """
+
+    # Canonical product types
+    CANONICAL_TYPES = [
+        ('BOOKING_AIR', 'Air Booking'),
+        ('BOOKING_ACCOMMODATION', 'Accommodation Booking'),
+        ('BOOKING_CAR_HIRE', 'Car Hire Booking'),
+        ('BOOKING_SERVICE_FEE', 'Service Fee'),
+        ('PRODUCT_MERCHANT_FEE', 'Merchant Fee'),
+        ('PRODUCT_CRUISE', 'Cruise'),
+        ('PRODUCT_PACKAGE', 'Package/Tour'),
+        ('PRODUCT_INSURANCE', 'Insurance'),
+        ('PRODUCT_VISA', 'Visa'),
+        ('PRODUCT_TRANSFER', 'Transfer'),
+        ('PRODUCT_BUS', 'Bus/Coach'),
+        ('PRODUCT_TRAIN', 'Train/Rail'),
+        ('PRODUCT_OTHER', 'Other/Miscellaneous'),
+    ]
+
+    # Target model classes
+    TARGET_MODELS = [
+        ('AirBooking', 'Air Booking Model'),
+        ('AccommodationBooking', 'Accommodation Booking Model'),
+        ('CarHireBooking', 'Car Hire Booking Model'),
+        ('ServiceFee', 'Service Fee Model'),
+        ('OtherProduct', 'Other Product Model'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # Mapping fields
+    source_name = models.CharField(
+        max_length=100,
+        unique=True,
+        help_text="Product type name as it appears in source data (e.g., 'Airfare', 'Hotel')"
+    )
+    canonical_type = models.CharField(
+        max_length=50,
+        choices=CANONICAL_TYPES,
+        help_text="Standardized product type classification"
+    )
+    target_model = models.CharField(
+        max_length=50,
+        choices=TARGET_MODELS,
+        help_text="Django model to create when this product type is imported"
+    )
+
+    # For OtherProduct, specify the product_type to use
+    product_type = models.CharField(
+        max_length=50,
+        blank=True,
+        help_text="For OtherProduct target: specific product_type value to set"
+    )
+    product_subtype = models.CharField(
+        max_length=50,
+        blank=True,
+        help_text="Optional subtype classification"
+    )
+
+    # Configuration
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Inactive mappings are ignored during import"
+    )
+    auto_created = models.BooleanField(
+        default=False,
+        help_text="True if this mapping was auto-created during import"
+    )
+
+    # Metadata
+    notes = models.TextField(blank=True, help_text="Admin notes about this mapping")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'product_type_mappings'
+        verbose_name = 'Product Type Mapping'
+        verbose_name_plural = 'Product Type Mappings'
+        ordering = ['canonical_type', 'source_name']
+        indexes = [
+            models.Index(fields=['source_name', 'is_active']),
+            models.Index(fields=['canonical_type']),
+            models.Index(fields=['target_model']),
+        ]
+
+    def __str__(self):
+        return f"{self.source_name} → {self.target_model} ({self.get_canonical_type_display()})"
+
+
+# ============================================================================
+# OTHER PRODUCT MODEL - Flexible catch-all for non-standard products
+# ============================================================================
+
+class OtherProduct(models.Model):
+    """
+    Flexible model for product types that don't have dedicated models.
+
+    Used for:
+    - Products discovered during import (Cruise, Insurance, etc.)
+    - Products that will be migrated to specific models later
+    - One-off or rare product types
+
+    Uses JSON field for flexible attribute storage.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # Relationships
+    booking = models.ForeignKey(
+        Booking,
+        on_delete=models.CASCADE,
+        related_name='other_products',
+        help_text="Parent booking this product belongs to"
+    )
+
+    # Product classification
+    product_type = models.CharField(
+        max_length=50,
+        help_text="Type of product (e.g., INSURANCE, CRUISE, VISA)"
+    )
+    product_subtype = models.CharField(
+        max_length=50,
+        blank=True,
+        help_text="Optional subtype (e.g., TRAVEL_INSURANCE, OCEAN_CRUISE)"
+    )
+
+    # Core details
+    supplier_name = models.CharField(max_length=200, blank=True)
+    reference_number = models.CharField(max_length=100, blank=True)
+    description = models.TextField(blank=True)
+
+    # Financial
+    amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        help_text="Total amount in original currency"
+    )
+    currency = models.CharField(max_length=3, default='AUD')
+    amount_base = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Amount converted to base currency"
+    )
+
+    # Dates
+    purchase_date = models.DateField(null=True, blank=True)
+    start_date = models.DateField(null=True, blank=True)
+    end_date = models.DateField(null=True, blank=True)
+
+    # Flexible details storage
+    details = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Flexible storage for product-specific attributes"
+    )
+
+    # Import tracking
+    import_batch = models.ForeignKey(
+        'imports.ImportBatch',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='other_products'
+    )
+
+    # Metadata
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'other_products'
+        verbose_name = 'Other Product'
+        verbose_name_plural = 'Other Products'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['booking', 'product_type']),
+            models.Index(fields=['product_type', 'purchase_date']),
+            models.Index(fields=['supplier_name']),
+        ]
+
+    def __str__(self):
+        return f"{self.product_type} - {self.supplier_name or 'Unknown'} - ${self.amount}"
+
+    def convert_to_base_currency(self):
+        """Convert amount to base currency using exchange rates"""
+        if self.currency == 'AUD':
+            self.amount_base = self.amount
+            return
+
+        try:
+            from apps.reference_data.models import CurrencyExchangeRate
+            from decimal import Decimal
+
+            # Get exchange rate
+            rate = CurrencyExchangeRate.get_rate(
+                from_currency=self.currency,
+                to_currency='AUD',
+                date=self.purchase_date or timezone.now().date()
+            )
+
+            if rate:
+                self.amount_base = round(Decimal(str(self.amount)) * Decimal(str(rate)), 2)
+            else:
+                self.amount_base = None
+        except Exception:
+            self.amount_base = None
+
+    def save(self, *args, **kwargs):
+        """Auto-convert currency on save"""
+        if not self.amount_base or self.amount_base == 0:
+            self.convert_to_base_currency()
+
+        super().save(*args, **kwargs)
 
 # ============================================================================
 # BOOKING TRANSACTION MODEL

@@ -13,7 +13,7 @@ from decimal import Decimal
 from .models import (
     Traveller, Booking, AirBooking, AirSegment,
     AccommodationBooking, CarHireBooking, Invoice, ServiceFee, BookingTransaction, BookingAuditLog,
-    PreferredAirline
+    PreferredAirline, ProductTypeMapping, OtherProduct
 )
 
 
@@ -1467,3 +1467,101 @@ class PreferredAirlineAdmin(admin.ModelAdmin):
         if not change:  # Only on creation
             obj.created_by = request.user
         super().save_model(request, obj, form, change)
+
+# ============================================================================
+# PRODUCT TYPE MAPPING ADMIN
+# ============================================================================
+
+@admin.register(ProductTypeMapping)
+class ProductTypeMappingAdmin(admin.ModelAdmin):
+    list_display = ['source_name', 'canonical_type', 'target_model', 'product_type', 'is_active', 'auto_created']
+    list_filter = ['canonical_type', 'target_model', 'is_active', 'auto_created']
+    search_fields = ['source_name', 'product_type', 'notes']
+    ordering = ['canonical_type', 'source_name']
+    
+    fieldsets = [
+        ('Mapping Configuration', {
+            'fields': ['source_name', 'canonical_type', 'target_model']
+        }),
+        ('OtherProduct Settings', {
+            'fields': ['product_type', 'product_subtype'],
+            'description': 'Used when target_model is OtherProduct'
+        }),
+        ('Status', {
+            'fields': ['is_active', 'auto_created']
+        }),
+        ('Notes', {
+            'fields': ['notes'],
+            'classes': ['collapse']
+        }),
+    ]
+    
+    readonly_fields = ['created_at', 'updated_at', 'auto_created']
+    
+    def get_readonly_fields(self, request, obj=None):
+        """Make auto_created mappings editable but flagged"""
+        if obj and obj.auto_created:
+            return ['auto_created', 'created_at', 'updated_at']
+        return ['created_at', 'updated_at']
+
+
+# ============================================================================
+# OTHER PRODUCT ADMIN
+# ============================================================================
+
+@admin.register(OtherProduct)
+class OtherProductAdmin(admin.ModelAdmin):
+    list_display = ['booking_ref', 'product_type', 'supplier_name', 'amount_display', 'purchase_date', 'created_at']
+    list_filter = ['product_type', 'product_subtype', 'currency', 'purchase_date']
+    search_fields = ['booking__agent_booking_reference', 'supplier_name', 'reference_number', 'description']
+    ordering = ['-created_at']
+    date_hierarchy = 'purchase_date'
+    
+    fieldsets = [
+        ('Booking Information', {
+            'fields': ['booking']
+        }),
+        ('Product Classification', {
+            'fields': ['product_type', 'product_subtype']
+        }),
+        ('Supplier Details', {
+            'fields': ['supplier_name', 'reference_number', 'description']
+        }),
+        ('Financial Information', {
+            'fields': ['amount', 'currency', 'amount_base']
+        }),
+        ('Dates', {
+            'fields': ['purchase_date', 'start_date', 'end_date']
+        }),
+        ('Additional Details', {
+            'fields': ['details'],
+            'classes': ['collapse']
+        }),
+        ('Import Tracking', {
+            'fields': ['import_batch'],
+            'classes': ['collapse']
+        }),
+    ]
+    
+    readonly_fields = ['amount_base', 'created_at', 'updated_at']
+    
+    @admin.display(description='Booking Ref')
+    def booking_ref(self, obj):
+        """Display booking reference with link"""
+        if obj.booking:
+            url = reverse('admin:bookings_booking_change', args=[obj.booking.id])
+            return format_html('<a href="{}">{}</a>', url, obj.booking.agent_booking_reference)
+        return '-'
+    
+    @admin.display(description='Amount')
+    def amount_display(self, obj):
+        """Display amount with currency"""
+        amount_str = f'{obj.amount:,.2f}'
+        if obj.amount_base and obj.currency != 'AUD':
+            return format_html(
+                '{} {} <span style="color: #666;">(${:,.2f} AUD)</span>',
+                obj.currency,
+                amount_str,
+                obj.amount_base
+            )
+        return format_html('{} {}', obj.currency, amount_str)
