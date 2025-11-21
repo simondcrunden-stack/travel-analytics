@@ -793,29 +793,55 @@ const renderCharts = () => {
   if (categoryChartInstance) {
     categoryChartInstance.destroy()
   }
-  
+
   if (categoryChart.value) {
     const ctx = categoryChart.value.getContext('2d')
-    
-    const categoryData = [
-      summary.value.air_spend,
-      summary.value.accommodation_spend,
-      summary.value.car_hire_spend
-    ]
-    
+
+    // Build category data including service fees and other products
+    const categories = []
+    const categoryData = []
+    const categoryColors = []
+
+    if (summary.value.air_spend > 0) {
+      categories.push('Air Travel')
+      categoryData.push(summary.value.air_spend)
+      categoryColors.push('#0ea5e9') // sky-500
+    }
+
+    if (summary.value.accommodation_spend > 0) {
+      categories.push('Accommodation')
+      categoryData.push(summary.value.accommodation_spend)
+      categoryColors.push('#f59e0b') // amber-500
+    }
+
+    if (summary.value.car_hire_spend > 0) {
+      categories.push('Car Hire')
+      categoryData.push(summary.value.car_hire_spend)
+      categoryColors.push('#10b981') // emerald-500
+    }
+
+    if (summary.value.service_fees_spend > 0) {
+      categories.push('Service Fees')
+      categoryData.push(summary.value.service_fees_spend)
+      categoryColors.push('#8b5cf6') // violet-500
+    }
+
+    if (summary.value.other_products_spend > 0) {
+      categories.push('Other Products')
+      categoryData.push(summary.value.other_products_spend)
+      categoryColors.push('#ec4899') // pink-500
+    }
+
     console.log('Category chart data:', categoryData)
-    
+    console.log('Category chart labels:', categories)
+
     categoryChartInstance = new Chart(ctx, {
       type: 'doughnut',
       data: {
-        labels: ['Air Travel', 'Accommodation', 'Car Hire'],
+        labels: categories,
         datasets: [{
           data: categoryData,
-          backgroundColor: [
-            '#0ea5e9', // sky-500
-            '#f59e0b', // amber-500
-            '#10b981'  // emerald-500
-          ]
+          backgroundColor: categoryColors
         }]
       },
       options: {

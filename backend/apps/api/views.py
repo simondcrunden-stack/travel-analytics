@@ -13,7 +13,7 @@ from apps.users.models import User
 from apps.bookings.models import (
     Traveller, Booking, AirBooking, AirSegment,
     AccommodationBooking, CarHireBooking, Invoice, ServiceFee, BookingTransaction,
-    PreferredAirline
+    PreferredAirline, OtherProduct
 )
 from apps.budgets.models import FiscalYear, Budget, BudgetAlert
 from apps.compliance.models import ComplianceViolation, TravelRiskAlert
@@ -1599,6 +1599,8 @@ class BookingViewSet(viewsets.ModelViewSet):
             'air_bookings__segments',
             'accommodation_bookings',
             'car_hire_bookings',
+            'service_fees',
+            'other_products',
             'violations'
         )
 
@@ -1709,6 +1711,38 @@ class BookingViewSet(viewsets.ModelViewSet):
                 car_amount += transaction_total
 
                 booking_spend += car_amount
+
+            # Add service fees spend (including any transactions)
+            for fee in booking.service_fees.all():
+                fee_amount = float(fee.fee_amount or 0)
+
+                # Add any transactions
+                fee_content_type = ContentType.objects.get_for_model(ServiceFee)
+                fee_transactions = BookingTransaction.objects.filter(
+                    content_type=fee_content_type,
+                    object_id=fee.id,
+                    status__in=['CONFIRMED', 'PENDING']
+                )
+                transaction_total = sum(float(t.total_amount_base or t.total_amount or 0) for t in fee_transactions)
+                fee_amount += transaction_total
+
+                booking_spend += fee_amount
+
+            # Add other products spend (insurance, cruise, etc. - including any transactions)
+            for other in booking.other_products.all():
+                other_amount = float(other.amount_base or other.amount or 0)
+
+                # Add any transactions
+                other_content_type = ContentType.objects.get_for_model(OtherProduct)
+                other_transactions = BookingTransaction.objects.filter(
+                    content_type=other_content_type,
+                    object_id=other.id,
+                    status__in=['CONFIRMED', 'PENDING']
+                )
+                transaction_total = sum(float(t.total_amount_base or t.total_amount or 0) for t in other_transactions)
+                other_amount += transaction_total
+
+                booking_spend += other_amount
 
             # Update aggregations
             cost_center_data[cost_center]['trip_count'] += 1

@@ -569,11 +569,11 @@ class BookingListSerializer(serializers.ModelSerializer):
     def get_total_amount_with_transactions(self, obj):
         """
         Calculate total amount including all BookingTransaction records.
-        This includes air, accommodation, car hire, service fees, and all transactions
+        This includes air, accommodation, car hire, service fees, other products, and all transactions
         (exchanges, refunds, credits, modifications, etc.)
         """
         from django.contrib.contenttypes.models import ContentType
-        from apps.bookings.models import BookingTransaction, AirBooking, AccommodationBooking, CarHireBooking, ServiceFee
+        from apps.bookings.models import BookingTransaction, AirBooking, AccommodationBooking, CarHireBooking, ServiceFee, OtherProduct
 
         total = 0
 
@@ -642,6 +642,22 @@ class BookingListSerializer(serializers.ModelSerializer):
             fee_amount += transaction_total
 
             total += fee_amount
+
+        # Add other products (insurance, cruise, etc.) with transactions
+        for other in obj.other_products.all():
+            other_amount = float(other.amount_base or other.amount or 0)
+
+            # Add transactions for this other product
+            other_content_type = ContentType.objects.get_for_model(OtherProduct)
+            other_transactions = BookingTransaction.objects.filter(
+                content_type=other_content_type,
+                object_id=other.id,
+                status__in=['CONFIRMED', 'PENDING']
+            )
+            transaction_total = sum(float(t.total_amount_base or t.total_amount or 0) for t in other_transactions)
+            other_amount += transaction_total
+
+            total += other_amount
 
         return round(total, 2)
 

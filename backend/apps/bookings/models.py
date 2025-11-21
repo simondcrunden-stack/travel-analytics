@@ -1045,6 +1045,22 @@ class ServiceFee(models.Model):
     def __str__(self):
         return f"{self.get_fee_type_display()} - {self.organization.code} - ${self.fee_amount}"
 
+    def save(self, *args, **kwargs):
+        """Save and update parent booking total"""
+        super().save(*args, **kwargs)
+
+        # Update parent Booking total_amount
+        if self.booking:
+            try:
+                new_total = self.booking.calculate_total_amount()
+                if new_total != self.booking.total_amount:
+                    Booking.objects.filter(pk=self.booking.pk).update(
+                        total_amount=new_total
+                    )
+                    logger.info(f"Updated booking {self.booking.agent_booking_reference} total after service fee: {new_total}")
+            except Exception as e:
+                logger.error(f"Error updating booking total after service fee: {e}")
+
 # ============================================================================
 # PRODUCT TYPE MAPPING - For handling import variations
 # ============================================================================
@@ -1269,11 +1285,22 @@ class OtherProduct(models.Model):
             self.amount_base = None
 
     def save(self, *args, **kwargs):
-        """Auto-convert currency on save"""
+        """Auto-convert currency on save and update parent booking total"""
         if not self.amount_base or self.amount_base == 0:
             self.convert_to_base_currency()
 
         super().save(*args, **kwargs)
+
+        # Update parent Booking total_amount
+        try:
+            new_total = self.booking.calculate_total_amount()
+            if new_total != self.booking.total_amount:
+                Booking.objects.filter(pk=self.booking.pk).update(
+                    total_amount=new_total
+                )
+                logger.info(f"Updated booking {self.booking.agent_booking_reference} total after other product: {new_total}")
+        except Exception as e:
+            logger.error(f"Error updating booking total after other product: {e}")
 
 # ============================================================================
 # BOOKING TRANSACTION MODEL
