@@ -1373,6 +1373,8 @@ class BookingViewSet(viewsets.ModelViewSet):
             'car_hire_spend': 0,
             'car_hire_spend_domestic': 0,
             'car_hire_spend_international': 0,
+            'service_fees_count': 0,
+            'service_fees_spend': 0,
             'total_carbon_kg': 0,
             'compliance_rate': 0,
             'violation_count': 0,
@@ -1383,6 +1385,7 @@ class BookingViewSet(viewsets.ModelViewSet):
             'air_bookings__segments',
             'accommodation_bookings',
             'car_hire_bookings',
+            'service_fees',
             'violations'
         )
 
@@ -1507,8 +1510,28 @@ class BookingViewSet(viewsets.ModelViewSet):
                     else:
                         summary['car_hire_spend_international'] += car_amount
 
+            # SERVICE FEES
+            if booking.service_fees.exists():
+                for fee in booking.service_fees.all():
+                    fee_amount = float(fee.fee_amount or 0)
+
+                    # Add any transactions for this service fee (if applicable)
+                    fee_content_type = ContentType.objects.get_for_model(ServiceFee)
+                    fee_transactions = BookingTransaction.objects.filter(
+                        content_type=fee_content_type,
+                        object_id=fee.id,
+                        status__in=['CONFIRMED', 'PENDING']
+                    )
+
+                    # Sum transaction amounts
+                    transaction_total = sum(float(t.total_amount_base or t.total_amount or 0) for t in fee_transactions)
+                    fee_amount += transaction_total
+
+                    summary['service_fees_spend'] += fee_amount
+                    summary['service_fees_count'] += 1
+
         # Calculate total spend
-        summary['total_spend'] = summary['air_spend'] + summary['accommodation_spend'] + summary['car_hire_spend']
+        summary['total_spend'] = summary['air_spend'] + summary['accommodation_spend'] + summary['car_hire_spend'] + summary['service_fees_spend']
         summary['total_spend_domestic'] = summary['air_spend_domestic'] + summary['accommodation_spend_domestic'] + summary['car_hire_spend_domestic']
         summary['total_spend_international'] = summary['air_spend_international'] + summary['accommodation_spend_international'] + summary['car_hire_spend_international']
 
