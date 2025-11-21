@@ -909,6 +909,49 @@ class BookingViewSet(viewsets.ModelViewSet):
                 # Add all transactions to total spend
                 total_spend += booking_transactions + air_transactions + accommodation_transactions + car_hire_transactions
 
+        # Add service fees and other products (when no specific booking_type filter)
+        # This ensures summary includes ALL product types
+        if not booking_type and booking_ids:
+            service_fee_ct = ContentType.objects.get_for_model(ServiceFee)
+            other_product_ct = ContentType.objects.get_for_model(OtherProduct)
+
+            # Get service fee IDs for these bookings
+            service_fee_ids = ServiceFee.objects.filter(
+                booking_id__in=booking_ids
+            ).values_list('id', flat=True)
+
+            # Sum service fees
+            service_fees_total = ServiceFee.objects.filter(
+                booking_id__in=booking_ids
+            ).aggregate(total=Sum('fee_amount'))['total'] or Decimal('0')
+
+            # Add service fee transactions
+            service_fee_transactions = BookingTransaction.objects.filter(
+                content_type=service_fee_ct,
+                object_id__in=service_fee_ids,
+                status__in=['CONFIRMED', 'PENDING']
+            ).aggregate(total=Sum('total_amount_base'))['total'] or Decimal('0')
+
+            # Get other product IDs for these bookings
+            other_product_ids = OtherProduct.objects.filter(
+                booking_id__in=booking_ids
+            ).values_list('id', flat=True)
+
+            # Sum other products (insurance, cruise, etc.)
+            other_products_total = OtherProduct.objects.filter(
+                booking_id__in=booking_ids
+            ).aggregate(total=Sum('amount_base'))['total'] or Decimal('0')
+
+            # Add other product transactions
+            other_product_transactions = BookingTransaction.objects.filter(
+                content_type=other_product_ct,
+                object_id__in=other_product_ids,
+                status__in=['CONFIRMED', 'PENDING']
+            ).aggregate(total=Sum('total_amount_base'))['total'] or Decimal('0')
+
+            # Add to total spend
+            total_spend += service_fees_total + service_fee_transactions + other_products_total + other_product_transactions
+
         # Calculate total emissions from air bookings
         # NOTE: We calculate from segments (same logic as serializer) because
         # the air_booking.total_carbon_kg field may not be populated
