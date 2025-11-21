@@ -1467,9 +1467,29 @@ class BookingViewSet(viewsets.ModelViewSet):
                         all_domestic = True
                         for segment in air.segments.all():
                             if segment.origin_airport and segment.destination_airport:
-                                origin_country = segment.origin_airport.country_code if hasattr(segment.origin_airport, 'country_code') else None
-                                dest_country = segment.destination_airport.country_code if hasattr(segment.destination_airport, 'country_code') else None
-                                if origin_country != home_country or dest_country != home_country:
+                                # Get country codes from airport country names
+                                origin_country_code = None
+                                dest_country_code = None
+
+                                if segment.origin_airport.country:
+                                    try:
+                                        origin_country = Country.objects.get(name__iexact=segment.origin_airport.country)
+                                        origin_country_code = origin_country.alpha_3
+                                    except Country.DoesNotExist:
+                                        # Fallback for common country names
+                                        if segment.origin_airport.country.upper() in ['AUSTRALIA', 'AUS']:
+                                            origin_country_code = 'AUS'
+
+                                if segment.destination_airport.country:
+                                    try:
+                                        dest_country = Country.objects.get(name__iexact=segment.destination_airport.country)
+                                        dest_country_code = dest_country.alpha_3
+                                    except Country.DoesNotExist:
+                                        # Fallback for common country names
+                                        if segment.destination_airport.country.upper() in ['AUSTRALIA', 'AUS']:
+                                            dest_country_code = 'AUS'
+
+                                if origin_country_code != home_country or dest_country_code != home_country:
                                     all_domestic = False
                                     break
                         is_domestic = all_domestic
