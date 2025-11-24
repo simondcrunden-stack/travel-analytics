@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, nextTick } from 'vue'
 import bookingService from '@/services/bookingService'
+import preferredCarHireService from '@/services/preferredCarHireService'
 import { Chart, registerables } from 'chart.js'
 import UniversalFilters from '@/components/common/UniversalFilters.vue'
 
@@ -20,6 +21,8 @@ const summary = ref({
 const currentFilters = ref({})
 const currentPage = ref(1)
 const itemsPerPage = ref(20)
+const complianceData = ref(null)
+const complianceViewMode = ref('cost_center') // 'cost_center' or 'traveller'
 
 // Chart refs
 const locationChartRef = ref(null)
@@ -75,17 +78,25 @@ const loadData = async (filters = {}) => {
 
     console.log('🌐 [CarHireView] Loading car hire data with filters:', filters)
 
-    // bookingService handles filter transformation automatically
-    const data = await bookingService.getBookings(filters)
-    bookings.value = data.results || []
+    // Load bookings and compliance data in parallel
+    const [bookingsData, complianceResponse] = await Promise.all([
+      bookingService.getBookings(filters),
+      filters.organization ? preferredCarHireService.getComplianceReport(filters) : Promise.resolve(null)
+    ])
+
+    bookings.value = bookingsData.results || []
+    complianceData.value = complianceResponse
 
     // Use backend summary statistics
-    if (data.summary) {
-      summary.value = data.summary
+    if (bookingsData.summary) {
+      summary.value = bookingsData.summary
       console.log('📊 [CarHireView] Backend summary:', summary.value)
     }
 
     console.log('✅ [CarHireView] Loaded', bookings.value.length, 'bookings,', carHireBookings.value.length, 'with car hires')
+    if (complianceResponse) {
+      console.log('✅ [CarHireView] Loaded compliance data:', complianceResponse)
+    }
 
   } catch (err) {
     console.error('❌ [CarHireView] Error loading data:', err)
@@ -413,6 +424,135 @@ onMounted(async () => {
             <span class="mdi mdi-chart-line text-orange-600 text-2xl"></span>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Compliance Section -->
+    <div v-if="!loading && !error && complianceData" class="bg-white rounded-xl shadow-sm overflow-hidden">
+      <!-- Section Header with Toggle -->
+      <div class="border-b border-gray-200 px-6 py-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <h3 class="text-lg font-semibold text-gray-900">Preferred Supplier Compliance</h3>
+            <p class="text-sm text-gray-600 mt-1">
+              {{ complianceViewMode === 'cost_center' ? 'Compliance by Cost Center' : 'Compliance by Traveller' }}
+            </p>
+          </div>
+          <div class="flex gap-2">
+            <button
+              @click="complianceViewMode = 'cost_center'"
+              :class="[
+                'px-4 py-2 text-sm font-medium rounded-lg transition-colors',
+                complianceViewMode === 'cost_center'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              ]"
+            >
+              Cost Center
+            </button>
+            <button
+              @click="complianceViewMode = 'traveller'"
+              :class="[
+                'px-4 py-2 text-sm font-medium rounded-lg transition-colors',
+                complianceViewMode === 'traveller'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              ]"
+            >
+              Traveller
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Compliance Summary -->
+      <div class="border-b border-gray-200 px-6 py-4 bg-gray-50">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div>
+            <p class="text-xs text-gray-600">Compliance Rate</p>
+            <p class="text-2xl font-bold text-gray-900">{{ complianceData.summary.compliance_rate }}%</p>
+          </div>
+          <div>
+            <p class="text-xs text-gray-600">Total Spend</p>
+            <p class="text-2xl font-bold text-gray-900">{{ formatCurrency(complianceData.summary.total_spend) }}</p>
+          </div>
+          <div>
+            <p class="text-xs text-gray-600">Preferred Spend</p>
+            <p class="text-2xl font-bold text-green-600">{{ formatCurrency(complianceData.summary.preferred_spend) }}</p>
+          </div>
+          <div>
+            <p class="text-xs text-gray-600">Total Rental Days</p>
+            <p class="text-2xl font-bold text-gray-900">{{ complianceData.summary.total_rental_days }}</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Compliance Table - By Cost Center -->
+      <div v-if="complianceViewMode === 'cost_center'" class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cost Center</th>
+              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total Spend</th>
+              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Preferred Spend</th>
+              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Rental Days</th>
+              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Compliance Rate</th>
+            </tr>
+          </thead>
+          <tbody class="bg-white divide-y divide-gray-200">
+            <tr v-for="item in complianceData.by_cost_center" :key="item.cost_center" class="hover:bg-gray-50">
+              <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ item.cost_center }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatCurrency(item.total_spend) }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-green-600 text-right">{{ formatCurrency(item.preferred_spend) }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{{ item.total_rental_days }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-right">
+                <span :class="[
+                  'px-2 py-1 rounded-full text-xs font-medium',
+                  item.compliance_rate >= 80 ? 'bg-green-100 text-green-800' :
+                  item.compliance_rate >= 60 ? 'bg-yellow-100 text-yellow-800' :
+                  'bg-red-100 text-red-800'
+                ]">
+                  {{ item.compliance_rate }}%
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Compliance Table - By Traveller -->
+      <div v-if="complianceViewMode === 'traveller'" class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Traveller</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cost Center</th>
+              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total Spend</th>
+              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Preferred Spend</th>
+              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Rental Days</th>
+              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Compliance Rate</th>
+            </tr>
+          </thead>
+          <tbody class="bg-white divide-y divide-gray-200">
+            <tr v-for="item in complianceData.by_traveller" :key="item.traveller_id" class="hover:bg-gray-50">
+              <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ item.traveller_name }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{{ item.cost_center }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatCurrency(item.total_spend) }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-green-600 text-right">{{ formatCurrency(item.preferred_spend) }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{{ item.total_rental_days }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-right">
+                <span :class="[
+                  'px-2 py-1 rounded-full text-xs font-medium',
+                  item.compliance_rate >= 80 ? 'bg-green-100 text-green-800' :
+                  item.compliance_rate >= 60 ? 'bg-yellow-100 text-yellow-800' :
+                  'bg-red-100 text-red-800'
+                ]">
+                  {{ item.compliance_rate }}%
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
 

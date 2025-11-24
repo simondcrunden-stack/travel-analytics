@@ -13,7 +13,7 @@ from apps.users.models import User
 from apps.bookings.models import (
     Traveller, Booking, AirBooking, AirSegment,
     AccommodationBooking, CarHireBooking, Invoice, ServiceFee, BookingTransaction,
-    PreferredAirline, PreferredHotel, OtherProduct
+    PreferredAirline, PreferredHotel, PreferredCarHire, OtherProduct
 )
 from apps.budgets.models import FiscalYear, Budget, BudgetAlert
 from apps.compliance.models import ComplianceViolation, TravelRiskAlert
@@ -32,7 +32,7 @@ from .serializers import (
     AirportSerializer, AirlineSerializer, CurrencyExchangeRateSerializer,
     CommissionSerializer, ServiceFeeSerializer, CountrySerializer,
     OrganizationalNodeSerializer, OrganizationalNodeListSerializer, OrganizationalNodeTreeSerializer,
-    PreferredAirlineSerializer, PreferredHotelSerializer
+    PreferredAirlineSerializer, PreferredHotelSerializer, PreferredCarHireSerializer
 )
 
 
@@ -3910,5 +3910,610 @@ class PreferredHotelViewSet(viewsets.ModelViewSet):
                 'target_room_nights': total_target_room_nights,
                 'actual_room_nights': total_actual_room_nights,
                 'room_nights_variance': total_actual_room_nights - total_target_room_nights
+            }
+        })
+
+
+# ============================================================================
+# PREFERRED CAR HIRE VIEWSET
+# ============================================================================
+
+class PreferredCarHireViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for managing preferred car hire contracts.
+
+    Supports:
+    - List all preferred car hire contracts for accessible organizations
+    - Retrieve specific preferred car hire details
+    - Create new preferred car hire contracts
+    - Update existing contracts
+    - Delete contracts
+    - Filter by organization, market, supplier, contract status
+
+    Query parameters:
+    - organization: Filter by organization ID
+    - market: Filter by market (AUSTRALIA, NEW_ZEALAND, USA, UK, CANADA, OTHER)
+    - supplier: Filter by supplier name
+    - car_category: Filter by car category
+    - is_active: Filter by active status (true/false)
+    - contract_status: Filter by ACTIVE, EXPIRED, FUTURE, INACTIVE
+    """
+    serializer_class = PreferredCarHireSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['organization', 'market', 'supplier', 'car_category', 'is_active']
+    search_fields = ['supplier', 'notes']
+    ordering_fields = ['supplier', 'market', 'priority', 'contract_start_date', 'contract_end_date', 'target_rental_days', 'target_revenue', 'created_at']
+    ordering = ['organization', 'market', 'priority', 'supplier']
+
+    def get_queryset(self):
+        """
+        Filter preferred car hire contracts based on user's organization access.
+        Only show contracts for organizations the user has access to.
+        """
+        user = self.request.user
+
+        if user.user_type == 'ADMIN':
+            queryset = PreferredCarHire.objects.all()
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            # Travel agents see preferred car hire contracts for their customer organizations
+            if user.organization:
+                queryset = PreferredCarHire.objects.filter(
+                    Q(organization=user.organization) |
+                    Q(organization__travel_agent=user.organization)
+                )
+            else:
+                queryset = PreferredCarHire.objects.all()
+        else:
+            # Customer users see only their organization's preferred car hire contracts
+            if user.organization:
+                queryset = PreferredCarHire.objects.filter(organization=user.organization)
+            else:
+                queryset = PreferredCarHire.objects.none()
+
+        # Filter by contract_status if provided (custom filter)
+        contract_status = self.request.query_params.get('contract_status', None)
+        if contract_status:
+            from django.utils import timezone
+            today = timezone.now().date()
+
+            if contract_status == 'ACTIVE':
+                queryset = queryset.filter(
+                    is_active=True,
+                    contract_start_date__lte=today,
+                    contract_end_date__gte=today
+                )
+            elif contract_status == 'EXPIRED':
+                queryset = queryset.filter(
+                    is_active=True,
+                    contract_end_date__lt=today
+                )
+            elif contract_status == 'FUTURE':
+                queryset = queryset.filter(
+                    is_active=True,
+                    contract_start_date__gt=today
+                )
+            elif contract_status == 'INACTIVE':
+                queryset = queryset.filter(is_active=False)
+
+        return queryset.select_related('organization', 'created_by')
+
+    def perform_create(self, serializer):
+        """Set created_by to current user when creating a new preferred car hire contract"""
+        serializer.save(created_by=self.request.user)
+
+    @action(detail=False, methods=['get'])
+    def active_contracts(self, request):
+        """
+        Get all currently active preferred car hire contracts.
+        A contract is active if:
+        - is_active = True
+        - current date is between contract_start_date and contract_end_date
+
+        Query params supported:
+        - organization: Filter by organization ID
+        - market: Filter by market
+        """
+        from django.utils import timezone
+        today = timezone.now().date()
+
+        queryset = self.filter_queryset(self.get_queryset())
+
+        # Filter for currently active contracts
+        queryset = queryset.filter(
+            is_active=True,
+            contract_start_date__lte=today,
+            contract_end_date__gte=today
+        )
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def expiring_soon(self, request):
+        """
+        Get preferred car hire contracts expiring within the next N days.
+
+        Query params:
+        - days: Number of days to look ahead (default: 30)
+        - organization: Filter by organization ID
+        """
+        from django.utils import timezone
+        from datetime import timedelta
+
+        today = timezone.now().date()
+        days_ahead = int(request.query_params.get('days', 30))
+        expiry_threshold = today + timedelta(days=days_ahead)
+
+        queryset = self.filter_queryset(self.get_queryset())
+
+        # Filter for contracts expiring soon
+        queryset = queryset.filter(
+            is_active=True,
+            contract_start_date__lte=today,
+            contract_end_date__gte=today,
+            contract_end_date__lte=expiry_threshold
+        )
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def deactivate(self, request, pk=None):
+        """
+        Deactivate a preferred car hire contract.
+        Sets is_active to False.
+        """
+        preferred_car_hire = self.get_object()
+        preferred_car_hire.is_active = False
+        preferred_car_hire.save()
+
+        serializer = self.get_serializer(preferred_car_hire)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def activate(self, request, pk=None):
+        """
+        Activate a preferred car hire contract.
+        Sets is_active to True.
+        """
+        preferred_car_hire = self.get_object()
+        preferred_car_hire.is_active = True
+        preferred_car_hire.save()
+
+        serializer = self.get_serializer(preferred_car_hire)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def compliance_report(self, request):
+        """
+        Calculate preferred car hire compliance metrics.
+
+        Returns rental days and spending broken down by:
+        - Overall compliance rate
+        - Compliance by cost center
+        - Compliance by traveller
+        - Non-compliant bookings (off-preferred suppliers)
+
+        Query params:
+        - organization: Filter by organization ID (required)
+        - booking_date__gte: Start date for bookings (optional)
+        - booking_date__lte: End date for bookings (optional)
+        - market: Filter by market (optional)
+
+        Returns:
+        {
+            "summary": {
+                "total_spend": 500000,
+                "preferred_spend": 425000,
+                "non_preferred_spend": 75000,
+                "compliance_rate": 85.0,
+                "total_rental_days": 1000,
+                "preferred_rental_days": 850,
+                "non_preferred_rental_days": 150
+            },
+            "by_cost_center": [...],
+            "by_traveller": [...],
+            "non_compliant_bookings": [...]
+        }
+        """
+        from django.utils import timezone
+        from collections import defaultdict
+
+        # Get organization from query params
+        organization_id = request.query_params.get('organization')
+        if not organization_id:
+            return Response(
+                {'error': 'organization parameter is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Get date range filters
+        booking_date_gte = request.query_params.get('booking_date__gte')
+        booking_date_lte = request.query_params.get('booking_date__lte')
+        market_filter = request.query_params.get('market')
+
+        # Get active preferred car hire contracts for this organization
+        today = timezone.now().date()
+        preferred_car_hires = PreferredCarHire.objects.filter(
+            organization_id=organization_id,
+            is_active=True,
+            contract_start_date__lte=today,
+            contract_end_date__gte=today
+        )
+
+        # Build a lookup for preferred suppliers by market
+        preferred_by_market = defaultdict(set)  # {market: {supplier1, supplier2}}
+        markets_with_contracts = set()  # Track which markets have preferred contracts
+
+        for pch in preferred_car_hires:
+            preferred_by_market[pch.market].add(pch.supplier.lower())
+            markets_with_contracts.add(pch.market)
+
+        # Get all bookings for the organization with filters
+        bookings_qs = Booking.objects.filter(organization_id=organization_id)
+
+        if booking_date_gte:
+            bookings_qs = bookings_qs.filter(booking_date__gte=booking_date_gte)
+        if booking_date_lte:
+            bookings_qs = bookings_qs.filter(booking_date__lte=booking_date_lte)
+
+        bookings = bookings_qs.select_related('traveller', 'organization').prefetch_related(
+            'car_hire_bookings'
+        )
+
+        # Initialize aggregations
+        summary = {
+            'total_spend': 0,
+            'preferred_spend': 0,
+            'non_preferred_spend': 0,
+            'total_rental_days': 0,
+            'preferred_rental_days': 0,
+            'non_preferred_rental_days': 0
+        }
+
+        cost_center_data = defaultdict(lambda: {
+            'cost_center': '',
+            'cost_center_name': '',
+            'total_spend': 0,
+            'preferred_spend': 0,
+            'non_preferred_spend': 0,
+            'total_rental_days': 0,
+            'preferred_rental_days': 0,
+            'non_preferred_rental_days': 0,
+            'compliance_rate': 0
+        })
+
+        traveller_data = defaultdict(lambda: {
+            'traveller_id': '',
+            'traveller_name': '',
+            'cost_center': '',
+            'total_spend': 0,
+            'preferred_spend': 0,
+            'non_preferred_spend': 0,
+            'total_rental_days': 0,
+            'preferred_rental_days': 0,
+            'non_preferred_rental_days': 0,
+            'compliance_rate': 0
+        })
+
+        non_compliant_bookings = []
+
+        # Helper function to determine market from car hire booking
+        def get_car_hire_market(car_hire_booking):
+            """Determine market from car hire location"""
+            # Get pickup country from the booking
+            pickup_country = car_hire_booking.pickup_country or ''
+
+            # Map countries to markets
+            if not pickup_country:
+                return 'OTHER'
+
+            pickup_country_upper = pickup_country.upper()
+
+            # Try to match by country name or code
+            if 'AUSTRALIA' in pickup_country_upper or pickup_country_upper in ['AU', 'AUS']:
+                return 'AUSTRALIA'
+            elif 'NEW ZEALAND' in pickup_country_upper or pickup_country_upper in ['NZ', 'NZL']:
+                return 'NEW_ZEALAND'
+            elif 'UNITED STATES' in pickup_country_upper or 'USA' in pickup_country_upper or pickup_country_upper in ['US', 'USA']:
+                return 'USA'
+            elif 'UNITED KINGDOM' in pickup_country_upper or pickup_country_upper in ['GB', 'GBR', 'UK']:
+                return 'UK'
+            elif 'CANADA' in pickup_country_upper or pickup_country_upper in ['CA', 'CAN']:
+                return 'CANADA'
+            else:
+                return 'OTHER'
+
+        # Helper function to check if we have preferred suppliers in this market
+        def has_preferred_in_market(market):
+            """Check if there's any preferred supplier contract for this market"""
+            return market in markets_with_contracts
+
+        # Helper function to check if booking is on preferred supplier
+        def is_preferred_supplier(car_hire_booking, market):
+            """Check if car hire booking is on a preferred supplier"""
+            supplier = car_hire_booking.supplier or ''
+
+            if not supplier or market not in preferred_by_market:
+                return False
+
+            supplier_lower = supplier.lower()
+            return supplier_lower in preferred_by_market[market]
+
+        # Process each booking
+        for booking in bookings:
+            if not booking.car_hire_bookings.exists():
+                continue  # Skip non-car-hire bookings
+
+            cost_center = booking.traveller.cost_center if booking.traveller and booking.traveller.cost_center else 'Unassigned'
+
+            # Process car hire bookings
+            for car_hire_booking in booking.car_hire_bookings.all():
+                # Determine market
+                market = get_car_hire_market(car_hire_booking)
+
+                # Skip if filtered by market
+                if market_filter and market != market_filter:
+                    continue
+
+                # ONLY track compliance if we have a preferred supplier contract for this market
+                if not has_preferred_in_market(market):
+                    continue  # Skip - no preferred supplier available in this market
+
+                # Calculate spend including transactions
+                spend = float(car_hire_booking.total_amount_base or 0)
+
+                # Add transaction amounts
+                from django.contrib.contenttypes.models import ContentType
+                car_hire_ct = ContentType.objects.get_for_model(CarHireBooking)
+                transactions = BookingTransaction.objects.filter(
+                    content_type=car_hire_ct,
+                    object_id=car_hire_booking.id,
+                    status__in=['CONFIRMED', 'PENDING']
+                )
+                for trans in transactions:
+                    spend += float(trans.total_amount_base or trans.total_amount or 0)
+
+                rental_days = car_hire_booking.rental_days or 0
+
+                # Update summary
+                summary['total_spend'] += spend
+                summary['total_rental_days'] += rental_days
+
+                # Update cost center data
+                cc_key = cost_center
+                cost_center_data[cc_key]['cost_center'] = cost_center
+                cost_center_data[cc_key]['cost_center_name'] = cost_center
+                cost_center_data[cc_key]['total_spend'] += spend
+                cost_center_data[cc_key]['total_rental_days'] += rental_days
+
+                # Update traveller data
+                traveller_id = str(booking.traveller.id) if booking.traveller else 'Unknown'
+                traveller_name = str(booking.traveller) if booking.traveller else 'Unknown'
+                traveller_key = traveller_id
+                traveller_data[traveller_key]['traveller_id'] = traveller_id
+                traveller_data[traveller_key]['traveller_name'] = traveller_name
+                traveller_data[traveller_key]['cost_center'] = cost_center
+                traveller_data[traveller_key]['total_spend'] += spend
+                traveller_data[traveller_key]['total_rental_days'] += rental_days
+
+                # Check if preferred
+                if is_preferred_supplier(car_hire_booking, market):
+                    summary['preferred_spend'] += spend
+                    summary['preferred_rental_days'] += rental_days
+                    cost_center_data[cc_key]['preferred_spend'] += spend
+                    cost_center_data[cc_key]['preferred_rental_days'] += rental_days
+                    traveller_data[traveller_key]['preferred_spend'] += spend
+                    traveller_data[traveller_key]['preferred_rental_days'] += rental_days
+                else:
+                    summary['non_preferred_spend'] += spend
+                    summary['non_preferred_rental_days'] += rental_days
+                    cost_center_data[cc_key]['non_preferred_spend'] += spend
+                    cost_center_data[cc_key]['non_preferred_rental_days'] += rental_days
+                    traveller_data[traveller_key]['non_preferred_spend'] += spend
+                    traveller_data[traveller_key]['non_preferred_rental_days'] += rental_days
+
+                    # Track non-compliant booking
+                    non_compliant_bookings.append({
+                        'booking_reference': booking.agent_booking_reference,
+                        'traveller_name': str(booking.traveller) if booking.traveller else 'Unknown',
+                        'cost_center': cost_center,
+                        'supplier': car_hire_booking.supplier or 'Unknown',
+                        'car_category': car_hire_booking.car_category or 'Unknown',
+                        'pickup_location': car_hire_booking.pickup_location or 'Unknown',
+                        'pickup_date': str(car_hire_booking.pickup_date) if car_hire_booking.pickup_date else 'Unknown',
+                        'rental_days': rental_days,
+                        'spend': round(spend, 2),
+                        'market': market
+                    })
+
+        # Calculate compliance rates
+        if summary['total_spend'] > 0:
+            summary['compliance_rate'] = round((summary['preferred_spend'] / summary['total_spend']) * 100, 2)
+        else:
+            summary['compliance_rate'] = 0
+
+        # Calculate cost center compliance rates
+        for cc_data in cost_center_data.values():
+            if cc_data['total_spend'] > 0:
+                cc_data['compliance_rate'] = round((cc_data['preferred_spend'] / cc_data['total_spend']) * 100, 2)
+            else:
+                cc_data['compliance_rate'] = 0
+
+        # Calculate traveller compliance rates
+        for t_data in traveller_data.values():
+            if t_data['total_spend'] > 0:
+                t_data['compliance_rate'] = round((t_data['preferred_spend'] / t_data['total_spend']) * 100, 2)
+            else:
+                t_data['compliance_rate'] = 0
+
+        # Format response
+        return Response({
+            'summary': {
+                'total_spend': round(summary['total_spend'], 2),
+                'preferred_spend': round(summary['preferred_spend'], 2),
+                'non_preferred_spend': round(summary['non_preferred_spend'], 2),
+                'compliance_rate': summary['compliance_rate'],
+                'total_rental_days': summary['total_rental_days'],
+                'preferred_rental_days': summary['preferred_rental_days'],
+                'non_preferred_rental_days': summary['non_preferred_rental_days']
+            },
+            'by_cost_center': sorted(
+                [dict(cc_data) for cc_data in cost_center_data.values()],
+                key=lambda x: x['total_spend'],
+                reverse=True
+            ),
+            'by_traveller': sorted(
+                [dict(t_data) for t_data in traveller_data.values()],
+                key=lambda x: x['total_spend'],
+                reverse=True
+            ),
+            'non_compliant_bookings': sorted(
+                non_compliant_bookings,
+                key=lambda x: x['spend'],
+                reverse=True
+            )[:50]  # Limit to top 50
+        })
+
+    @action(detail=False, methods=['get'])
+    def performance_dashboard(self, request):
+        """
+        Calculate performance metrics for preferred car hire contracts.
+
+        Query params:
+        - organization: Filter by organization ID (required)
+        - booking_date__gte: Start date (optional)
+        - booking_date__lte: End date (optional)
+
+        Returns performance data showing actual vs target metrics.
+        """
+        from django.utils import timezone
+        from collections import defaultdict
+
+        # Get organization from query params
+        organization_id = request.query_params.get('organization')
+        if not organization_id:
+            return Response(
+                {'error': 'organization parameter is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Get active preferred car hire contracts for this organization
+        today = timezone.now().date()
+        preferred_car_hires = PreferredCarHire.objects.filter(
+            organization_id=organization_id,
+            is_active=True,
+            contract_start_date__lte=today,
+            contract_end_date__gte=today
+        )
+
+        results = []
+        total_target_revenue = 0
+        total_actual_revenue = 0
+        total_target_rental_days = 0
+        total_actual_rental_days = 0
+
+        # Helper function to determine market from car hire booking
+        def get_car_hire_market(car_hire_booking):
+            """Determine market from car hire location"""
+            pickup_country = car_hire_booking.pickup_country or ''
+
+            if not pickup_country:
+                return 'OTHER'
+
+            pickup_country_upper = pickup_country.upper()
+
+            if 'AUSTRALIA' in pickup_country_upper or pickup_country_upper in ['AU', 'AUS']:
+                return 'AUSTRALIA'
+            elif 'NEW ZEALAND' in pickup_country_upper or pickup_country_upper in ['NZ', 'NZL']:
+                return 'NEW_ZEALAND'
+            elif 'UNITED STATES' in pickup_country_upper or 'USA' in pickup_country_upper or pickup_country_upper in ['US', 'USA']:
+                return 'USA'
+            elif 'UNITED KINGDOM' in pickup_country_upper or pickup_country_upper in ['GB', 'GBR', 'UK']:
+                return 'UK'
+            elif 'CANADA' in pickup_country_upper or pickup_country_upper in ['CA', 'CAN']:
+                return 'CANADA'
+            else:
+                return 'OTHER'
+
+        for pch in preferred_car_hires:
+            # Get actual bookings for this supplier in this market
+            booking_date_gte = request.query_params.get('booking_date__gte')
+            booking_date_lte = request.query_params.get('booking_date__lte')
+
+            car_hire_qs = CarHireBooking.objects.filter(
+                booking__organization_id=organization_id,
+                supplier=pch.supplier
+            )
+
+            if booking_date_gte:
+                car_hire_qs = car_hire_qs.filter(booking__booking_date__gte=booking_date_gte)
+            if booking_date_lte:
+                car_hire_qs = car_hire_qs.filter(booking__booking_date__lte=booking_date_lte)
+
+            # Filter by market - need to check pickup_country
+            market_bookings = []
+            for ch in car_hire_qs:
+                if get_car_hire_market(ch) == pch.market:
+                    market_bookings.append(ch)
+
+            # Calculate actual metrics
+            actual_rental_days = sum(ch.rental_days or 0 for ch in market_bookings)
+            actual_revenue = sum(float(ch.total_amount_base or 0) for ch in market_bookings)
+
+            # Add to totals
+            if pch.target_revenue:
+                total_target_revenue += float(pch.target_revenue)
+            total_actual_revenue += actual_revenue
+
+            if pch.target_rental_days:
+                total_target_rental_days += pch.target_rental_days
+            total_actual_rental_days += actual_rental_days
+
+            # Calculate variances
+            rental_days_variance = None
+            revenue_variance = None
+            performance_status = 'ON_TARGET'
+
+            if pch.target_rental_days:
+                rental_days_variance = actual_rental_days - pch.target_rental_days
+                if actual_rental_days < pch.target_rental_days * 0.9:
+                    performance_status = 'BELOW_TARGET'
+                elif actual_rental_days >= pch.target_rental_days:
+                    performance_status = 'ABOVE_TARGET'
+
+            if pch.target_revenue:
+                revenue_variance = actual_revenue - float(pch.target_revenue)
+                if actual_revenue < float(pch.target_revenue) * 0.9:
+                    performance_status = 'BELOW_TARGET'
+                elif actual_revenue >= float(pch.target_revenue):
+                    performance_status = 'ABOVE_TARGET'
+
+            results.append({
+                'supplier': pch.supplier,
+                'market': pch.market,
+                'market_display': pch.get_market_display(),
+                'car_category': pch.car_category,
+                'car_category_display': pch.get_car_category_display(),
+                'priority': pch.priority,
+                'target_rental_days': pch.target_rental_days,
+                'actual_rental_days': actual_rental_days,
+                'rental_days_variance': rental_days_variance,
+                'target_revenue': float(pch.target_revenue) if pch.target_revenue else None,
+                'actual_revenue': round(actual_revenue, 2),
+                'revenue_variance': round(revenue_variance, 2) if revenue_variance is not None else None,
+                'performance_status': performance_status
+            })
+
+        return Response({
+            'contracts': sorted(results, key=lambda x: x.get('actual_revenue', 0), reverse=True),
+            'totals': {
+                'target_revenue': round(total_target_revenue, 2),
+                'actual_revenue': round(total_actual_revenue, 2),
+                'revenue_variance': round(total_actual_revenue - total_target_revenue, 2),
+                'target_rental_days': total_target_rental_days,
+                'actual_rental_days': total_actual_rental_days,
+                'rental_days_variance': total_actual_rental_days - total_target_rental_days
             }
         })

@@ -15,6 +15,7 @@ router.register(r'travellers', views.TravellerViewSet, basename='traveller')
 router.register(r'bookings', views.BookingViewSet, basename='booking')
 router.register(r'preferred-airlines', views.PreferredAirlineViewSet, basename='preferred-airline')
 router.register(r'preferred-hotels', views.PreferredHotelViewSet, basename='preferred-hotel')
+router.register(r'preferred-car-hires', views.PreferredCarHireViewSet, basename='preferred-car-hire')
 
 # Budget endpoints
 router.register(r'fiscal-years', views.FiscalYearViewSet, basename='fiscal-year')
