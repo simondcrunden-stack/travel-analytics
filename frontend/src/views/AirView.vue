@@ -30,6 +30,7 @@ const itemsPerPage = ref(20)
 const loadingPreferredAirlines = ref(false)
 const complianceData = ref(null)
 const marketShareData = ref(null)
+const complianceViewMode = ref('cost_center')  // 'cost_center' or 'traveller'
 const showComplianceSection = ref(true)
 const showMarketShareSection = ref(true)
 
@@ -599,14 +600,38 @@ onMounted(async () => {
           </div>
         </div>
 
-        <!-- Worst Offending Cost Centers -->
-        <div v-if="complianceData.by_cost_center && complianceData.by_cost_center.length > 0" class="bg-white rounded-xl shadow-sm overflow-hidden">
+        <!-- Compliance Detail Table -->
+        <div v-if="(complianceData.by_cost_center && complianceData.by_cost_center.length > 0) || (complianceData.by_traveller && complianceData.by_traveller.length > 0)" class="bg-white rounded-xl shadow-sm overflow-hidden">
           <div class="border-b border-gray-200 px-6 py-4">
-            <h3 class="text-lg font-semibold text-gray-900">Compliance by Cost Center</h3>
-            <p class="text-sm text-gray-500 mt-1">Cost centers with highest off-preferred spend</p>
+            <div class="flex items-center justify-between">
+              <div>
+                <h3 class="text-lg font-semibold text-gray-900">Compliance Detail</h3>
+                <p class="text-sm text-gray-500 mt-1">
+                  {{ complianceViewMode === 'cost_center' ? 'Cost centers with highest off-preferred spend' : 'Travelers with highest off-preferred spend' }}
+                </p>
+              </div>
+              <!-- View Mode Toggle -->
+              <div class="flex bg-gray-100 rounded-lg p-1">
+                <button
+                  @click="complianceViewMode = 'cost_center'"
+                  :class="complianceViewMode === 'cost_center' ? 'bg-white text-gray-900 shadow' : 'text-gray-600'"
+                  class="px-3 py-1.5 text-sm font-medium rounded-md transition-all"
+                >
+                  Cost Centers
+                </button>
+                <button
+                  @click="complianceViewMode = 'traveller'"
+                  :class="complianceViewMode === 'traveller' ? 'bg-white text-gray-900 shadow' : 'text-gray-600'"
+                  class="px-3 py-1.5 text-sm font-medium rounded-md transition-all"
+                >
+                  Travellers
+                </button>
+              </div>
+            </div>
           </div>
           <div class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-gray-200">
+            <!-- Cost Center View -->
+            <table v-if="complianceViewMode === 'cost_center'" class="min-w-full divide-y divide-gray-200">
               <thead class="bg-gray-50">
                 <tr>
                   <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cost Center</th>
@@ -628,17 +653,9 @@ onMounted(async () => {
                 </tr>
               </tbody>
             </table>
-          </div>
-        </div>
 
-        <!-- Worst Offending Travelers -->
-        <div v-if="complianceData.by_traveller && complianceData.by_traveller.length > 0" class="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div class="border-b border-gray-200 px-6 py-4">
-            <h3 class="text-lg font-semibold text-gray-900">Compliance by Traveller</h3>
-            <p class="text-sm text-gray-500 mt-1">Travelers with highest off-preferred spend</p>
-          </div>
-          <div class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-gray-200">
+            <!-- Traveller View -->
+            <table v-if="complianceViewMode === 'traveller'" class="min-w-full divide-y divide-gray-200">
               <thead class="bg-gray-50">
                 <tr>
                   <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Traveller</th>
