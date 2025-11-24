@@ -3589,6 +3589,19 @@ class PreferredHotelViewSet(viewsets.ModelViewSet):
             'compliance_rate': 0
         })
 
+        traveller_data = defaultdict(lambda: {
+            'traveller_id': '',
+            'traveller_name': '',
+            'cost_center': '',
+            'total_spend': 0,
+            'preferred_spend': 0,
+            'non_preferred_spend': 0,
+            'total_room_nights': 0,
+            'preferred_room_nights': 0,
+            'non_preferred_room_nights': 0,
+            'compliance_rate': 0
+        })
+
         non_compliant_bookings = []
 
         # Helper function to determine market type
@@ -3697,17 +3710,31 @@ class PreferredHotelViewSet(viewsets.ModelViewSet):
                 cost_center_data[cc_key]['total_spend'] += spend
                 cost_center_data[cc_key]['total_room_nights'] += room_nights
 
+                # Update traveller data
+                traveller_id = str(booking.traveller.id) if booking.traveller else 'Unknown'
+                traveller_name = str(booking.traveller) if booking.traveller else 'Unknown'
+                traveller_key = traveller_id
+                traveller_data[traveller_key]['traveller_id'] = traveller_id
+                traveller_data[traveller_key]['traveller_name'] = traveller_name
+                traveller_data[traveller_key]['cost_center'] = cost_center
+                traveller_data[traveller_key]['total_spend'] += spend
+                traveller_data[traveller_key]['total_room_nights'] += room_nights
+
                 # Check if preferred
                 if is_preferred_hotel(accom_booking):
                     summary['preferred_spend'] += spend
                     summary['preferred_room_nights'] += room_nights
                     cost_center_data[cc_key]['preferred_spend'] += spend
                     cost_center_data[cc_key]['preferred_room_nights'] += room_nights
+                    traveller_data[traveller_key]['preferred_spend'] += spend
+                    traveller_data[traveller_key]['preferred_room_nights'] += room_nights
                 else:
                     summary['non_preferred_spend'] += spend
                     summary['non_preferred_room_nights'] += room_nights
                     cost_center_data[cc_key]['non_preferred_spend'] += spend
                     cost_center_data[cc_key]['non_preferred_room_nights'] += room_nights
+                    traveller_data[traveller_key]['non_preferred_spend'] += spend
+                    traveller_data[traveller_key]['non_preferred_room_nights'] += room_nights
 
                     # Track non-compliant booking
                     non_compliant_bookings.append({
@@ -3736,6 +3763,13 @@ class PreferredHotelViewSet(viewsets.ModelViewSet):
             else:
                 cc_data['compliance_rate'] = 0
 
+        # Calculate traveller compliance rates
+        for t_data in traveller_data.values():
+            if t_data['total_spend'] > 0:
+                t_data['compliance_rate'] = round((t_data['preferred_spend'] / t_data['total_spend']) * 100, 2)
+            else:
+                t_data['compliance_rate'] = 0
+
         # Format response
         return Response({
             'summary': {
@@ -3749,6 +3783,11 @@ class PreferredHotelViewSet(viewsets.ModelViewSet):
             },
             'by_cost_center': sorted(
                 [dict(cc_data) for cc_data in cost_center_data.values()],
+                key=lambda x: x['total_spend'],
+                reverse=True
+            ),
+            'by_traveller': sorted(
+                [dict(t_data) for t_data in traveller_data.values()],
                 key=lambda x: x['total_spend'],
                 reverse=True
             ),

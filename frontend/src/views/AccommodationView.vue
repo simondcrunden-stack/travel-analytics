@@ -19,6 +19,7 @@ const summary = ref({
   booking_count: 0
 })
 const complianceData = ref(null)
+const complianceViewMode = ref('cost_center')  // 'cost_center' or 'traveller'
 const currentFilters = ref({})
 const currentPage = ref(1)
 const itemsPerPage = ref(20)
@@ -512,13 +513,33 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- Compliance by Cost Center -->
-      <div v-if="complianceData.by_cost_center && complianceData.by_cost_center.length > 0" class="bg-white rounded-xl shadow-sm overflow-hidden">
+      <!-- Compliance Detail Table -->
+      <div v-if="(complianceData.by_cost_center && complianceData.by_cost_center.length > 0) || (complianceData.by_traveller && complianceData.by_traveller.length > 0)" class="bg-white rounded-xl shadow-sm overflow-hidden">
         <div class="border-b border-gray-200 px-6 py-4">
-          <h3 class="text-lg font-semibold text-gray-900">Compliance by Cost Center</h3>
+          <div class="flex items-center justify-between">
+            <h3 class="text-lg font-semibold text-gray-900">Compliance Detail</h3>
+            <!-- View Mode Toggle -->
+            <div class="flex bg-gray-100 rounded-lg p-1">
+              <button
+                @click="complianceViewMode = 'cost_center'"
+                :class="complianceViewMode === 'cost_center' ? 'bg-white text-gray-900 shadow' : 'text-gray-600'"
+                class="px-3 py-1.5 text-sm font-medium rounded-md transition-all"
+              >
+                Cost Centers
+              </button>
+              <button
+                @click="complianceViewMode = 'traveller'"
+                :class="complianceViewMode === 'traveller' ? 'bg-white text-gray-900 shadow' : 'text-gray-600'"
+                class="px-3 py-1.5 text-sm font-medium rounded-md transition-all"
+              >
+                Travellers
+              </button>
+            </div>
+          </div>
         </div>
         <div class="overflow-x-auto">
-          <table class="min-w-full divide-y divide-gray-200">
+          <!-- Cost Center View -->
+          <table v-if="complianceViewMode === 'cost_center'" class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50">
               <tr>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cost Center</th>
@@ -539,6 +560,34 @@ onMounted(async () => {
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ cc.preferred_room_nights }} / {{ cc.total_room_nights }}</td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ formatCurrency(cc.preferred_spend) }}</td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{{ formatCurrency(cc.total_spend) }}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <!-- Traveller View -->
+          <table v-if="complianceViewMode === 'traveller'" class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Traveller</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cost Center</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Compliance Rate</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Room Nights</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Preferred Spend</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Spend</th>
+              </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+              <tr v-for="t in complianceData.by_traveller.slice(0, 5)" :key="t.traveller_id" class="hover:bg-gray-50">
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ t.traveller_name }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ t.cost_center }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <span class="px-2 py-1 text-xs font-semibold rounded-full" :class="t.compliance_rate >= 80 ? 'bg-green-100 text-green-800' : t.compliance_rate >= 60 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'">
+                    {{ t.compliance_rate.toFixed(1) }}%
+                  </span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ t.preferred_room_nights }} / {{ t.total_room_nights }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ formatCurrency(t.preferred_spend) }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{{ formatCurrency(t.total_spend) }}</td>
               </tr>
             </tbody>
           </table>
