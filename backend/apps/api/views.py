@@ -3539,6 +3539,8 @@ class PreferredHotelViewSet(viewsets.ModelViewSet):
         # Build a lookup for preferred hotels
         preferred_chains = set()
         preferred_by_location = {}  # {chain: {city: True}}
+        preferred_locations = set()  # Track all cities/countries with preferred hotels
+        has_chain_wide_contracts = False  # Track if there are any chain-wide contracts
 
         for ph in preferred_hotels:
             preferred_chains.add(ph.hotel_chain.lower())
@@ -3546,6 +3548,12 @@ class PreferredHotelViewSet(viewsets.ModelViewSet):
                 if ph.hotel_chain.lower() not in preferred_by_location:
                     preferred_by_location[ph.hotel_chain.lower()] = set()
                 preferred_by_location[ph.hotel_chain.lower()].add(ph.location_city.lower())
+                preferred_locations.add(ph.location_city.lower())
+            elif ph.location_country:
+                preferred_locations.add(ph.location_country.lower())
+            else:
+                # Chain-wide contract (no location restriction)
+                has_chain_wide_contracts = True
 
         # Get all bookings for the organization with filters
         bookings_qs = Booking.objects.filter(organization_id=organization_id)
@@ -3604,6 +3612,22 @@ class PreferredHotelViewSet(viewsets.ModelViewSet):
 
             return 'DOMESTIC' if hotel_country_name.lower() == home_country_obj.name.lower() else 'INTERNATIONAL'
 
+        # Helper function to check if we have preferred hotels in this location
+        def has_preferred_hotel_in_location(accom_booking):
+            """Check if there's any preferred hotel contract for this location"""
+            city = accom_booking.city or ''
+            country = accom_booking.country or ''
+
+            # If we have chain-wide contracts, all locations are covered
+            if has_chain_wide_contracts:
+                return True
+
+            # Check if this specific city or country has a preferred hotel
+            city_lower = city.lower()
+            country_lower = country.lower()
+
+            return city_lower in preferred_locations or country_lower in preferred_locations
+
         # Helper function to check if booking is on preferred hotel
         def is_preferred_hotel(accom_booking):
             """Check if accommodation booking is on a preferred hotel"""
@@ -3641,6 +3665,10 @@ class PreferredHotelViewSet(viewsets.ModelViewSet):
                 # Skip if filtered by market type
                 if market_type_filter and market_type != market_type_filter:
                     continue
+
+                # ONLY track compliance if we have a preferred hotel contract for this location
+                if not has_preferred_hotel_in_location(accom_booking):
+                    continue  # Skip - no preferred hotel available in this location
 
                 # Calculate spend including transactions
                 spend = float(accom_booking.total_amount_base or 0)
