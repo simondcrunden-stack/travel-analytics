@@ -1572,7 +1572,7 @@ class PreferredHotelAdmin(admin.ModelAdmin):
             return format_html(
                 '<strong>{}</strong><br><span style="color: #666; font-size: 11px;">{}</span>',
                 obj.hotel_chain,
-                obj.hotel.name
+                obj.hotel.canonical_name
             )
         return format_html('<strong>{}</strong>', obj.hotel_chain)
 

@@ -1156,7 +1156,7 @@ class PreferredHotelSerializer(serializers.ModelSerializer):
     organization_name = serializers.CharField(source='organization.name', read_only=True)
     created_by_name = serializers.CharField(source='created_by.__str__', read_only=True)
     market_type_display = serializers.CharField(source='get_market_type_display', read_only=True)
-    hotel_name = serializers.CharField(source='hotel.name', read_only=True)
+    hotel_name = serializers.CharField(source='hotel.canonical_name', read_only=True)
 
     # Computed field for contract status (Active, Expired, Future)
     contract_status = serializers.SerializerMethodField()
