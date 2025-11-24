@@ -3689,7 +3689,7 @@ class PreferredHotelViewSet(viewsets.ModelViewSet):
                         'hotel_chain': accom_booking.hotel_chain or 'Unknown',
                         'hotel_name': accom_booking.hotel_name or 'Unknown',
                         'city': accom_booking.city or 'Unknown',
-                        'checkin_date': str(accom_booking.checkin_date),
+                        'checkin_date': str(accom_booking.check_in_date),
                         'room_nights': room_nights,
                         'spend': round(spend, 2),
                         'market_type': market_type
