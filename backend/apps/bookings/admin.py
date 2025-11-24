@@ -1753,7 +1753,7 @@ class PreferredCarHireAdmin(admin.ModelAdmin):
             'fields': ('organization',)
         }),
         ('Supplier & Market', {
-            'fields': ('supplier', 'market', 'car_category')
+            'fields': ('supplier', 'related_brands', 'market', 'car_category')
         }),
         ('Contract Terms', {
             'fields': (

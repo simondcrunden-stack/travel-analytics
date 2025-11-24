@@ -1247,7 +1247,7 @@ class PreferredCarHireSerializer(serializers.ModelSerializer):
         model = PreferredCarHire
         fields = [
             'id', 'organization', 'organization_name',
-            'supplier', 'market', 'market_display', 'car_category', 'car_category_display',
+            'supplier', 'related_brands', 'market', 'market_display', 'car_category', 'car_category_display',
             'target_rental_days', 'target_revenue', 'priority',
             'contract_start_date', 'contract_end_date',
             'contract_status', 'days_until_expiry',

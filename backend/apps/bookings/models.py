@@ -2555,6 +2555,11 @@ class PreferredCarHire(models.Model):
         help_text="Car hire supplier name (e.g., Hertz, Avis, Budget, Enterprise)"
     )
 
+    related_brands = models.TextField(
+        blank=True,
+        help_text="Comma-separated list of related brands that should also count as compliant (e.g., 'Budget, Payless' for an Avis contract)"
+    )
+
     # =============================================================================
     # MARKET SCOPE
     # =============================================================================

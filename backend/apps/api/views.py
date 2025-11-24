@@ -4147,8 +4147,15 @@ class PreferredCarHireViewSet(viewsets.ModelViewSet):
         markets_with_contracts = set()  # Track which markets have preferred contracts
 
         for pch in preferred_car_hires:
+            # Add main supplier
             preferred_by_market[pch.market].add(pch.supplier.lower())
             markets_with_contracts.add(pch.market)
+
+            # Add related brands if specified
+            if pch.related_brands:
+                related = [brand.strip().lower() for brand in pch.related_brands.split(',') if brand.strip()]
+                for brand in related:
+                    preferred_by_market[pch.market].add(brand)
 
         # Get all bookings for the organization with filters
         bookings_qs = Booking.objects.filter(organization_id=organization_id)
