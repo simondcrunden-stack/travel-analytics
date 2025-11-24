@@ -3403,15 +3403,55 @@ class PreferredAirlineViewSet(viewsets.ModelViewSet):
 
         results = []
         total_target_revenue = 0
-        total_actual_revenue = 0
-        total_target_flights = 0
-        total_actual_flights = 0
+        total_actual_preferred_revenue = 0
+        total_market_revenue = 0
 
+        # Get date filters
+        booking_date_gte = request.query_params.get('booking_date__gte')
+        booking_date_lte = request.query_params.get('booking_date__lte')
+
+        # Determine home country for domestic/international classification
+        from apps.reference_data.models import Country
+        home_country = request.user.organization.home_country if request.user.organization else 'AUS'
+        home_country_obj = Country.objects.filter(alpha_3=home_country).first()
+
+        if home_country_obj:
+            domestic_airports = list(Airport.objects.filter(
+                country=home_country_obj.name
+            ).values_list('iata_code', flat=True))
+        else:
+            domestic_airports = []
+
+        # Calculate market totals by market type (DOMESTIC/INTERNATIONAL)
+        market_totals = {'DOMESTIC': 0, 'INTERNATIONAL': 0}
+
+        # Get all air bookings for the organization in the date range
+        all_air_bookings_qs = AirBooking.objects.filter(
+            booking__organization_id=organization_id
+        )
+
+        if booking_date_gte:
+            all_air_bookings_qs = all_air_bookings_qs.filter(booking__booking_date__gte=booking_date_gte)
+        if booking_date_lte:
+            all_air_bookings_qs = all_air_bookings_qs.filter(booking__booking_date__lte=booking_date_lte)
+
+        # Calculate total revenue by market type
+        for ab in all_air_bookings_qs.prefetch_related('segments'):
+            # Determine if domestic or international
+            is_domestic = True
+            if domestic_airports:
+                for segment in ab.segments.all():
+                    if segment.origin_airport_iata_code not in domestic_airports or \
+                       segment.destination_airport_iata_code not in domestic_airports:
+                        is_domestic = False
+                        break
+
+            market_type = 'DOMESTIC' if is_domestic else 'INTERNATIONAL'
+            market_totals[market_type] += float(ab.total_fare or 0)
+
+        # Process each preferred airline
         for pa in preferred_airlines:
-            # Get actual bookings for this airline
-            booking_date_gte = request.query_params.get('booking_date__gte')
-            booking_date_lte = request.query_params.get('booking_date__lte')
-
+            # Get actual bookings for this preferred airline
             air_bookings_qs = AirBooking.objects.filter(
                 booking__organization_id=organization_id,
                 primary_airline_iata_code=pa.airline_iata_code
@@ -3423,16 +3463,8 @@ class PreferredAirlineViewSet(viewsets.ModelViewSet):
                 air_bookings_qs = air_bookings_qs.filter(booking__booking_date__lte=booking_date_lte)
 
             # Filter by market type
-            from apps.reference_data.models import Country
-            home_country = request.user.organization.home_country if request.user.organization else 'AUS'
-            home_country_obj = Country.objects.filter(alpha_3=home_country).first()
-
-            if home_country_obj:
-                domestic_airports = list(Airport.objects.filter(
-                    country=home_country_obj.name
-                ).values_list('iata_code', flat=True))
-
-                matching_bookings = []
+            matching_bookings = []
+            if domestic_airports:
                 for ab in air_bookings_qs.prefetch_related('segments'):
                     # Determine if domestic or international
                     is_domestic = True
@@ -3449,36 +3481,36 @@ class PreferredAirlineViewSet(viewsets.ModelViewSet):
                 matching_bookings = list(air_bookings_qs)
 
             # Calculate actual metrics
-            actual_flights = len(matching_bookings)
             actual_revenue = sum(float(ab.total_fare or 0) for ab in matching_bookings)
+
+            # Calculate actual market share
+            market_total = market_totals.get(pa.market_type, 0)
+            actual_market_share = (actual_revenue / market_total * 100) if market_total > 0 else 0
 
             # Add to totals
             if pa.target_revenue:
                 total_target_revenue += float(pa.target_revenue)
-            total_actual_revenue += actual_revenue
-
-            if pa.target_flights:
-                total_target_flights += pa.target_flights
-            total_actual_flights += actual_flights
+            total_actual_preferred_revenue += actual_revenue
+            total_market_revenue += market_total
 
             # Calculate variances
-            flight_variance = None
+            market_share_variance = actual_market_share - float(pa.target_market_share)
             revenue_variance = None
-            performance_status = 'ON_TARGET'
+            performance_status = 'MEETING'
 
-            if pa.target_flights:
-                flight_variance = actual_flights - pa.target_flights
-                if actual_flights < pa.target_flights * 0.9:
-                    performance_status = 'BELOW_TARGET'
-                elif actual_flights >= pa.target_flights:
-                    performance_status = 'ABOVE_TARGET'
+            # Determine performance status based on market share
+            if actual_market_share >= float(pa.target_market_share):
+                performance_status = 'EXCEEDING'
+            elif actual_market_share >= float(pa.target_market_share) * 0.9:
+                performance_status = 'MEETING'
+            else:
+                performance_status = 'BELOW_TARGET'
 
+            # Also check revenue target if specified
             if pa.target_revenue:
                 revenue_variance = actual_revenue - float(pa.target_revenue)
                 if actual_revenue < float(pa.target_revenue) * 0.9:
                     performance_status = 'BELOW_TARGET'
-                elif actual_revenue >= float(pa.target_revenue):
-                    performance_status = 'ABOVE_TARGET'
 
             results.append({
                 'airline': pa.airline_name,
@@ -3486,24 +3518,26 @@ class PreferredAirlineViewSet(viewsets.ModelViewSet):
                 'market_type': pa.market_type,
                 'market_type_display': pa.get_market_type_display(),
                 'priority': pa.priority,
-                'target_flights': pa.target_flights,
-                'actual_flights': actual_flights,
-                'flight_variance': flight_variance,
+                'target_market_share': float(pa.target_market_share),
+                'actual_market_share': round(actual_market_share, 2),
+                'market_share_variance': round(market_share_variance, 2),
                 'target_revenue': float(pa.target_revenue) if pa.target_revenue else None,
                 'actual_revenue': round(actual_revenue, 2),
                 'revenue_variance': round(revenue_variance, 2) if revenue_variance is not None else None,
                 'performance_status': performance_status
             })
 
+        # Calculate overall market share
+        overall_actual_market_share = (total_actual_preferred_revenue / sum(market_totals.values()) * 100) if sum(market_totals.values()) > 0 else 0
+
         return Response({
             'contracts': sorted(results, key=lambda x: x.get('actual_revenue', 0), reverse=True),
             'totals': {
                 'target_revenue': round(total_target_revenue, 2),
-                'actual_revenue': round(total_actual_revenue, 2),
-                'revenue_variance': round(total_actual_revenue - total_target_revenue, 2),
-                'target_flights': total_target_flights,
-                'actual_flights': total_actual_flights,
-                'flight_variance': total_actual_flights - total_target_flights
+                'actual_revenue': round(total_actual_preferred_revenue, 2),
+                'revenue_variance': round(total_actual_preferred_revenue - total_target_revenue, 2),
+                'actual_market_share': round(overall_actual_market_share, 2),
+                'total_market_revenue': round(sum(market_totals.values()), 2)
             }
         })
 

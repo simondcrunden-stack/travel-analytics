@@ -818,12 +818,12 @@ onMounted(async () => {
         <div class="border-b border-gray-200 px-6 py-4 bg-gray-50">
           <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
-              <p class="text-xs text-gray-600">Target Flights</p>
-              <p class="text-2xl font-bold text-gray-900">{{ performanceData.totals.target_flights?.toLocaleString() || 'N/A' }}</p>
+              <p class="text-xs text-gray-600">Actual Market Share</p>
+              <p class="text-2xl font-bold text-gray-900">{{ performanceData.totals.actual_market_share?.toFixed(1) || 0 }}%</p>
             </div>
             <div>
-              <p class="text-xs text-gray-600">Actual Flights</p>
-              <p class="text-2xl font-bold text-gray-900">{{ performanceData.totals.actual_flights?.toLocaleString() || 0 }}</p>
+              <p class="text-xs text-gray-600">Total Market Revenue</p>
+              <p class="text-2xl font-bold text-gray-900">{{ formatCurrency(performanceData.totals.total_market_revenue || 0) }}</p>
             </div>
             <div>
               <p class="text-xs text-gray-600">Target Revenue</p>
@@ -843,9 +843,9 @@ onMounted(async () => {
               <tr>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Airline</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Market</th>
-                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Target Flights</th>
-                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actual Flights</th>
-                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Flight Variance</th>
+                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Target Share</th>
+                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actual Share</th>
+                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Share Variance</th>
                 <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Target Revenue</th>
                 <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actual Revenue</th>
                 <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Revenue Variance</th>
@@ -857,14 +857,14 @@ onMounted(async () => {
                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ contract.airline }}</td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{{ contract.market_type_display }}</td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
-                  {{ contract.target_flights !== null ? contract.target_flights.toLocaleString() : '-' }}
+                  {{ contract.target_market_share?.toFixed(1) || '-' }}%
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
-                  {{ contract.actual_flights.toLocaleString() }}
+                  {{ contract.actual_market_share?.toFixed(1) || 0 }}%
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-right">
-                  <span v-if="contract.flight_variance !== null" :class="contract.flight_variance >= 0 ? 'text-green-600' : 'text-red-600'">
-                    {{ contract.flight_variance > 0 ? '+' : '' }}{{ contract.flight_variance.toLocaleString() }}
+                  <span v-if="contract.market_share_variance !== undefined" :class="contract.market_share_variance >= 0 ? 'text-green-600' : 'text-red-600'">
+                    {{ contract.market_share_variance > 0 ? '+' : '' }}{{ contract.market_share_variance.toFixed(1) }}%
                   </span>
                   <span v-else class="text-gray-400">-</span>
                 </td>
@@ -883,12 +883,12 @@ onMounted(async () => {
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-center">
                   <span :class="[
                     'px-2 py-1 rounded-full text-xs font-medium',
-                    contract.performance_status === 'ABOVE_TARGET' ? 'bg-green-100 text-green-800' :
-                    contract.performance_status === 'ON_TARGET' ? 'bg-blue-100 text-blue-800' :
+                    contract.performance_status === 'EXCEEDING' ? 'bg-green-100 text-green-800' :
+                    contract.performance_status === 'MEETING' ? 'bg-blue-100 text-blue-800' :
                     'bg-red-100 text-red-800'
                   ]">
-                    {{ contract.performance_status === 'ABOVE_TARGET' ? 'Above Target' :
-                       contract.performance_status === 'ON_TARGET' ? 'On Target' :
+                    {{ contract.performance_status === 'EXCEEDING' ? 'Exceeding' :
+                       contract.performance_status === 'MEETING' ? 'Meeting Target' :
                        'Below Target' }}
                   </span>
                 </td>
