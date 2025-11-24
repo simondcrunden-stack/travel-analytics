@@ -13,7 +13,7 @@ from apps.users.models import User
 from apps.bookings.models import (
     Traveller, Booking, AirBooking, AirSegment,
     AccommodationBooking, CarHireBooking, Invoice, ServiceFee, BookingTransaction,
-    PreferredAirline, OtherProduct
+    PreferredAirline, PreferredHotel, OtherProduct
 )
 from apps.budgets.models import FiscalYear, Budget, BudgetAlert
 from apps.compliance.models import ComplianceViolation, TravelRiskAlert
@@ -32,7 +32,7 @@ from .serializers import (
     AirportSerializer, AirlineSerializer, CurrencyExchangeRateSerializer,
     CommissionSerializer, ServiceFeeSerializer, CountrySerializer,
     OrganizationalNodeSerializer, OrganizationalNodeListSerializer, OrganizationalNodeTreeSerializer,
-    PreferredAirlineSerializer
+    PreferredAirlineSerializer, PreferredHotelSerializer
 )
 
 
