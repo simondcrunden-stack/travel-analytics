@@ -1093,6 +1093,7 @@ class BookingViewSet(viewsets.ModelViewSet):
         - Total spend
         - Average spend per trip
 
+        Includes both air travel destinations AND accommodation-only destinations.
         Uses the same queryset logic as get_queryset() for security.
         """
         from collections import defaultdict
@@ -1114,128 +1115,187 @@ class BookingViewSet(viewsets.ModelViewSet):
         # Apply advanced filters from request
         base_queryset = self._apply_advanced_filters(base_queryset, user)
 
-        # Get all air bookings with destination airports
-        air_bookings = AirBooking.objects.filter(
-            booking__in=base_queryset
-        ).select_related('booking', 'booking__traveller')
-
-        # Aggregate by destination
+        # Aggregate by destination - supports both air and accommodation destinations
         destination_data = defaultdict(lambda: {
+            'destination_type': None,  # 'airport' or 'city'
             'trips': 0,
             'travellers': set(),
             'total_spend': 0,
             'bookings': set()  # Track unique bookings per destination
         })
 
+        # Process AIR bookings - use destination airport code
+        air_bookings = AirBooking.objects.filter(
+            booking__in=base_queryset
+        ).select_related('booking', 'booking__traveller')
+
         for ab in air_bookings:
             dest = ab.destination_airport_iata_code
-            destination_data[dest]['trips'] += 1
-            destination_data[dest]['travellers'].add(ab.booking.traveller.id if ab.booking.traveller else None)
-            destination_data[dest]['bookings'].add(ab.booking.id)
+            if dest:
+                destination_data[dest]['destination_type'] = 'airport'
+                destination_data[dest]['trips'] += 1
+                destination_data[dest]['travellers'].add(ab.booking.traveller.id if ab.booking.traveller else None)
+                destination_data[dest]['bookings'].add(ab.booking.id)
+
+        # Process ACCOMMODATION bookings - use city name (for bookings without air travel)
+        accommodation_bookings = AccommodationBooking.objects.filter(
+            booking__in=base_queryset
+        ).select_related('booking', 'booking__traveller')
+
+        for accom in accommodation_bookings:
+            # Only add accommodation as a destination if the booking doesn't already have air travel
+            booking_id = accom.booking.id
+
+            # Check if this booking already has an air destination
+            booking_has_air = any(booking_id in data['bookings']
+                                 for data in destination_data.values()
+                                 if data['destination_type'] == 'airport')
+
+            # If no air travel, use accommodation city as destination
+            if not booking_has_air and accom.city:
+                city_key = f"CITY_{accom.city.upper()}"  # Prefix to avoid collision with airport codes
+                destination_data[city_key]['destination_type'] = 'city'
+                destination_data[city_key]['city_name'] = accom.city
+                destination_data[city_key]['country_name'] = accom.country or 'Unknown'
+                destination_data[city_key]['trips'] += 1
+                destination_data[city_key]['travellers'].add(accom.booking.traveller.id if accom.booking.traveller else None)
+                destination_data[city_key]['bookings'].add(booking_id)
 
         # Calculate complete spend for each booking (including transactions, service fees, other products)
         booking_totals = {}
-        for booking_id_list in [data['bookings'] for data in destination_data.values()]:
-            for booking_id in booking_id_list:
-                if booking_id not in booking_totals:
-                    # Calculate total for this booking
-                    booking = Booking.objects.prefetch_related(
-                        'air_bookings',
-                        'accommodation_bookings',
-                        'car_hire_bookings',
-                        'service_fees',
-                        'other_products'
-                    ).get(id=booking_id)
+        all_bookings = set()
+        for data in destination_data.values():
+            all_bookings.update(data['bookings'])
 
-                    total = 0
+        for booking_id in all_bookings:
+            if booking_id not in booking_totals:
+                # Calculate total for this booking
+                booking = Booking.objects.prefetch_related(
+                    'air_bookings',
+                    'accommodation_bookings',
+                    'car_hire_bookings',
+                    'service_fees',
+                    'other_products'
+                ).get(id=booking_id)
 
-                    # Air bookings with transactions
-                    for air in booking.air_bookings.all():
-                        air_amount = float(air.total_fare or 0)
-                        air_content_type = ContentType.objects.get_for_model(AirBooking)
-                        air_transactions = BookingTransaction.objects.filter(
-                            content_type=air_content_type,
-                            object_id=air.id,
-                            status__in=['CONFIRMED', 'PENDING']
-                        )
-                        air_amount += sum(float(t.total_amount_base or t.total_amount or 0) for t in air_transactions)
-                        total += air_amount
+                total = 0
 
-                    # Accommodation bookings with transactions
-                    for accom in booking.accommodation_bookings.all():
-                        accom_amount = float(accom.total_amount_base or 0)
-                        accom_content_type = ContentType.objects.get_for_model(AccommodationBooking)
-                        accom_transactions = BookingTransaction.objects.filter(
-                            content_type=accom_content_type,
-                            object_id=accom.id,
-                            status__in=['CONFIRMED', 'PENDING']
-                        )
-                        accom_amount += sum(float(t.total_amount_base or t.total_amount or 0) for t in accom_transactions)
-                        total += accom_amount
+                # Air bookings with transactions
+                for air in booking.air_bookings.all():
+                    air_amount = float(air.total_fare or 0)
+                    air_content_type = ContentType.objects.get_for_model(AirBooking)
+                    air_transactions = BookingTransaction.objects.filter(
+                        content_type=air_content_type,
+                        object_id=air.id,
+                        status__in=['CONFIRMED', 'PENDING']
+                    )
+                    air_amount += sum(float(t.total_amount_base or t.total_amount or 0) for t in air_transactions)
+                    total += air_amount
 
-                    # Car hire bookings with transactions
-                    for car in booking.car_hire_bookings.all():
-                        car_amount = float(car.total_amount_base or 0)
-                        car_content_type = ContentType.objects.get_for_model(CarHireBooking)
-                        car_transactions = BookingTransaction.objects.filter(
-                            content_type=car_content_type,
-                            object_id=car.id,
-                            status__in=['CONFIRMED', 'PENDING']
-                        )
-                        car_amount += sum(float(t.total_amount_base or t.total_amount or 0) for t in car_transactions)
-                        total += car_amount
+                # Accommodation bookings with transactions
+                for accom in booking.accommodation_bookings.all():
+                    accom_amount = float(accom.total_amount_base or 0)
+                    accom_content_type = ContentType.objects.get_for_model(AccommodationBooking)
+                    accom_transactions = BookingTransaction.objects.filter(
+                        content_type=accom_content_type,
+                        object_id=accom.id,
+                        status__in=['CONFIRMED', 'PENDING']
+                    )
+                    accom_amount += sum(float(t.total_amount_base or t.total_amount or 0) for t in accom_transactions)
+                    total += accom_amount
 
-                    # Service fees with transactions
-                    for fee in booking.service_fees.all():
-                        fee_amount = float(fee.fee_amount or 0)
-                        fee_content_type = ContentType.objects.get_for_model(ServiceFee)
-                        fee_transactions = BookingTransaction.objects.filter(
-                            content_type=fee_content_type,
-                            object_id=fee.id,
-                            status__in=['CONFIRMED', 'PENDING']
-                        )
-                        fee_amount += sum(float(t.total_amount_base or t.total_amount or 0) for t in fee_transactions)
-                        total += fee_amount
+                # Car hire bookings with transactions
+                for car in booking.car_hire_bookings.all():
+                    car_amount = float(car.total_amount_base or 0)
+                    car_content_type = ContentType.objects.get_for_model(CarHireBooking)
+                    car_transactions = BookingTransaction.objects.filter(
+                        content_type=car_content_type,
+                        object_id=car.id,
+                        status__in=['CONFIRMED', 'PENDING']
+                    )
+                    car_amount += sum(float(t.total_amount_base or t.total_amount or 0) for t in car_transactions)
+                    total += car_amount
 
-                    # Other products with transactions
-                    for other in booking.other_products.all():
-                        other_amount = float(other.amount_base or other.amount or 0)
-                        other_content_type = ContentType.objects.get_for_model(OtherProduct)
-                        other_transactions = BookingTransaction.objects.filter(
-                            content_type=other_content_type,
-                            object_id=other.id,
-                            status__in=['CONFIRMED', 'PENDING']
-                        )
-                        other_amount += sum(float(t.total_amount_base or t.total_amount or 0) for t in other_transactions)
-                        total += other_amount
+                # Service fees with transactions
+                for fee in booking.service_fees.all():
+                    fee_amount = float(fee.fee_amount or 0)
+                    fee_content_type = ContentType.objects.get_for_model(ServiceFee)
+                    fee_transactions = BookingTransaction.objects.filter(
+                        content_type=fee_content_type,
+                        object_id=fee.id,
+                        status__in=['CONFIRMED', 'PENDING']
+                    )
+                    fee_amount += sum(float(t.total_amount_base or t.total_amount or 0) for t in fee_transactions)
+                    total += fee_amount
 
-                    booking_totals[booking_id] = total
+                # Other products with transactions
+                for other in booking.other_products.all():
+                    other_amount = float(other.amount_base or other.amount or 0)
+                    other_content_type = ContentType.objects.get_for_model(OtherProduct)
+                    other_transactions = BookingTransaction.objects.filter(
+                        content_type=other_content_type,
+                        object_id=other.id,
+                        status__in=['CONFIRMED', 'PENDING']
+                    )
+                    other_amount += sum(float(t.total_amount_base or t.total_amount or 0) for t in other_transactions)
+                    total += other_amount
+
+                booking_totals[booking_id] = total
 
         # Add booking totals to destination data
-        for ab in air_bookings:
-            dest = ab.destination_airport_iata_code
-            destination_data[dest]['total_spend'] += booking_totals.get(ab.booking.id, 0)
+        for dest_key, data in destination_data.items():
+            for booking_id in data['bookings']:
+                data['total_spend'] += booking_totals.get(booking_id, 0)
 
-        # Get airport coordinates for each destination
+        # Get coordinates and build result
         result = []
-        for dest_code, data in destination_data.items():
+
+        for dest_key, data in destination_data.items():
             try:
-                airport = Airport.objects.get(iata_code=dest_code)
-                if airport.latitude and airport.longitude:
-                    result.append({
-                        'code': dest_code,
-                        'name': airport.name,
-                        'city': airport.city,
-                        'country': airport.country or 'Unknown',
-                        'latitude': float(airport.latitude),
-                        'longitude': float(airport.longitude),
-                        'trips': data['trips'],
-                        'travellers': len(data['travellers']),
-                        'total_spend': round(data['total_spend'], 2),
-                        'avg_spend': round(data['total_spend'] / data['trips'], 2) if data['trips'] > 0 else 0
-                    })
-            except Airport.DoesNotExist:
-                # Skip destinations without airport data
+                if data['destination_type'] == 'airport':
+                    # Use airport coordinates
+                    airport = Airport.objects.get(iata_code=dest_key)
+                    if airport.latitude and airport.longitude:
+                        result.append({
+                            'code': dest_key,
+                            'name': airport.name,
+                            'city': airport.city,
+                            'country': airport.country or 'Unknown',
+                            'latitude': float(airport.latitude),
+                            'longitude': float(airport.longitude),
+                            'trips': data['trips'],
+                            'travellers': len(data['travellers']),
+                            'total_spend': round(data['total_spend'], 2),
+                            'avg_spend': round(data['total_spend'] / data['trips'], 2) if data['trips'] > 0 else 0,
+                            'destination_type': 'airport'
+                        })
+
+                elif data['destination_type'] == 'city':
+                    # Try to find an airport in this city to get coordinates
+                    city_name = data.get('city_name', '')
+                    country_name = data.get('country_name', '')
+
+                    # Look for airport in this city
+                    city_airport = Airport.objects.filter(
+                        city__iexact=city_name
+                    ).first()
+
+                    if city_airport and city_airport.latitude and city_airport.longitude:
+                        result.append({
+                            'code': dest_key,
+                            'name': f"{city_name} (Accommodation)",
+                            'city': city_name,
+                            'country': country_name,
+                            'latitude': float(city_airport.latitude),
+                            'longitude': float(city_airport.longitude),
+                            'trips': data['trips'],
+                            'travellers': len(data['travellers']),
+                            'total_spend': round(data['total_spend'], 2),
+                            'avg_spend': round(data['total_spend'] / data['trips'], 2) if data['trips'] > 0 else 0,
+                            'destination_type': 'city'
+                        })
+            except (Airport.DoesNotExist, KeyError):
+                # Skip destinations without coordinate data
                 continue
 
         # Sort by number of trips (descending)
