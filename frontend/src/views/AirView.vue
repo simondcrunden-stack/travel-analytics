@@ -30,9 +30,11 @@ const itemsPerPage = ref(20)
 const loadingPreferredAirlines = ref(false)
 const complianceData = ref(null)
 const marketShareData = ref(null)
+const performanceData = ref(null)
 const complianceViewMode = ref('cost_center')  // 'cost_center' or 'traveller'
 const showComplianceSection = ref(true)
 const showMarketShareSection = ref(true)
+const showPerformanceSection = ref(true)
 
 // Chart refs
 const airlineChartRef = ref(null)
@@ -139,18 +141,21 @@ const loadPreferredAirlineData = async (filters = {}) => {
 
     console.log('🔍 [AirView] Loading preferred airline data with params:', params)
 
-    // Load compliance report and market share performance in parallel
-    const [compliance, marketShare] = await Promise.all([
+    // Load compliance, market share, and performance data in parallel
+    const [compliance, marketShare, performance] = await Promise.all([
       preferredAirlineService.getComplianceReport(params),
-      preferredAirlineService.getMarketSharePerformance(params)
+      preferredAirlineService.getMarketSharePerformance(params),
+      preferredAirlineService.getPerformanceDashboard(params)
     ])
 
     complianceData.value = compliance
     marketShareData.value = marketShare
+    performanceData.value = performance
 
     console.log('✅ [AirView] Preferred airline data loaded:', {
       compliance: compliance.summary,
-      marketShare: marketShare.totals
+      marketShare: marketShare.totals,
+      performance: performance.totals
     })
 
   } catch (err) {
@@ -161,6 +166,7 @@ const loadPreferredAirlineData = async (filters = {}) => {
     // Don't show error to user - just hide sections if no data
     complianceData.value = null
     marketShareData.value = null
+    performanceData.value = null
   } finally {
     loadingPreferredAirlines.value = false
   }
@@ -787,6 +793,109 @@ onMounted(async () => {
       </div>
       <div class="p-6" style="height: 400px;">
         <canvas ref="routeChartRef"></canvas>
+      </div>
+    </div>
+
+    <!-- Performance Dashboard Section -->
+    <div v-if="!loading && !error && performanceData && performanceData.contracts.length > 0" class="space-y-6">
+      <!-- Section Header -->
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-xl font-bold text-gray-900">Contract Performance Dashboard</h2>
+          <p class="text-sm text-gray-500 mt-1">Actual vs target metrics for preferred airline contracts</p>
+        </div>
+        <button
+          @click="showPerformanceSection = !showPerformanceSection"
+          class="text-gray-400 hover:text-gray-600"
+        >
+          <span class="mdi" :class="showPerformanceSection ? 'mdi-chevron-up' : 'mdi-chevron-down'" style="font-size: 24px;"></span>
+        </button>
+      </div>
+
+      <!-- Collapsible Content -->
+      <div v-if="showPerformanceSection" class="bg-white rounded-xl shadow-sm overflow-hidden">
+        <!-- Performance Summary Cards -->
+        <div class="border-b border-gray-200 px-6 py-4 bg-gray-50">
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div>
+              <p class="text-xs text-gray-600">Target Flights</p>
+              <p class="text-2xl font-bold text-gray-900">{{ performanceData.totals.target_flights?.toLocaleString() || 'N/A' }}</p>
+            </div>
+            <div>
+              <p class="text-xs text-gray-600">Actual Flights</p>
+              <p class="text-2xl font-bold text-gray-900">{{ performanceData.totals.actual_flights?.toLocaleString() || 0 }}</p>
+            </div>
+            <div>
+              <p class="text-xs text-gray-600">Target Revenue</p>
+              <p class="text-2xl font-bold text-gray-900">{{ formatCurrency(performanceData.totals.target_revenue || 0) }}</p>
+            </div>
+            <div>
+              <p class="text-xs text-gray-600">Actual Revenue</p>
+              <p class="text-2xl font-bold text-green-600">{{ formatCurrency(performanceData.totals.actual_revenue || 0) }}</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Performance Table -->
+        <div class="overflow-x-auto">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Airline</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Market</th>
+                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Target Flights</th>
+                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actual Flights</th>
+                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Flight Variance</th>
+                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Target Revenue</th>
+                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actual Revenue</th>
+                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Revenue Variance</th>
+                <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+              </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+              <tr v-for="contract in performanceData.contracts" :key="contract.airline + contract.market_type" class="hover:bg-gray-50">
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ contract.airline }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{{ contract.market_type_display }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {{ contract.target_flights !== null ? contract.target_flights.toLocaleString() : '-' }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {{ contract.actual_flights.toLocaleString() }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-right">
+                  <span v-if="contract.flight_variance !== null" :class="contract.flight_variance >= 0 ? 'text-green-600' : 'text-red-600'">
+                    {{ contract.flight_variance > 0 ? '+' : '' }}{{ contract.flight_variance.toLocaleString() }}
+                  </span>
+                  <span v-else class="text-gray-400">-</span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {{ contract.target_revenue !== null ? formatCurrency(contract.target_revenue) : '-' }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {{ formatCurrency(contract.actual_revenue) }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-right">
+                  <span v-if="contract.revenue_variance !== null" :class="contract.revenue_variance >= 0 ? 'text-green-600' : 'text-red-600'">
+                    {{ contract.revenue_variance >= 0 ? '+' : '' }}{{ formatCurrency(contract.revenue_variance) }}
+                  </span>
+                  <span v-else class="text-gray-400">-</span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-center">
+                  <span :class="[
+                    'px-2 py-1 rounded-full text-xs font-medium',
+                    contract.performance_status === 'ABOVE_TARGET' ? 'bg-green-100 text-green-800' :
+                    contract.performance_status === 'ON_TARGET' ? 'bg-blue-100 text-blue-800' :
+                    'bg-red-100 text-red-800'
+                  ]">
+                    {{ contract.performance_status === 'ABOVE_TARGET' ? 'Above Target' :
+                       contract.performance_status === 'ON_TARGET' ? 'On Target' :
+                       'Below Target' }}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
 

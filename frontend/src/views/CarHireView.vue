@@ -22,6 +22,7 @@ const currentFilters = ref({})
 const currentPage = ref(1)
 const itemsPerPage = ref(20)
 const complianceData = ref(null)
+const performanceData = ref(null)
 const complianceViewMode = ref('cost_center') // 'cost_center' or 'traveller'
 
 // Chart refs
@@ -78,14 +79,16 @@ const loadData = async (filters = {}) => {
 
     console.log('🌐 [CarHireView] Loading car hire data with filters:', filters)
 
-    // Load bookings and compliance data in parallel
-    const [bookingsData, complianceResponse] = await Promise.all([
+    // Load bookings, compliance, and performance data in parallel
+    const [bookingsData, complianceResponse, performanceResponse] = await Promise.all([
       bookingService.getBookings(filters),
-      filters.organization ? preferredCarHireService.getComplianceReport(filters) : Promise.resolve(null)
+      filters.organization ? preferredCarHireService.getComplianceReport(filters) : Promise.resolve(null),
+      filters.organization ? preferredCarHireService.getPerformanceDashboard(filters) : Promise.resolve(null)
     ])
 
     bookings.value = bookingsData.results || []
     complianceData.value = complianceResponse
+    performanceData.value = performanceResponse
 
     // Use backend summary statistics
     if (bookingsData.summary) {
@@ -575,6 +578,105 @@ onMounted(async () => {
         </div>
         <div class="p-6" style="height: 400px;">
           <canvas ref="rentalCompanyChartRef"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Performance Dashboard Section -->
+    <div v-if="!loading && !error && performanceData && performanceData.contracts.length > 0" class="space-y-6">
+      <!-- Section Header -->
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-xl font-bold text-gray-900">Contract Performance Dashboard</h2>
+          <p class="text-sm text-gray-500 mt-1">Actual vs target metrics for preferred car hire contracts</p>
+        </div>
+      </div>
+
+      <!-- Performance Content -->
+      <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+        <!-- Performance Summary Cards -->
+        <div class="border-b border-gray-200 px-6 py-4 bg-gray-50">
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div>
+              <p class="text-xs text-gray-600">Target Rental Days</p>
+              <p class="text-2xl font-bold text-gray-900">{{ performanceData.totals.target_rental_days?.toLocaleString() || 'N/A' }}</p>
+            </div>
+            <div>
+              <p class="text-xs text-gray-600">Actual Rental Days</p>
+              <p class="text-2xl font-bold text-gray-900">{{ performanceData.totals.actual_rental_days?.toLocaleString() || 0 }}</p>
+            </div>
+            <div>
+              <p class="text-xs text-gray-600">Target Revenue</p>
+              <p class="text-2xl font-bold text-gray-900">{{ formatCurrency(performanceData.totals.target_revenue || 0) }}</p>
+            </div>
+            <div>
+              <p class="text-xs text-gray-600">Actual Revenue</p>
+              <p class="text-2xl font-bold text-green-600">{{ formatCurrency(performanceData.totals.actual_revenue || 0) }}</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Performance Table -->
+        <div class="overflow-x-auto">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Supplier</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Market</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Car Category</th>
+                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Target Rental Days</th>
+                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actual Rental Days</th>
+                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Days Variance</th>
+                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Target Revenue</th>
+                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actual Revenue</th>
+                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Revenue Variance</th>
+                <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+              </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+              <tr v-for="contract in performanceData.contracts" :key="contract.supplier + contract.market" class="hover:bg-gray-50">
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ contract.supplier }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{{ contract.market_display }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{{ contract.car_category_display }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {{ contract.target_rental_days !== null ? contract.target_rental_days.toLocaleString() : '-' }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {{ contract.actual_rental_days.toLocaleString() }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-right">
+                  <span v-if="contract.rental_days_variance !== null" :class="contract.rental_days_variance >= 0 ? 'text-green-600' : 'text-red-600'">
+                    {{ contract.rental_days_variance > 0 ? '+' : '' }}{{ contract.rental_days_variance.toLocaleString() }}
+                  </span>
+                  <span v-else class="text-gray-400">-</span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {{ contract.target_revenue !== null ? formatCurrency(contract.target_revenue) : '-' }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {{ formatCurrency(contract.actual_revenue) }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-right">
+                  <span v-if="contract.revenue_variance !== null" :class="contract.revenue_variance >= 0 ? 'text-green-600' : 'text-red-600'">
+                    {{ contract.revenue_variance >= 0 ? '+' : '' }}{{ formatCurrency(contract.revenue_variance) }}
+                  </span>
+                  <span v-else class="text-gray-400">-</span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-center">
+                  <span :class="[
+                    'px-2 py-1 rounded-full text-xs font-medium',
+                    contract.performance_status === 'ABOVE_TARGET' ? 'bg-green-100 text-green-800' :
+                    contract.performance_status === 'ON_TARGET' ? 'bg-blue-100 text-blue-800' :
+                    'bg-red-100 text-red-800'
+                  ]">
+                    {{ contract.performance_status === 'ABOVE_TARGET' ? 'Above Target' :
+                       contract.performance_status === 'ON_TARGET' ? 'On Target' :
+                       'Below Target' }}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
