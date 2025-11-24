@@ -13,7 +13,7 @@ from decimal import Decimal
 from .models import (
     Traveller, Booking, AirBooking, AirSegment,
     AccommodationBooking, CarHireBooking, Invoice, ServiceFee, BookingTransaction, BookingAuditLog,
-    PreferredAirline, PreferredHotel, ProductTypeMapping, OtherProduct
+    PreferredAirline, PreferredHotel, PreferredCarHire, ProductTypeMapping, OtherProduct
 )
 
 
@@ -1686,6 +1686,204 @@ class PreferredHotelAdmin(admin.ModelAdmin):
                 'style': 'width: 150px;'
             })
             form.base_fields['target_revenue'].help_text = 'Target revenue in base currency (e.g., 250000 for $250k)'
+
+        # Auto-populate created_by on create
+        if not obj and 'created_by' in form.base_fields:
+            form.base_fields['created_by'].initial = request.user
+
+        return form
+
+    def save_model(self, request, obj, form, change):
+        """Auto-set created_by on creation"""
+        if not change:  # Only on creation
+            obj.created_by = request.user
+        super().save_model(request, obj, form, change)
+
+
+# ============================================================================
+# PREFERRED CAR HIRE ADMIN
+# ============================================================================
+
+@admin.register(PreferredCarHire)
+class PreferredCarHireAdmin(admin.ModelAdmin):
+    """
+    Admin interface for managing preferred car hire contracts.
+    Supports car rental deals analysis and compliance tracking.
+    """
+
+    list_display = [
+        'organization',
+        'supplier',
+        'market_display',
+        'car_category_display',
+        'priority',
+        'target_rental_days',
+        'target_revenue_display',
+        'contract_period',
+        'status_badge',
+    ]
+
+    list_filter = [
+        'market',
+        'car_category',
+        'is_active',
+        'organization',
+        'supplier',
+        'priority',
+        'contract_start_date',
+    ]
+
+    search_fields = [
+        'supplier',
+        'organization__name',
+        'organization__code',
+        'notes',
+    ]
+
+    date_hierarchy = 'contract_start_date'
+
+    readonly_fields = [
+        'created_by',
+        'created_at',
+        'updated_at',
+    ]
+
+    fieldsets = (
+        ('Organization', {
+            'fields': ('organization',)
+        }),
+        ('Supplier & Market', {
+            'fields': ('supplier', 'market', 'car_category')
+        }),
+        ('Contract Terms', {
+            'fields': (
+                'priority',
+                'target_rental_days',
+                'target_revenue',
+                'contract_start_date',
+                'contract_end_date',
+                'is_active',
+            )
+        }),
+        ('Additional Information', {
+            'fields': ('notes',),
+            'classes': ('collapse',),
+        }),
+        ('Audit Trail', {
+            'fields': (
+                'created_by',
+                'created_at',
+                'updated_at',
+            ),
+            'classes': ('collapse',),
+        }),
+    )
+
+    # =============================================================================
+    # CUSTOM DISPLAY METHODS
+    # =============================================================================
+
+    @admin.display(description='Market', ordering='market')
+    def market_display(self, obj):
+        """Display market with flag icon"""
+        return format_html('<strong>{}</strong>', obj.get_market_display())
+
+    @admin.display(description='Car Category', ordering='car_category')
+    def car_category_display(self, obj):
+        """Display car category"""
+        if obj.car_category == 'ANY':
+            return format_html('<em style="color: #999;">Any Category</em>')
+        return obj.get_car_category_display()
+
+    @admin.display(description='Target Revenue')
+    def target_revenue_display(self, obj):
+        """Display target revenue with currency formatting"""
+        if obj.target_revenue:
+            formatted_amount = f'{obj.target_revenue:,.0f}'
+            return format_html(
+                '<span style="color: #28A745; font-weight: bold;">${}</span>',
+                formatted_amount
+            )
+        return format_html('<em style="color: #999;">Not set</em>')
+
+    @admin.display(description='Contract Period')
+    def contract_period(self, obj):
+        """Display contract start and end dates"""
+        return format_html(
+            '{} → {}',
+            obj.contract_start_date.strftime('%Y-%m-%d'),
+            obj.contract_end_date.strftime('%Y-%m-%d')
+        )
+
+    @admin.display(description='Status')
+    def status_badge(self, obj):
+        """Display active status with color-coded badge"""
+        from django.utils import timezone
+        today = timezone.now().date()
+
+        if not obj.is_active:
+            color = '#DC3545'  # Red
+            status = 'Inactive'
+        elif obj.contract_end_date < today:
+            color = '#FFA500'  # Orange
+            status = 'Expired'
+        elif obj.contract_start_date > today:
+            color = '#17A2B8'  # Cyan
+            status = 'Future'
+        else:
+            color = '#28A745'  # Green
+            status = 'Active'
+
+        return format_html(
+            '<span style="background-color: {}; color: white; padding: 3px 10px; '
+            'border-radius: 3px; font-size: 11px; font-weight: bold;">{}</span>',
+            color,
+            status
+        )
+
+    # =============================================================================
+    # ACTIONS
+    # =============================================================================
+
+    @admin.action(description='Mark as Active')
+    def mark_active(self, request, queryset):
+        updated = queryset.update(is_active=True)
+        self.message_user(request, f'{updated} preferred car hire(s) marked as active.')
+
+    @admin.action(description='Mark as Inactive')
+    def mark_inactive(self, request, queryset):
+        updated = queryset.update(is_active=False)
+        self.message_user(request, f'{updated} preferred car hire(s) marked as inactive.')
+
+    actions = [mark_active, mark_inactive]
+
+    # =============================================================================
+    # FORM CUSTOMIZATION
+    # =============================================================================
+
+    def get_form(self, request, obj=None, **kwargs):
+        """Customize form fields"""
+        form = super().get_form(request, obj, **kwargs)
+
+        # Set helpful placeholders
+        if 'supplier' in form.base_fields:
+            form.base_fields['supplier'].widget.attrs.update({
+                'placeholder': 'e.g., Hertz, Avis, Budget, Enterprise'
+            })
+
+        if 'target_rental_days' in form.base_fields:
+            form.base_fields['target_rental_days'].widget.attrs.update({
+                'placeholder': '5000',
+                'style': 'width: 120px;'
+            })
+            form.base_fields['target_rental_days'].help_text = 'Target rental days per year'
+
+        if 'target_revenue' in form.base_fields:
+            form.base_fields['target_revenue'].widget.attrs.update({
+                'placeholder': '500000.00',
+                'style': 'width: 150px;'
+            })
+            form.base_fields['target_revenue'].help_text = 'Target revenue in base currency (e.g., 500000 for $500k)'
 
         # Auto-populate created_by on create
         if not obj and 'created_by' in form.base_fields:

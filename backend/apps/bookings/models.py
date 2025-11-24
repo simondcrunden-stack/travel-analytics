@@ -2489,3 +2489,231 @@ class PreferredHotel(models.Model):
             return False
 
         return False
+
+
+# ============================================================================
+# PREFERRED CAR HIRE MODEL
+# ============================================================================
+
+class PreferredCarHire(models.Model):
+    """
+    Tracks preferred car hire supplier contracts and target metrics for customer organizations.
+
+    Used for:
+    - Car rental deals analysis and compliance tracking
+    - Rental days and revenue tracking
+    - Market-specific (country/region) performance monitoring
+    - Supplier relationship management
+
+    Example:
+        Hertz - Australia with 5000 rental days target
+        Avis - New Zealand with $500,000 revenue target
+        Budget - USA with focus on compact car category
+    """
+
+    MARKET_CHOICES = [
+        ('AUSTRALIA', 'Australia'),
+        ('NEW_ZEALAND', 'New Zealand'),
+        ('USA', 'United States'),
+        ('UK', 'United Kingdom'),
+        ('CANADA', 'Canada'),
+        ('OTHER', 'Other'),
+    ]
+
+    CAR_CATEGORY_CHOICES = [
+        ('ANY', 'Any Category'),
+        ('COMPACT', 'Compact'),
+        ('SEDAN', 'Sedan'),
+        ('SUV', 'SUV'),
+        ('LUXURY', 'Luxury'),
+        ('VAN', 'Van/Minivan'),
+        ('TRUCK', 'Truck/Ute'),
+    ]
+
+    # =============================================================================
+    # IDENTIFICATION
+    # =============================================================================
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    organization = models.ForeignKey(
+        'organizations.Organization',
+        on_delete=models.CASCADE,
+        related_name='preferred_car_hires',
+        help_text="Customer organization with this preferred car hire contract"
+    )
+
+    # =============================================================================
+    # SUPPLIER DETAILS
+    # =============================================================================
+    supplier = models.CharField(
+        max_length=200,
+        db_index=True,
+        help_text="Car hire supplier name (e.g., Hertz, Avis, Budget, Enterprise)"
+    )
+
+    # =============================================================================
+    # MARKET SCOPE
+    # =============================================================================
+    market = models.CharField(
+        max_length=50,
+        choices=MARKET_CHOICES,
+        db_index=True,
+        help_text="Geographic market/country for this contract"
+    )
+
+    # Optional: Specific car category focus
+    car_category = models.CharField(
+        max_length=20,
+        choices=CAR_CATEGORY_CHOICES,
+        default='ANY',
+        help_text="Specific car category for this contract (optional)"
+    )
+
+    # =============================================================================
+    # CONTRACT TARGETS
+    # =============================================================================
+    target_rental_days = models.IntegerField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0)],
+        help_text="Target number of rental days per year (e.g., 5000)"
+    )
+
+    target_revenue = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal('0.00'))],
+        help_text="Target revenue amount in base currency (e.g., 500000.00 for $500k)"
+    )
+
+    # Priority level for multi-tier agreements
+    priority = models.IntegerField(
+        default=1,
+        validators=[MinValueValidator(1), MaxValueValidator(10)],
+        help_text="Priority level (1=highest, 10=lowest) for tiered agreements"
+    )
+
+    # =============================================================================
+    # CONTRACT PERIOD
+    # =============================================================================
+    contract_start_date = models.DateField(
+        db_index=True,
+        help_text="Date this car hire contract becomes effective"
+    )
+
+    contract_end_date = models.DateField(
+        db_index=True,
+        help_text="Date this car hire contract expires"
+    )
+
+    is_active = models.BooleanField(
+        default=True,
+        db_index=True,
+        help_text="Whether this contract is currently active"
+    )
+
+    # =============================================================================
+    # ADDITIONAL DETAILS
+    # =============================================================================
+    notes = models.TextField(
+        blank=True,
+        help_text="Additional contract details, terms, or special conditions"
+    )
+
+    # =============================================================================
+    # AUDIT TRAIL
+    # =============================================================================
+    created_by = models.ForeignKey(
+        'users.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='preferred_car_hires_created',
+        help_text="User who created this preferred car hire record"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    # =============================================================================
+    # META
+    # =============================================================================
+    class Meta:
+        db_table = 'preferred_car_hires'
+        ordering = ['organization', 'market', 'priority', 'supplier']
+        indexes = [
+            models.Index(fields=['organization', 'market']),
+            models.Index(fields=['organization', 'is_active']),
+            models.Index(fields=['supplier']),
+            models.Index(fields=['contract_start_date', 'contract_end_date']),
+        ]
+        unique_together = [
+            ['organization', 'supplier', 'market', 'contract_start_date']
+        ]
+        verbose_name = 'Preferred Car Hire'
+        verbose_name_plural = 'Preferred Car Hires'
+
+    # =============================================================================
+    # METHODS
+    # =============================================================================
+    def __str__(self):
+        category_str = f" ({self.get_car_category_display()})" if self.car_category != 'ANY' else ''
+        return f"{self.organization.code} - {self.supplier} ({self.get_market_display()}{category_str})"
+
+    def is_contract_active(self, check_date=None):
+        """
+        Check if contract is active on a specific date
+
+        Args:
+            check_date: Date to check (defaults to today)
+
+        Returns:
+            bool: True if contract is active on the given date
+        """
+        from django.utils import timezone
+        if check_date is None:
+            check_date = timezone.now().date()
+
+        return (
+            self.is_active and
+            self.contract_start_date <= check_date <= self.contract_end_date
+        )
+
+    def matches_market(self, market):
+        """
+        Check if this contract covers a specific market
+
+        Args:
+            market: Market/country to check
+
+        Returns:
+            bool: True if market is covered by this contract
+        """
+        if not market:
+            return False
+
+        return self.market.upper() == market.upper()
+
+    def matches_category(self, category):
+        """
+        Check if this contract covers a specific car category
+
+        Args:
+            category: Car category to check
+
+        Returns:
+            bool: True if category is covered (ANY matches all)
+        """
+        if self.car_category == 'ANY':
+            return True
+
+        if not category:
+            return True  # No category specified, so it matches
+
+        return self.car_category.upper() == category.upper()

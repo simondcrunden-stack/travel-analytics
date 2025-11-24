@@ -4,7 +4,7 @@ from apps.users.models import User
 from apps.bookings.models import (
     Traveller, Booking, AirBooking, AirSegment,
     AccommodationBooking, CarHireBooking, Invoice, ServiceFee, BookingTransaction,
-    PreferredAirline, PreferredHotel
+    PreferredAirline, PreferredHotel, PreferredCarHire
 )
 from apps.budgets.models import FiscalYear, Budget, BudgetAlert
 from apps.compliance.models import (
@@ -1225,3 +1225,65 @@ class PreferredHotelSerializer(serializers.ModelSerializer):
         elif obj.location_country:
             return obj.location_country
         return "All Locations"
+
+
+class PreferredCarHireSerializer(serializers.ModelSerializer):
+    """
+    Serializer for PreferredCarHire model.
+    Used for car rental deals analysis and rental days tracking.
+    """
+    organization_name = serializers.CharField(source='organization.name', read_only=True)
+    created_by_name = serializers.CharField(source='created_by.__str__', read_only=True)
+    market_display = serializers.CharField(source='get_market_display', read_only=True)
+    car_category_display = serializers.CharField(source='get_car_category_display', read_only=True)
+
+    # Computed field for contract status (Active, Expired, Future)
+    contract_status = serializers.SerializerMethodField()
+
+    # Days until contract end
+    days_until_expiry = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PreferredCarHire
+        fields = [
+            'id', 'organization', 'organization_name',
+            'supplier', 'market', 'market_display', 'car_category', 'car_category_display',
+            'target_rental_days', 'target_revenue', 'priority',
+            'contract_start_date', 'contract_end_date',
+            'contract_status', 'days_until_expiry',
+            'is_active', 'notes',
+            'created_by', 'created_by_name',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def get_contract_status(self, obj):
+        """
+        Determine contract status based on dates and is_active flag.
+        Returns: ACTIVE, EXPIRED, FUTURE, or INACTIVE
+        """
+        from django.utils import timezone
+        today = timezone.now().date()
+
+        if not obj.is_active:
+            return 'INACTIVE'
+        elif obj.contract_end_date < today:
+            return 'EXPIRED'
+        elif obj.contract_start_date > today:
+            return 'FUTURE'
+        else:
+            return 'ACTIVE'
+
+    def get_days_until_expiry(self, obj):
+        """
+        Calculate days until contract expires.
+        Returns None if contract already expired or is inactive.
+        """
+        from django.utils import timezone
+        today = timezone.now().date()
+
+        if not obj.is_active or obj.contract_end_date < today:
+            return None
+
+        delta = obj.contract_end_date - today
+        return delta.days
