@@ -4202,25 +4202,25 @@ class PreferredCarHireViewSet(viewsets.ModelViewSet):
         # Helper function to determine market from car hire booking
         def get_car_hire_market(car_hire_booking):
             """Determine market from car hire location"""
-            # Get pickup country from the booking
-            pickup_country = car_hire_booking.pickup_country or ''
+            # Get country from the booking
+            country = car_hire_booking.country or ''
 
             # Map countries to markets
-            if not pickup_country:
+            if not country:
                 return 'OTHER'
 
-            pickup_country_upper = pickup_country.upper()
+            country_upper = country.upper()
 
             # Try to match by country name or code
-            if 'AUSTRALIA' in pickup_country_upper or pickup_country_upper in ['AU', 'AUS']:
+            if 'AUSTRALIA' in country_upper or country_upper in ['AU', 'AUS']:
                 return 'AUSTRALIA'
-            elif 'NEW ZEALAND' in pickup_country_upper or pickup_country_upper in ['NZ', 'NZL']:
+            elif 'NEW ZEALAND' in country_upper or country_upper in ['NZ', 'NZL']:
                 return 'NEW_ZEALAND'
-            elif 'UNITED STATES' in pickup_country_upper or 'USA' in pickup_country_upper or pickup_country_upper in ['US', 'USA']:
+            elif 'UNITED STATES' in country_upper or 'USA' in country_upper or country_upper in ['US', 'USA']:
                 return 'USA'
-            elif 'UNITED KINGDOM' in pickup_country_upper or pickup_country_upper in ['GB', 'GBR', 'UK']:
+            elif 'UNITED KINGDOM' in country_upper or country_upper in ['GB', 'GBR', 'UK']:
                 return 'UK'
-            elif 'CANADA' in pickup_country_upper or pickup_country_upper in ['CA', 'CAN']:
+            elif 'CANADA' in country_upper or country_upper in ['CA', 'CAN']:
                 return 'CANADA'
             else:
                 return 'OTHER'
@@ -4233,13 +4233,13 @@ class PreferredCarHireViewSet(viewsets.ModelViewSet):
         # Helper function to check if booking is on preferred supplier
         def is_preferred_supplier(car_hire_booking, market):
             """Check if car hire booking is on a preferred supplier"""
-            supplier = car_hire_booking.supplier or ''
+            rental_company = car_hire_booking.rental_company or ''
 
-            if not supplier or market not in preferred_by_market:
+            if not rental_company or market not in preferred_by_market:
                 return False
 
-            supplier_lower = supplier.lower()
-            return supplier_lower in preferred_by_market[market]
+            rental_company_lower = rental_company.lower()
+            return rental_company_lower in preferred_by_market[market]
 
         # Process each booking
         for booking in bookings:
@@ -4275,7 +4275,7 @@ class PreferredCarHireViewSet(viewsets.ModelViewSet):
                 for trans in transactions:
                     spend += float(trans.total_amount_base or trans.total_amount or 0)
 
-                rental_days = car_hire_booking.rental_days or 0
+                rental_days = car_hire_booking.number_of_days or 0
 
                 # Update summary
                 summary['total_spend'] += spend
@@ -4319,8 +4319,8 @@ class PreferredCarHireViewSet(viewsets.ModelViewSet):
                         'booking_reference': booking.agent_booking_reference,
                         'traveller_name': str(booking.traveller) if booking.traveller else 'Unknown',
                         'cost_center': cost_center,
-                        'supplier': car_hire_booking.supplier or 'Unknown',
-                        'car_category': car_hire_booking.car_category or 'Unknown',
+                        'supplier': car_hire_booking.rental_company or 'Unknown',
+                        'car_category': car_hire_booking.vehicle_category or 'Unknown',
                         'pickup_location': car_hire_booking.pickup_location or 'Unknown',
                         'pickup_date': str(car_hire_booking.pickup_date) if car_hire_booking.pickup_date else 'Unknown',
                         'rental_days': rental_days,
@@ -4417,22 +4417,22 @@ class PreferredCarHireViewSet(viewsets.ModelViewSet):
         # Helper function to determine market from car hire booking
         def get_car_hire_market(car_hire_booking):
             """Determine market from car hire location"""
-            pickup_country = car_hire_booking.pickup_country or ''
+            country = car_hire_booking.country or ''
 
-            if not pickup_country:
+            if not country:
                 return 'OTHER'
 
-            pickup_country_upper = pickup_country.upper()
+            country_upper = country.upper()
 
-            if 'AUSTRALIA' in pickup_country_upper or pickup_country_upper in ['AU', 'AUS']:
+            if 'AUSTRALIA' in country_upper or country_upper in ['AU', 'AUS']:
                 return 'AUSTRALIA'
-            elif 'NEW ZEALAND' in pickup_country_upper or pickup_country_upper in ['NZ', 'NZL']:
+            elif 'NEW ZEALAND' in country_upper or country_upper in ['NZ', 'NZL']:
                 return 'NEW_ZEALAND'
-            elif 'UNITED STATES' in pickup_country_upper or 'USA' in pickup_country_upper or pickup_country_upper in ['US', 'USA']:
+            elif 'UNITED STATES' in country_upper or 'USA' in country_upper or country_upper in ['US', 'USA']:
                 return 'USA'
-            elif 'UNITED KINGDOM' in pickup_country_upper or pickup_country_upper in ['GB', 'GBR', 'UK']:
+            elif 'UNITED KINGDOM' in country_upper or country_upper in ['GB', 'GBR', 'UK']:
                 return 'UK'
-            elif 'CANADA' in pickup_country_upper or pickup_country_upper in ['CA', 'CAN']:
+            elif 'CANADA' in country_upper or country_upper in ['CA', 'CAN']:
                 return 'CANADA'
             else:
                 return 'OTHER'
@@ -4444,7 +4444,7 @@ class PreferredCarHireViewSet(viewsets.ModelViewSet):
 
             car_hire_qs = CarHireBooking.objects.filter(
                 booking__organization_id=organization_id,
-                supplier=pch.supplier
+                rental_company=pch.supplier
             )
 
             if booking_date_gte:
@@ -4452,14 +4452,14 @@ class PreferredCarHireViewSet(viewsets.ModelViewSet):
             if booking_date_lte:
                 car_hire_qs = car_hire_qs.filter(booking__booking_date__lte=booking_date_lte)
 
-            # Filter by market - need to check pickup_country
+            # Filter by market - need to check country
             market_bookings = []
             for ch in car_hire_qs:
                 if get_car_hire_market(ch) == pch.market:
                     market_bookings.append(ch)
 
             # Calculate actual metrics
-            actual_rental_days = sum(ch.rental_days or 0 for ch in market_bookings)
+            actual_rental_days = sum(ch.number_of_days or 0 for ch in market_bookings)
             actual_revenue = sum(float(ch.total_amount_base or 0) for ch in market_bookings)
 
             # Add to totals
