@@ -3517,7 +3517,6 @@ class PreferredAirlineViewSet(viewsets.ModelViewSet):
                 'airline_code': pa.airline_iata_code,
                 'market_type': pa.market_type,
                 'market_type_display': pa.get_market_type_display(),
-                'priority': pa.priority,
                 'target_market_share': float(pa.target_market_share),
                 'actual_market_share': round(actual_market_share, 2),
                 'market_share_variance': round(market_share_variance, 2),
