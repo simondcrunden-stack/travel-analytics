@@ -13,7 +13,7 @@ from decimal import Decimal
 from .models import (
     Traveller, Booking, AirBooking, AirSegment,
     AccommodationBooking, CarHireBooking, Invoice, ServiceFee, BookingTransaction, BookingAuditLog,
-    PreferredAirline, ProductTypeMapping, OtherProduct
+    PreferredAirline, PreferredHotel, ProductTypeMapping, OtherProduct
 )
 
 
@@ -1467,6 +1467,238 @@ class PreferredAirlineAdmin(admin.ModelAdmin):
         if not change:  # Only on creation
             obj.created_by = request.user
         super().save_model(request, obj, form, change)
+
+
+# ============================================================================
+# PREFERRED HOTEL ADMIN
+# ============================================================================
+
+@admin.register(PreferredHotel)
+class PreferredHotelAdmin(admin.ModelAdmin):
+    """
+    Admin interface for managing preferred hotel contracts.
+    Supports hotel deals analysis and room night tracking.
+    """
+
+    list_display = [
+        'organization',
+        'hotel_display',
+        'location_display',
+        'market_type',
+        'priority',
+        'target_room_nights',
+        'target_revenue_display',
+        'contract_period',
+        'status_badge',
+    ]
+
+    list_filter = [
+        'market_type',
+        'is_active',
+        'organization',
+        'hotel_chain',
+        'location_city',
+        'location_country',
+        'priority',
+        'contract_start_date',
+    ]
+
+    search_fields = [
+        'hotel_chain',
+        'location_city',
+        'location_country',
+        'organization__name',
+        'organization__code',
+        'notes',
+        'hotel__name',
+    ]
+
+    date_hierarchy = 'contract_start_date'
+
+    readonly_fields = [
+        'created_by',
+        'created_at',
+        'updated_at',
+    ]
+
+    fieldsets = (
+        ('Organization', {
+            'fields': ('organization',)
+        }),
+        ('Hotel Details', {
+            'fields': ('hotel_chain', 'hotel')
+        }),
+        ('Location Scope', {
+            'fields': (
+                'market_type',
+                'location_city',
+                'location_country',
+            ),
+            'description': 'Define which locations this contract covers. '
+                          'Leave city/country blank for chain-wide contracts.'
+        }),
+        ('Contract Terms', {
+            'fields': (
+                'priority',
+                'target_room_nights',
+                'target_revenue',
+                'contract_start_date',
+                'contract_end_date',
+                'is_active',
+            )
+        }),
+        ('Additional Information', {
+            'fields': ('notes',),
+            'classes': ('collapse',),
+        }),
+        ('Audit Trail', {
+            'fields': (
+                'created_by',
+                'created_at',
+                'updated_at',
+            ),
+            'classes': ('collapse',),
+        }),
+    )
+
+    # =============================================================================
+    # CUSTOM DISPLAY METHODS
+    # =============================================================================
+
+    @admin.display(description='Hotel', ordering='hotel_chain')
+    def hotel_display(self, obj):
+        """Display hotel chain with specific hotel if linked"""
+        if obj.hotel:
+            return format_html(
+                '<strong>{}</strong><br><span style="color: #666; font-size: 11px;">{}</span>',
+                obj.hotel_chain,
+                obj.hotel.name
+            )
+        return format_html('<strong>{}</strong>', obj.hotel_chain)
+
+    @admin.display(description='Location', ordering='location_city')
+    def location_display(self, obj):
+        """Display location information"""
+        if obj.location_city and obj.location_country:
+            return format_html('{}, {}', obj.location_city, obj.location_country)
+        elif obj.location_city:
+            return obj.location_city
+        elif obj.location_country:
+            return obj.location_country
+        return format_html('<em style="color: #999;">All Locations</em>')
+
+    @admin.display(description='Target Revenue')
+    def target_revenue_display(self, obj):
+        """Display target revenue with currency formatting"""
+        if obj.target_revenue:
+            formatted_amount = f'{obj.target_revenue:,.0f}'
+            return format_html(
+                '<span style="color: #28A745; font-weight: bold;">${}</span>',
+                formatted_amount
+            )
+        return format_html('<em style="color: #999;">Not set</em>')
+
+    @admin.display(description='Contract Period')
+    def contract_period(self, obj):
+        """Display contract start and end dates"""
+        return format_html(
+            '{} → {}',
+            obj.contract_start_date.strftime('%Y-%m-%d'),
+            obj.contract_end_date.strftime('%Y-%m-%d')
+        )
+
+    @admin.display(description='Status')
+    def status_badge(self, obj):
+        """Display active status with color-coded badge"""
+        from django.utils import timezone
+        today = timezone.now().date()
+
+        if not obj.is_active:
+            color = '#DC3545'  # Red
+            status = 'Inactive'
+        elif obj.contract_end_date < today:
+            color = '#FFA500'  # Orange
+            status = 'Expired'
+        elif obj.contract_start_date > today:
+            color = '#17A2B8'  # Cyan
+            status = 'Future'
+        else:
+            color = '#28A745'  # Green
+            status = 'Active'
+
+        return format_html(
+            '<span style="background-color: {}; color: white; padding: 3px 10px; '
+            'border-radius: 3px; font-size: 11px; font-weight: bold;">{}</span>',
+            color,
+            status
+        )
+
+    # =============================================================================
+    # ACTIONS
+    # =============================================================================
+
+    @admin.action(description='Mark as Active')
+    def mark_active(self, request, queryset):
+        updated = queryset.update(is_active=True)
+        self.message_user(request, f'{updated} preferred hotel(s) marked as active.')
+
+    @admin.action(description='Mark as Inactive')
+    def mark_inactive(self, request, queryset):
+        updated = queryset.update(is_active=False)
+        self.message_user(request, f'{updated} preferred hotel(s) marked as inactive.')
+
+    actions = [mark_active, mark_inactive]
+
+    # =============================================================================
+    # FORM CUSTOMIZATION
+    # =============================================================================
+
+    def get_form(self, request, obj=None, **kwargs):
+        """Customize form fields"""
+        form = super().get_form(request, obj, **kwargs)
+
+        # Set helpful placeholders
+        if 'hotel_chain' in form.base_fields:
+            form.base_fields['hotel_chain'].widget.attrs.update({
+                'placeholder': 'e.g., Marriott, Hilton, Accor'
+            })
+
+        if 'location_city' in form.base_fields:
+            form.base_fields['location_city'].widget.attrs.update({
+                'placeholder': 'e.g., Sydney, Melbourne'
+            })
+
+        if 'location_country' in form.base_fields:
+            form.base_fields['location_country'].widget.attrs.update({
+                'placeholder': 'e.g., Australia, New Zealand'
+            })
+
+        if 'target_room_nights' in form.base_fields:
+            form.base_fields['target_room_nights'].widget.attrs.update({
+                'placeholder': '1000',
+                'style': 'width: 120px;'
+            })
+            form.base_fields['target_room_nights'].help_text = 'Target room nights per year'
+
+        if 'target_revenue' in form.base_fields:
+            form.base_fields['target_revenue'].widget.attrs.update({
+                'placeholder': '250000.00',
+                'style': 'width: 150px;'
+            })
+            form.base_fields['target_revenue'].help_text = 'Target revenue in base currency (e.g., 250000 for $250k)'
+
+        # Auto-populate created_by on create
+        if not obj and 'created_by' in form.base_fields:
+            form.base_fields['created_by'].initial = request.user
+
+        return form
+
+    def save_model(self, request, obj, form, change):
+        """Auto-set created_by on creation"""
+        if not change:  # Only on creation
+            obj.created_by = request.user
+        super().save_model(request, obj, form, change)
+
 
 # ============================================================================
 # PRODUCT TYPE MAPPING ADMIN

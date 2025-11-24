@@ -3308,3 +3308,540 @@ class PreferredAirlineViewSet(viewsets.ModelViewSet):
                 }
             }
         })
+
+
+# ============================================================================
+# PREFERRED HOTEL VIEWSET
+# ============================================================================
+
+class PreferredHotelViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for managing preferred hotel contracts.
+
+    Supports:
+    - List all preferred hotels for accessible organizations
+    - Retrieve specific preferred hotel details
+    - Create new preferred hotel contracts
+    - Update existing contracts
+    - Delete contracts
+    - Filter by organization, market_type, hotel_chain, contract status
+
+    Query parameters:
+    - organization: Filter by organization ID
+    - market_type: Filter by DOMESTIC or INTERNATIONAL
+    - hotel_chain: Filter by hotel chain name
+    - location_city: Filter by city
+    - is_active: Filter by active status (true/false)
+    - contract_status: Filter by ACTIVE, EXPIRED, FUTURE, INACTIVE
+    """
+    serializer_class = PreferredHotelSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['organization', 'market_type', 'hotel_chain', 'location_city', 'location_country', 'is_active']
+    search_fields = ['hotel_chain', 'location_city', 'location_country', 'notes']
+    ordering_fields = ['hotel_chain', 'priority', 'contract_start_date', 'contract_end_date', 'target_room_nights', 'target_revenue', 'created_at']
+    ordering = ['organization', 'market_type', 'priority', 'hotel_chain']
+
+    def get_queryset(self):
+        """
+        Filter preferred hotels based on user's organization access.
+        Only show hotels for organizations the user has access to.
+        """
+        user = self.request.user
+
+        if user.user_type == 'ADMIN':
+            queryset = PreferredHotel.objects.all()
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            # Travel agents see preferred hotels for their customer organizations
+            if user.organization:
+                queryset = PreferredHotel.objects.filter(
+                    Q(organization=user.organization) |
+                    Q(organization__travel_agent=user.organization)
+                )
+            else:
+                queryset = PreferredHotel.objects.all()
+        else:
+            # Customer users see only their organization's preferred hotels
+            if user.organization:
+                queryset = PreferredHotel.objects.filter(organization=user.organization)
+            else:
+                queryset = PreferredHotel.objects.none()
+
+        # Filter by contract_status if provided (custom filter)
+        contract_status = self.request.query_params.get('contract_status', None)
+        if contract_status:
+            from django.utils import timezone
+            today = timezone.now().date()
+
+            if contract_status == 'ACTIVE':
+                queryset = queryset.filter(
+                    is_active=True,
+                    contract_start_date__lte=today,
+                    contract_end_date__gte=today
+                )
+            elif contract_status == 'EXPIRED':
+                queryset = queryset.filter(
+                    is_active=True,
+                    contract_end_date__lt=today
+                )
+            elif contract_status == 'FUTURE':
+                queryset = queryset.filter(
+                    is_active=True,
+                    contract_start_date__gt=today
+                )
+            elif contract_status == 'INACTIVE':
+                queryset = queryset.filter(is_active=False)
+
+        return queryset.select_related('organization', 'hotel', 'created_by')
+
+    def perform_create(self, serializer):
+        """Set created_by to current user when creating a new preferred hotel"""
+        serializer.save(created_by=self.request.user)
+
+    @action(detail=False, methods=['get'])
+    def active_contracts(self, request):
+        """
+        Get all currently active preferred hotel contracts.
+        A contract is active if:
+        - is_active = True
+        - current date is between contract_start_date and contract_end_date
+
+        Query params supported:
+        - organization: Filter by organization ID
+        - market_type: Filter by DOMESTIC or INTERNATIONAL
+        """
+        from django.utils import timezone
+        today = timezone.now().date()
+
+        queryset = self.filter_queryset(self.get_queryset())
+
+        # Filter for currently active contracts
+        queryset = queryset.filter(
+            is_active=True,
+            contract_start_date__lte=today,
+            contract_end_date__gte=today
+        )
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def expiring_soon(self, request):
+        """
+        Get preferred hotel contracts expiring within the next N days.
+
+        Query params:
+        - days: Number of days to look ahead (default: 30)
+        - organization: Filter by organization ID
+        """
+        from django.utils import timezone
+        from datetime import timedelta
+
+        today = timezone.now().date()
+        days_ahead = int(request.query_params.get('days', 30))
+        expiry_threshold = today + timedelta(days=days_ahead)
+
+        queryset = self.filter_queryset(self.get_queryset())
+
+        # Filter for contracts expiring soon
+        queryset = queryset.filter(
+            is_active=True,
+            contract_start_date__lte=today,
+            contract_end_date__gte=today,
+            contract_end_date__lte=expiry_threshold
+        )
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def deactivate(self, request, pk=None):
+        """
+        Deactivate a preferred hotel contract.
+        Sets is_active to False.
+        """
+        preferred_hotel = self.get_object()
+        preferred_hotel.is_active = False
+        preferred_hotel.save()
+
+        serializer = self.get_serializer(preferred_hotel)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def activate(self, request, pk=None):
+        """
+        Activate a preferred hotel contract.
+        Sets is_active to True.
+        """
+        preferred_hotel = self.get_object()
+        preferred_hotel.is_active = True
+        preferred_hotel.save()
+
+        serializer = self.get_serializer(preferred_hotel)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def compliance_report(self, request):
+        """
+        Calculate preferred hotel compliance metrics.
+
+        Returns room nights and spending broken down by:
+        - Overall compliance rate
+        - Compliance by cost center
+        - Non-compliant bookings (off-preferred hotels)
+
+        Query params:
+        - organization: Filter by organization ID (required)
+        - booking_date__gte: Start date for bookings (optional)
+        - booking_date__lte: End date for bookings (optional)
+        - market_type: Filter by DOMESTIC or INTERNATIONAL (optional)
+
+        Returns:
+        {
+            "summary": {
+                "total_spend": 500000,
+                "preferred_spend": 425000,
+                "non_preferred_spend": 75000,
+                "compliance_rate": 85.0,
+                "total_room_nights": 1000,
+                "preferred_room_nights": 850,
+                "non_preferred_room_nights": 150
+            },
+            "by_cost_center": [...],
+            "non_compliant_bookings": [...]
+        }
+        """
+        from django.utils import timezone
+        from collections import defaultdict
+
+        # Get organization from query params
+        organization_id = request.query_params.get('organization')
+        if not organization_id:
+            return Response(
+                {'error': 'organization parameter is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Get date range filters
+        booking_date_gte = request.query_params.get('booking_date__gte')
+        booking_date_lte = request.query_params.get('booking_date__lte')
+        market_type_filter = request.query_params.get('market_type')
+
+        # Get active preferred hotel contracts for this organization
+        today = timezone.now().date()
+        preferred_hotels = PreferredHotel.objects.filter(
+            organization_id=organization_id,
+            is_active=True,
+            contract_start_date__lte=today,
+            contract_end_date__gte=today
+        )
+
+        # Build a lookup for preferred hotels
+        preferred_chains = set()
+        preferred_by_location = {}  # {chain: {city: True}}
+
+        for ph in preferred_hotels:
+            preferred_chains.add(ph.hotel_chain.lower())
+            if ph.location_city:
+                if ph.hotel_chain.lower() not in preferred_by_location:
+                    preferred_by_location[ph.hotel_chain.lower()] = set()
+                preferred_by_location[ph.hotel_chain.lower()].add(ph.location_city.lower())
+
+        # Get all bookings for the organization with filters
+        bookings_qs = Booking.objects.filter(organization_id=organization_id)
+
+        if booking_date_gte:
+            bookings_qs = bookings_qs.filter(booking_date__gte=booking_date_gte)
+        if booking_date_lte:
+            bookings_qs = bookings_qs.filter(booking_date__lte=booking_date_lte)
+
+        bookings = bookings_qs.select_related('traveller', 'organization').prefetch_related(
+            'accommodation_bookings__hotel'
+        )
+
+        # Initialize aggregations
+        summary = {
+            'total_spend': 0,
+            'preferred_spend': 0,
+            'non_preferred_spend': 0,
+            'total_room_nights': 0,
+            'preferred_room_nights': 0,
+            'non_preferred_room_nights': 0
+        }
+
+        cost_center_data = defaultdict(lambda: {
+            'cost_center': '',
+            'cost_center_name': '',
+            'total_spend': 0,
+            'preferred_spend': 0,
+            'non_preferred_spend': 0,
+            'total_room_nights': 0,
+            'preferred_room_nights': 0,
+            'non_preferred_room_nights': 0,
+            'compliance_rate': 0
+        })
+
+        non_compliant_bookings = []
+
+        # Helper function to determine market type
+        def get_accommodation_market_type(accom_booking):
+            """Determine if accommodation is DOMESTIC or INTERNATIONAL"""
+            home_country = accom_booking.booking.organization.home_country or 'AUS'
+
+            # Get country from hotel or fall back to booking country
+            if accom_booking.hotel and accom_booking.hotel.country:
+                hotel_country_name = accom_booking.hotel.country
+            else:
+                hotel_country_name = accom_booking.country
+
+            if not hotel_country_name:
+                return 'INTERNATIONAL'
+
+            # Get home country object
+            home_country_obj = Country.objects.filter(alpha_3=home_country).first()
+            if not home_country_obj:
+                return 'INTERNATIONAL'
+
+            return 'DOMESTIC' if hotel_country_name.lower() == home_country_obj.name.lower() else 'INTERNATIONAL'
+
+        # Helper function to check if booking is on preferred hotel
+        def is_preferred_hotel(accom_booking):
+            """Check if accommodation booking is on a preferred hotel"""
+            hotel_chain = accom_booking.hotel_chain or ''
+            city = accom_booking.city or ''
+
+            if not hotel_chain:
+                return False
+
+            # Check if chain is preferred
+            chain_lower = hotel_chain.lower()
+            if chain_lower not in preferred_chains:
+                return False
+
+            # If location-specific contract exists, check location match
+            if chain_lower in preferred_by_location:
+                city_lower = city.lower()
+                return city_lower in preferred_by_location[chain_lower]
+
+            # Chain-wide contract (no location restriction)
+            return True
+
+        # Process each booking
+        for booking in bookings:
+            if not booking.accommodation_bookings.exists():
+                continue  # Skip non-accommodation bookings
+
+            cost_center = booking.traveller.cost_center if booking.traveller and booking.traveller.cost_center else 'Unassigned'
+
+            # Process accommodation bookings
+            for accom_booking in booking.accommodation_bookings.all():
+                # Determine market type
+                market_type = get_accommodation_market_type(accom_booking)
+
+                # Skip if filtered by market type
+                if market_type_filter and market_type != market_type_filter:
+                    continue
+
+                # Calculate spend including transactions
+                spend = float(accom_booking.total_amount_base or 0)
+
+                # Add transaction amounts
+                from django.contrib.contenttypes.models import ContentType
+                accom_ct = ContentType.objects.get_for_model(AccommodationBooking)
+                transactions = BookingTransaction.objects.filter(
+                    content_type=accom_ct,
+                    object_id=accom_booking.id,
+                    status__in=['CONFIRMED', 'PENDING']
+                )
+                for trans in transactions:
+                    spend += float(trans.total_amount_base or trans.total_amount or 0)
+
+                room_nights = accom_booking.number_of_nights or 0
+
+                # Update summary
+                summary['total_spend'] += spend
+                summary['total_room_nights'] += room_nights
+
+                # Update cost center data
+                cc_key = cost_center
+                cost_center_data[cc_key]['cost_center'] = cost_center
+                cost_center_data[cc_key]['cost_center_name'] = cost_center
+                cost_center_data[cc_key]['total_spend'] += spend
+                cost_center_data[cc_key]['total_room_nights'] += room_nights
+
+                # Check if preferred
+                if is_preferred_hotel(accom_booking):
+                    summary['preferred_spend'] += spend
+                    summary['preferred_room_nights'] += room_nights
+                    cost_center_data[cc_key]['preferred_spend'] += spend
+                    cost_center_data[cc_key]['preferred_room_nights'] += room_nights
+                else:
+                    summary['non_preferred_spend'] += spend
+                    summary['non_preferred_room_nights'] += room_nights
+                    cost_center_data[cc_key]['non_preferred_spend'] += spend
+                    cost_center_data[cc_key]['non_preferred_room_nights'] += room_nights
+
+                    # Track non-compliant booking
+                    non_compliant_bookings.append({
+                        'booking_reference': booking.agent_booking_reference,
+                        'traveller_name': str(booking.traveller) if booking.traveller else 'Unknown',
+                        'cost_center': cost_center,
+                        'hotel_chain': accom_booking.hotel_chain or 'Unknown',
+                        'hotel_name': accom_booking.hotel_name or 'Unknown',
+                        'city': accom_booking.city or 'Unknown',
+                        'checkin_date': str(accom_booking.checkin_date),
+                        'room_nights': room_nights,
+                        'spend': round(spend, 2),
+                        'market_type': market_type
+                    })
+
+        # Calculate compliance rates
+        if summary['total_spend'] > 0:
+            summary['compliance_rate'] = round((summary['preferred_spend'] / summary['total_spend']) * 100, 2)
+        else:
+            summary['compliance_rate'] = 0
+
+        # Calculate cost center compliance rates
+        for cc_data in cost_center_data.values():
+            if cc_data['total_spend'] > 0:
+                cc_data['compliance_rate'] = round((cc_data['preferred_spend'] / cc_data['total_spend']) * 100, 2)
+            else:
+                cc_data['compliance_rate'] = 0
+
+        # Format response
+        return Response({
+            'summary': {
+                'total_spend': round(summary['total_spend'], 2),
+                'preferred_spend': round(summary['preferred_spend'], 2),
+                'non_preferred_spend': round(summary['non_preferred_spend'], 2),
+                'compliance_rate': summary['compliance_rate'],
+                'total_room_nights': summary['total_room_nights'],
+                'preferred_room_nights': summary['preferred_room_nights'],
+                'non_preferred_room_nights': summary['non_preferred_room_nights']
+            },
+            'by_cost_center': sorted(
+                [dict(cc_data) for cc_data in cost_center_data.values()],
+                key=lambda x: x['total_spend'],
+                reverse=True
+            ),
+            'non_compliant_bookings': sorted(
+                non_compliant_bookings,
+                key=lambda x: x['spend'],
+                reverse=True
+            )[:50]  # Limit to top 50
+        })
+
+    @action(detail=False, methods=['get'])
+    def performance_dashboard(self, request):
+        """
+        Calculate performance metrics for preferred hotels.
+
+        Query params:
+        - organization: Filter by organization ID (required)
+        - booking_date__gte: Start date (optional)
+        - booking_date__lte: End date (optional)
+
+        Returns performance data showing actual vs target metrics.
+        """
+        from django.utils import timezone
+        from collections import defaultdict
+
+        # Get organization from query params
+        organization_id = request.query_params.get('organization')
+        if not organization_id:
+            return Response(
+                {'error': 'organization parameter is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Get active preferred hotels for this organization
+        today = timezone.now().date()
+        preferred_hotels = PreferredHotel.objects.filter(
+            organization_id=organization_id,
+            is_active=True,
+            contract_start_date__lte=today,
+            contract_end_date__gte=today
+        )
+
+        results = []
+        total_target_revenue = 0
+        total_actual_revenue = 0
+        total_target_room_nights = 0
+        total_actual_room_nights = 0
+
+        for ph in preferred_hotels:
+            # Get actual bookings for this hotel
+            booking_date_gte = request.query_params.get('booking_date__gte')
+            booking_date_lte = request.query_params.get('booking_date__lte')
+
+            accom_qs = AccommodationBooking.objects.filter(
+                booking__organization_id=organization_id,
+                hotel_chain=ph.hotel_chain
+            )
+
+            # Apply location filters if contract is location-specific
+            if ph.location_city:
+                accom_qs = accom_qs.filter(city=ph.location_city)
+
+            if booking_date_gte:
+                accom_qs = accom_qs.filter(booking__booking_date__gte=booking_date_gte)
+            if booking_date_lte:
+                accom_qs = accom_qs.filter(booking__booking_date__lte=booking_date_lte)
+
+            # Calculate actual metrics
+            actual_room_nights = sum(a.number_of_nights or 0 for a in accom_qs)
+            actual_revenue = sum(float(a.total_amount_base or 0) for a in accom_qs)
+
+            # Add to totals
+            if ph.target_revenue:
+                total_target_revenue += float(ph.target_revenue)
+            total_actual_revenue += actual_revenue
+
+            if ph.target_room_nights:
+                total_target_room_nights += ph.target_room_nights
+            total_actual_room_nights += actual_room_nights
+
+            # Calculate variances
+            room_nights_variance = None
+            revenue_variance = None
+            performance_status = 'ON_TARGET'
+
+            if ph.target_room_nights:
+                room_nights_variance = actual_room_nights - ph.target_room_nights
+                if actual_room_nights < ph.target_room_nights * 0.9:
+                    performance_status = 'BELOW_TARGET'
+                elif actual_room_nights >= ph.target_room_nights:
+                    performance_status = 'ABOVE_TARGET'
+
+            if ph.target_revenue:
+                revenue_variance = actual_revenue - float(ph.target_revenue)
+                if actual_revenue < float(ph.target_revenue) * 0.9:
+                    performance_status = 'BELOW_TARGET'
+                elif actual_revenue >= float(ph.target_revenue):
+                    performance_status = 'ABOVE_TARGET'
+
+            results.append({
+                'hotel_chain': ph.hotel_chain,
+                'location': ph.location_city or ph.location_country or 'All Locations',
+                'market_type': ph.market_type,
+                'priority': ph.priority,
+                'target_room_nights': ph.target_room_nights,
+                'actual_room_nights': actual_room_nights,
+                'room_nights_variance': room_nights_variance,
+                'target_revenue': float(ph.target_revenue) if ph.target_revenue else None,
+                'actual_revenue': round(actual_revenue, 2),
+                'revenue_variance': round(revenue_variance, 2) if revenue_variance is not None else None,
+                'performance_status': performance_status
+            })
+
+        return Response({
+            'contracts': sorted(results, key=lambda x: x.get('actual_revenue', 0), reverse=True),
+            'totals': {
+                'target_revenue': round(total_target_revenue, 2),
+                'actual_revenue': round(total_actual_revenue, 2),
+                'revenue_variance': round(total_actual_revenue - total_target_revenue, 2),
+                'target_room_nights': total_target_room_nights,
+                'actual_room_nights': total_actual_room_nights,
+                'room_nights_variance': total_actual_room_nights - total_target_room_nights
+            }
+        })

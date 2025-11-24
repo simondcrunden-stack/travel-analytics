@@ -6,7 +6,7 @@ from django.db import models
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.core.serializers.json import DjangoJSONEncoder
-from django.core.validators import MinValueValidator
+from django.core.validators import MinValueValidator, MaxValueValidator
 from decimal import Decimal
 import uuid
 import json
@@ -2265,3 +2265,227 @@ class PreferredAirline(models.Model):
             return True
 
         return country_code in self.markets_served
+
+
+# ============================================================================
+# PREFERRED HOTEL MODEL
+# ============================================================================
+
+class PreferredHotel(models.Model):
+    """
+    Tracks preferred hotel contracts and target metrics for customer organizations.
+
+    Used for:
+    - Hotel deals analysis and compliance tracking
+    - Room night and revenue tracking
+    - Location-specific performance monitoring
+    - Chain vs independent hotel preferences
+
+    Example:
+        Marriott - Sydney CBD with 1000 room nights target
+        Hilton - Melbourne with $250,000 revenue target
+    """
+
+    MARKET_TYPE_CHOICES = [
+        ('DOMESTIC', 'Domestic'),
+        ('INTERNATIONAL', 'International'),
+    ]
+
+    # =============================================================================
+    # IDENTIFICATION
+    # =============================================================================
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    organization = models.ForeignKey(
+        'organizations.Organization',
+        on_delete=models.CASCADE,
+        related_name='preferred_hotels',
+        help_text="Customer organization with this preferred hotel contract"
+    )
+
+    # =============================================================================
+    # HOTEL DETAILS
+    # =============================================================================
+    hotel_chain = models.CharField(
+        max_length=200,
+        help_text="Hotel chain name (e.g., Marriott, Hilton, Accor)"
+    )
+
+    # Optional: Link to specific hotel in master data
+    hotel = models.ForeignKey(
+        'reference_data.Hotel',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='preferred_contracts',
+        help_text="Specific hotel (optional - leave blank for chain-wide contracts)"
+    )
+
+    # =============================================================================
+    # LOCATION SCOPE
+    # =============================================================================
+    market_type = models.CharField(
+        max_length=20,
+        choices=MARKET_TYPE_CHOICES,
+        db_index=True,
+        help_text="Whether this contract is for domestic or international hotels"
+    )
+
+    # City or location for this contract
+    location_city = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="City/location for this contract (e.g., 'Sydney', 'Melbourne'). Leave blank for all locations."
+    )
+
+    location_country = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Country for this contract. Leave blank for all countries."
+    )
+
+    # =============================================================================
+    # CONTRACT TARGETS
+    # =============================================================================
+    target_room_nights = models.IntegerField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0)],
+        help_text="Target number of room nights per year (e.g., 1000)"
+    )
+
+    target_revenue = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal('0.00'))],
+        help_text="Target revenue amount in base currency (e.g., 250000.00 for $250,000)"
+    )
+
+    # Priority level for multi-tier agreements
+    priority = models.IntegerField(
+        default=1,
+        validators=[MinValueValidator(1), MaxValueValidator(10)],
+        help_text="Priority level (1=highest, 10=lowest) for tiered agreements"
+    )
+
+    # =============================================================================
+    # CONTRACT PERIOD
+    # =============================================================================
+    contract_start_date = models.DateField(
+        db_index=True,
+        help_text="Date this hotel contract becomes effective"
+    )
+
+    contract_end_date = models.DateField(
+        db_index=True,
+        help_text="Date this hotel contract expires"
+    )
+
+    is_active = models.BooleanField(
+        default=True,
+        db_index=True,
+        help_text="Whether this contract is currently active"
+    )
+
+    # =============================================================================
+    # ADDITIONAL DETAILS
+    # =============================================================================
+    notes = models.TextField(
+        blank=True,
+        help_text="Additional contract details, terms, or special conditions"
+    )
+
+    # =============================================================================
+    # AUDIT TRAIL
+    # =============================================================================
+    created_by = models.ForeignKey(
+        'users.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='preferred_hotels_created',
+        help_text="User who created this preferred hotel record"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    # =============================================================================
+    # META
+    # =============================================================================
+    class Meta:
+        db_table = 'preferred_hotels'
+        ordering = ['organization', 'market_type', 'priority', 'hotel_chain']
+        indexes = [
+            models.Index(fields=['organization', 'market_type']),
+            models.Index(fields=['organization', 'is_active']),
+            models.Index(fields=['hotel_chain']),
+            models.Index(fields=['contract_start_date', 'contract_end_date']),
+            models.Index(fields=['location_city', 'location_country']),
+        ]
+        unique_together = [
+            ['organization', 'hotel_chain', 'location_city', 'contract_start_date']
+        ]
+        verbose_name = 'Preferred Hotel'
+        verbose_name_plural = 'Preferred Hotels'
+
+    # =============================================================================
+    # METHODS
+    # =============================================================================
+    def __str__(self):
+        location = self.location_city or self.location_country or 'All Locations'
+        return f"{self.organization.code} - {self.hotel_chain} ({location}, {self.market_type})"
+
+    def is_contract_active(self, check_date=None):
+        """
+        Check if contract is active on a specific date
+
+        Args:
+            check_date: Date to check (defaults to today)
+
+        Returns:
+            bool: True if contract is active on the given date
+        """
+        from django.utils import timezone
+        if check_date is None:
+            check_date = timezone.now().date()
+
+        return (
+            self.is_active and
+            self.contract_start_date <= check_date <= self.contract_end_date
+        )
+
+    def matches_location(self, city=None, country=None):
+        """
+        Check if this preferred hotel contract covers a specific location
+
+        Args:
+            city: City name to check (optional)
+            country: Country name to check (optional)
+
+        Returns:
+            bool: True if location is covered by this contract
+        """
+        # If no specific location defined, covers everything
+        if not self.location_city and not self.location_country:
+            return True
+
+        # Check city match
+        if self.location_city:
+            if city and self.location_city.lower() == city.lower():
+                return True
+            return False
+
+        # Check country match
+        if self.location_country:
+            if country and self.location_country.lower() == country.lower():
+                return True
+            return False
+
+        return False
