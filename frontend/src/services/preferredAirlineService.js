@@ -81,6 +81,17 @@ export default {
     return response.data
   },
 
+  // Get performance dashboard
+  async getPerformanceDashboard(params = {}) {
+    console.log('🔍 [preferredAirlineService] getPerformanceDashboard - input params:', params)
+    const backendParams = transformFiltersForBackend(params)
+    console.log('🔍 [preferredAirlineService] getPerformanceDashboard - transformed params:', backendParams)
+    const response = await api.get('/preferred-airlines/performance_dashboard/', {
+      params: backendParams
+    })
+    return response.data
+  },
+
   // Helper: Format performance status badge class
   getPerformanceStatusClass(status) {
     const classes = {
