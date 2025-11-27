@@ -140,6 +140,13 @@ export default {
     return response.data
   },
 
+  // Budget burn rate analysis
+  async getBudgetBurnRate(params = {}) {
+    const backendParams = transformFiltersForBackend(params)
+    const response = await api.get('/budgets/burn_rate_analysis/', { params: backendParams })
+    return response.data
+  },
+
   // Top rankings for dashboard (cost centers and travellers)
   async getTopRankings(params = {}) {
     const backendParams = transformFiltersForBackend(params)
@@ -171,6 +178,20 @@ export default {
   async getTripMapData(params = {}) {
     const backendParams = transformFiltersForBackend(params)
     const response = await api.get('/bookings/trip_map_data/', { params: backendParams })
+    return response.data
+  },
+
+  // Top routes and destinations analysis
+  async getTopRoutesDestinations(params = {}) {
+    const backendParams = transformFiltersForBackend(params)
+    const response = await api.get('/bookings/top_routes_destinations/', { params: backendParams })
+    return response.data
+  },
+
+  // Sustainability analytics
+  async getSustainabilityAnalytics(params = {}) {
+    const backendParams = transformFiltersForBackend(params)
+    const response = await api.get('/bookings/sustainability_analytics/', { params: backendParams })
     return response.data
   },
 

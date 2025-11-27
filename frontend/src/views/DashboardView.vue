@@ -190,6 +190,16 @@
         </div>
       </div>
 
+      <!-- Top Routes & Destinations -->
+      <div class="mt-6">
+        <TopRoutesWidget :filters="activeFilters" />
+      </div>
+
+      <!-- Sustainability Dashboard -->
+      <div class="mt-6">
+        <SustainabilityWidget :filters="activeFilters" />
+      </div>
+
       <!-- Compliance & Emissions Summary -->
       <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
         <!-- Compliance Rate -->
@@ -400,6 +410,11 @@
             </div>
           </div>
         </div>
+
+        <!-- Budget Burn Rate Analysis -->
+        <div class="mt-6">
+          <BudgetBurnRateWidget :organization="activeFilters.organization" />
+        </div>
       </div>
 
       <!-- Top Rankings -->
@@ -603,6 +618,9 @@ import bookingService from '@/services/bookingService'
 import UniversalFilters from '@/components/common/UniversalFilters.vue'
 import TripMap from '@/components/dashboard/TripMap.vue'
 import ContractExpiryWidget from '@/components/ContractExpiryWidget.vue'
+import TopRoutesWidget from '@/components/TopRoutesWidget.vue'
+import SustainabilityWidget from '@/components/SustainabilityWidget.vue'
+import BudgetBurnRateWidget from '@/components/BudgetBurnRateWidget.vue'
 
 // State
 const loading = ref(true)

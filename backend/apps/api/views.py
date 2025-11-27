@@ -1304,6 +1304,295 @@ class BookingViewSet(viewsets.ModelViewSet):
         return Response(result)
 
     @action(detail=False, methods=['get'])
+    def top_routes_destinations(self, request):
+        """
+        Get top routes and destinations analysis for dashboard.
+
+        Returns:
+        - Top routes (origin -> destination pairs)
+        - Top destinations (arrival airports)
+        - Most traveled airports (origin + destination combined)
+        """
+        from collections import defaultdict, Counter
+
+        user = request.user
+        limit = int(request.query_params.get('limit', 10))
+
+        # Build base queryset using same logic as get_queryset()
+        if user.user_type == 'ADMIN':
+            base_queryset = Booking.objects.all()
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            base_queryset = Booking.objects.filter(
+                Q(organization=user.organization) |
+                Q(organization__travel_agent=user.organization)
+            )
+        else:
+            base_queryset = Booking.objects.filter(organization=user.organization)
+
+        # Apply advanced filters from request
+        base_queryset = self._apply_advanced_filters(base_queryset, user)
+
+        # Get all air segments from these bookings
+        air_segments = AirSegment.objects.filter(
+            air_booking__booking__in=base_queryset
+        ).select_related('air_booking', 'air_booking__booking')
+
+        # Aggregate route data
+        route_data = defaultdict(lambda: {
+            'trips': 0,
+            'travellers': set(),
+            'total_spend': 0
+        })
+
+        destination_data = defaultdict(lambda: {
+            'trips': 0,
+            'travellers': set(),
+            'total_spend': 0
+        })
+
+        airport_frequency = Counter()
+
+        for segment in air_segments:
+            origin = segment.origin_airport_iata_code
+            destination = segment.destination_airport_iata_code
+
+            if origin and destination:
+                # Track route (origin -> destination)
+                route_key = f"{origin}-{destination}"
+                route_data[route_key]['trips'] += 1
+                route_data[route_key]['origin'] = origin
+                route_data[route_key]['destination'] = destination
+
+                if segment.air_booking.booking.traveller:
+                    route_data[route_key]['travellers'].add(segment.air_booking.booking.traveller.id)
+
+                route_data[route_key]['total_spend'] += float(segment.air_booking.booking.total_amount_with_transactions or 0)
+
+                # Track destinations
+                destination_data[destination]['trips'] += 1
+                destination_data[destination]['destination'] = destination
+
+                if segment.air_booking.booking.traveller:
+                    destination_data[destination]['travellers'].add(segment.air_booking.booking.traveller.id)
+
+                destination_data[destination]['total_spend'] += float(segment.air_booking.booking.total_amount_with_transactions or 0)
+
+                # Track airport frequency (both origin and destination)
+                airport_frequency[origin] += 1
+                airport_frequency[destination] += 1
+
+        # Get airport details for top airports
+        from apps.reference_data.models import Airport
+        top_airport_codes = [code for code, _ in airport_frequency.most_common(limit)]
+        airports = {a.iata_code: a for a in Airport.objects.filter(iata_code__in=top_airport_codes)}
+
+        # Format top routes
+        top_routes = []
+        for route_key, data in sorted(route_data.items(), key=lambda x: x[1]['trips'], reverse=True)[:limit]:
+            origin_airport = airports.get(data['origin'])
+            dest_airport = airports.get(data['destination'])
+
+            top_routes.append({
+                'route': route_key,
+                'origin': data['origin'],
+                'origin_city': origin_airport.city if origin_airport else data['origin'],
+                'destination': data['destination'],
+                'destination_city': dest_airport.city if dest_airport else data['destination'],
+                'trips': data['trips'],
+                'unique_travellers': len(data['travellers']),
+                'total_spend': round(data['total_spend'], 2),
+                'avg_spend_per_trip': round(data['total_spend'] / data['trips'], 2) if data['trips'] > 0 else 0
+            })
+
+        # Format top destinations
+        top_destinations = []
+        for dest_code, data in sorted(destination_data.items(), key=lambda x: x[1]['trips'], reverse=True)[:limit]:
+            dest_airport = airports.get(dest_code)
+
+            top_destinations.append({
+                'destination': dest_code,
+                'city': dest_airport.city if dest_airport else dest_code,
+                'country': dest_airport.country if dest_airport else 'Unknown',
+                'trips': data['trips'],
+                'unique_travellers': len(data['travellers']),
+                'total_spend': round(data['total_spend'], 2),
+                'avg_spend_per_trip': round(data['total_spend'] / data['trips'], 2) if data['trips'] > 0 else 0
+            })
+
+        # Format top airports
+        top_airports = []
+        for airport_code, frequency in airport_frequency.most_common(limit):
+            airport = airports.get(airport_code)
+            top_airports.append({
+                'airport': airport_code,
+                'city': airport.city if airport else airport_code,
+                'country': airport.country if airport else 'Unknown',
+                'frequency': frequency
+            })
+
+        return Response({
+            'top_routes': top_routes,
+            'top_destinations': top_destinations,
+            'top_airports': top_airports
+        })
+
+    @action(detail=False, methods=['get'])
+    def sustainability_analytics(self, request):
+        """
+        Get comprehensive sustainability and carbon emissions analytics.
+
+        Returns:
+        - Total emissions breakdown (by trip type, by category)
+        - Monthly emissions trend
+        - Top carbon emitters (travellers)
+        - Carbon efficiency metrics
+        - Emissions by route
+        """
+        from collections import defaultdict
+        from datetime import datetime
+        from decimal import Decimal
+
+        user = request.user
+
+        # Build base queryset using same logic as get_queryset()
+        if user.user_type == 'ADMIN':
+            base_queryset = Booking.objects.all()
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            base_queryset = Booking.objects.filter(
+                Q(organization=user.organization) |
+                Q(organization__travel_agent=user.organization)
+            )
+        else:
+            base_queryset = Booking.objects.filter(organization=user.organization)
+
+        # Apply advanced filters from request
+        base_queryset = self._apply_advanced_filters(base_queryset, user)
+
+        # Initialize totals
+        total_emissions = Decimal('0')
+        total_emissions_domestic = Decimal('0')
+        total_emissions_international = Decimal('0')
+        total_emissions_air = Decimal('0')
+        total_spend = Decimal('0')
+        monthly_emissions = defaultdict(lambda: {'carbon_kg': 0, 'trips': 0})
+        traveller_emissions = defaultdict(lambda: {'carbon_kg': 0, 'trips': 0, 'name': ''})
+        route_emissions = defaultdict(lambda: {'carbon_kg': 0, 'trips': 0})
+
+        # Get user's home country for domestic/international classification
+        user_country_code = 'AUS'
+        if hasattr(user, 'organization') and user.organization:
+            user_country_code = user.organization.home_country or 'AUS'
+
+        from apps.reference_data.models import Country, Airport
+        try:
+            user_country_obj = Country.objects.get(alpha_3=user_country_code)
+            user_country_name = user_country_obj.name
+        except Country.DoesNotExist:
+            user_country_name = 'Australia'
+
+        domestic_airports = list(Airport.objects.filter(
+            country=user_country_name
+        ).values_list('iata_code', flat=True))
+
+        # Process all bookings with air travel
+        air_bookings = AirBooking.objects.filter(
+            booking__in=base_queryset
+        ).select_related('booking', 'booking__traveller').prefetch_related('segments')
+
+        for air_booking in air_bookings:
+            booking = air_booking.booking
+            carbon_kg = float(air_booking.total_carbon_kg or 0)
+
+            # Add to total
+            total_emissions += Decimal(str(carbon_kg))
+            total_emissions_air += Decimal(str(carbon_kg))
+            total_spend += booking.total_amount_with_transactions or booking.total_amount or Decimal('0')
+
+            # Determine if domestic or international
+            is_domestic = True
+            for segment in air_booking.segments.all():
+                origin_domestic = segment.origin_airport_iata_code in domestic_airports
+                dest_domestic = segment.destination_airport_iata_code in domestic_airports
+                if not (origin_domestic and dest_domestic):
+                    is_domestic = False
+                    break
+
+            if is_domestic:
+                total_emissions_domestic += Decimal(str(carbon_kg))
+            else:
+                total_emissions_international += Decimal(str(carbon_kg))
+
+            # Monthly trend
+            if booking.travel_date:
+                month_key = booking.travel_date.strftime('%Y-%m')
+                monthly_emissions[month_key]['carbon_kg'] += carbon_kg
+                monthly_emissions[month_key]['trips'] += 1
+
+            # Traveller emissions
+            if booking.traveller:
+                traveller_id = booking.traveller.id
+                traveller_emissions[traveller_id]['carbon_kg'] += carbon_kg
+                traveller_emissions[traveller_id]['trips'] += 1
+                traveller_emissions[traveller_id]['name'] = f"{booking.traveller.first_name} {booking.traveller.last_name}"
+
+            # Route emissions (use first segment for route)
+            first_segment = air_booking.segments.first()
+            if first_segment:
+                route_key = f"{first_segment.origin_airport_iata_code}-{first_segment.destination_airport_iata_code}"
+                route_emissions[route_key]['carbon_kg'] += carbon_kg
+                route_emissions[route_key]['trips'] += 1
+                route_emissions[route_key]['route'] = route_key
+
+        # Format monthly trend (sorted by month)
+        monthly_trend = []
+        for month_key in sorted(monthly_emissions.keys()):
+            data = monthly_emissions[month_key]
+            monthly_trend.append({
+                'month': month_key,
+                'carbon_kg': round(data['carbon_kg'], 2),
+                'trips': data['trips']
+            })
+
+        # Format top carbon emitters (travellers)
+        top_emitters = []
+        for traveller_id, data in sorted(traveller_emissions.items(), key=lambda x: x[1]['carbon_kg'], reverse=True)[:10]:
+            top_emitters.append({
+                'traveller_id': traveller_id,
+                'traveller_name': data['name'],
+                'carbon_kg': round(data['carbon_kg'], 2),
+                'trips': data['trips'],
+                'avg_carbon_per_trip': round(data['carbon_kg'] / data['trips'], 2) if data['trips'] > 0 else 0
+            })
+
+        # Format top routes by emissions
+        top_routes_by_emissions = []
+        for route_key, data in sorted(route_emissions.items(), key=lambda x: x[1]['carbon_kg'], reverse=True)[:10]:
+            top_routes_by_emissions.append({
+                'route': route_key,
+                'carbon_kg': round(data['carbon_kg'], 2),
+                'trips': data['trips'],
+                'avg_carbon_per_trip': round(data['carbon_kg'] / data['trips'], 2) if data['trips'] > 0 else 0
+            })
+
+        # Calculate carbon efficiency (kg CO2 per dollar spent)
+        carbon_efficiency = float(total_emissions / total_spend) if total_spend > 0 else 0
+
+        return Response({
+            'summary': {
+                'total_emissions_kg': float(total_emissions),
+                'total_emissions_tonnes': round(float(total_emissions) / 1000, 2),
+                'domestic_emissions_kg': float(total_emissions_domestic),
+                'international_emissions_kg': float(total_emissions_international),
+                'air_emissions_kg': float(total_emissions_air),
+                'total_spend': float(total_spend),
+                'carbon_efficiency': round(carbon_efficiency, 4)
+            },
+            'monthly_trend': monthly_trend,
+            'top_emitters': top_emitters,
+            'top_routes_by_emissions': top_routes_by_emissions
+        })
+
+    @action(detail=False, methods=['get'])
     def supplier_autocomplete(self, request):
         """
         Get autocomplete suggestions for suppliers based on type.
@@ -2217,6 +2506,187 @@ class BudgetViewSet(viewsets.ReadOnlyModelViewSet):
             )
 
         return Response(summary)
+
+    @action(detail=False, methods=['get'])
+    def burn_rate_analysis(self, request):
+        """
+        Get budget burn rate analysis and forecasting.
+
+        Returns:
+        - Monthly spending trend
+        - Burn rate (spending per month)
+        - Projected spend for fiscal year
+        - Budget forecast and risk assessment
+        """
+        from collections import defaultdict
+        from datetime import datetime, timedelta
+        from decimal import Decimal
+        from dateutil.relativedelta import relativedelta
+
+        user = request.user
+        organization_id = request.query_params.get('organization')
+
+        # Build base budget queryset
+        if user.user_type == 'ADMIN':
+            budgets_qs = Budget.objects.filter(is_active=True)
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            budgets_qs = Budget.objects.filter(
+                Q(organization=user.organization) |
+                Q(organization__travel_agent=user.organization),
+                is_active=True
+            )
+        else:
+            budgets_qs = Budget.objects.filter(
+                organization=user.organization,
+                is_active=True
+            )
+
+        # Filter by organization if specified
+        if organization_id:
+            budgets_qs = budgets_qs.filter(organization_id=organization_id)
+
+        # Get current fiscal year
+        try:
+            if organization_id:
+                org = Organization.objects.get(id=organization_id)
+            elif user.organization:
+                org = user.organization
+            else:
+                org = None
+
+            if org:
+                current_fy = FiscalYear.objects.filter(
+                    organization=org,
+                    is_current=True
+                ).first()
+
+                if not current_fy:
+                    return Response({
+                        'error': 'No current fiscal year found'
+                    }, status=400)
+
+                budgets_qs = budgets_qs.filter(fiscal_year=current_fy)
+
+                fy_start = current_fy.start_date
+                fy_end = current_fy.end_date
+            else:
+                return Response({
+                    'error': 'No organization found'
+                }, status=400)
+        except Organization.DoesNotExist:
+            return Response({
+                'error': 'Organization not found'
+            }, status=404)
+
+        # Get bookings for this organization in the fiscal year
+        if user.user_type == 'ADMIN':
+            bookings_qs = Booking.objects.all()
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            bookings_qs = Booking.objects.filter(
+                Q(organization=user.organization) |
+                Q(organization__travel_agent=user.organization)
+            )
+        else:
+            bookings_qs = Booking.objects.filter(organization=user.organization)
+
+        if organization_id:
+            bookings_qs = bookings_qs.filter(organization_id=organization_id)
+
+        # Filter bookings by fiscal year
+        bookings_qs = bookings_qs.filter(
+            travel_date__gte=fy_start,
+            travel_date__lte=fy_end
+        )
+
+        # Calculate monthly spending
+        monthly_spend = defaultdict(Decimal)
+        for booking in bookings_qs:
+            month_key = booking.travel_date.strftime('%Y-%m')
+            monthly_spend[month_key] += booking.total_amount_with_transactions or booking.total_amount or Decimal('0')
+
+        # Get total budget allocated
+        total_budget = sum(float(b.total_budget) for b in budgets_qs)
+        total_spent = sum(float(v) for v in monthly_spend.values())
+
+        # Calculate months elapsed and remaining
+        today = datetime.now().date()
+        months_elapsed = ((today.year - fy_start.year) * 12 + today.month - fy_start.month) + 1
+        total_months = ((fy_end.year - fy_start.year) * 12 + fy_end.month - fy_start.month) + 1
+        months_remaining = total_months - months_elapsed
+
+        # Calculate burn rate (average spend per month)
+        burn_rate = total_spent / months_elapsed if months_elapsed > 0 else 0
+
+        # Project end-of-year spend
+        projected_total_spend = total_spent + (burn_rate * months_remaining)
+
+        # Calculate budget health
+        if total_budget > 0:
+            current_utilization = (total_spent / total_budget) * 100
+            projected_utilization = (projected_total_spend / total_budget) * 100
+
+            if projected_utilization > 100:
+                status = 'WILL_EXCEED'
+                risk_level = 'HIGH'
+            elif projected_utilization > 95:
+                status = 'AT_RISK'
+                risk_level = 'MEDIUM'
+            elif projected_utilization > 80:
+                status = 'ON_TRACK_WARN'
+                risk_level = 'LOW'
+            else:
+                status = 'ON_TRACK'
+                risk_level = 'LOW'
+        else:
+            current_utilization = 0
+            projected_utilization = 0
+            status = 'NO_BUDGET'
+            risk_level = 'UNKNOWN'
+
+        # Format monthly trend data
+        monthly_trend = []
+        current_month = fy_start
+        cumulative_spend = 0
+        cumulative_budget_allocation = 0
+        monthly_budget_allocation = total_budget / total_months if total_months > 0 else 0
+
+        while current_month <= fy_end:
+            month_key = current_month.strftime('%Y-%m')
+            month_spend = float(monthly_spend.get(month_key, 0))
+            cumulative_spend += month_spend
+            cumulative_budget_allocation += monthly_budget_allocation
+
+            monthly_trend.append({
+                'month': month_key,
+                'spend': round(month_spend, 2),
+                'cumulative_spend': round(cumulative_spend, 2),
+                'cumulative_budget': round(cumulative_budget_allocation, 2),
+                'is_actual': current_month <= today
+            })
+
+            current_month += relativedelta(months=1)
+
+        return Response({
+            'fiscal_year': {
+                'start_date': fy_start.isoformat(),
+                'end_date': fy_end.isoformat(),
+                'total_months': total_months,
+                'months_elapsed': months_elapsed,
+                'months_remaining': months_remaining
+            },
+            'summary': {
+                'total_budget': round(total_budget, 2),
+                'total_spent': round(total_spent, 2),
+                'burn_rate': round(burn_rate, 2),
+                'projected_total_spend': round(projected_total_spend, 2),
+                'projected_overrun': round(max(0, projected_total_spend - total_budget), 2),
+                'current_utilization': round(current_utilization, 2),
+                'projected_utilization': round(projected_utilization, 2),
+                'status': status,
+                'risk_level': risk_level
+            },
+            'monthly_trend': monthly_trend
+        })
 
 
 # ============================================================================
