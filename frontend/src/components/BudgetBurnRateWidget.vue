@@ -174,9 +174,12 @@ const loadBurnRateData = async () => {
 
     console.log('✅ [BudgetBurnRateWidget] Loaded burn rate data:', data)
 
-    // Render chart after data loads
+    // Render chart after data loads - use setTimeout to ensure DOM is ready
     await nextTick()
-    renderChart()
+    await nextTick() // Double nextTick for Chart.js
+    setTimeout(() => {
+      renderChart()
+    }, 100)
   } catch (error) {
     console.error('❌ [BudgetBurnRateWidget] Error loading burn rate data:', error)
     if (error.response && error.response.data && error.response.data.error) {
@@ -191,7 +194,17 @@ const loadBurnRateData = async () => {
 
 // Render chart
 const renderChart = () => {
-  if (!burnRateData.value || !burnRateData.value.monthly_trend) return
+  if (!burnRateData.value || !burnRateData.value.monthly_trend) {
+    console.log('⚠️ [BudgetBurnRateWidget] No data available for chart')
+    return
+  }
+
+  console.log('🎨 [BudgetBurnRateWidget] Rendering chart with data:', {
+    monthlyTrendPoints: burnRateData.value.monthly_trend.length,
+    totalBudget: burnRateData.value.summary.total_budget,
+    totalSpent: burnRateData.value.summary.total_spent,
+    burnRate: burnRateData.value.summary.burn_rate
+  })
 
   // Destroy existing chart
   if (burnRateChartInstance) {
@@ -200,6 +213,7 @@ const renderChart = () => {
 
   if (burnRateChart.value) {
     const ctx = burnRateChart.value.getContext('2d')
+    console.log('📊 [BudgetBurnRateWidget] Creating burn rate chart')
 
     const labels = burnRateData.value.monthly_trend.map(d => {
       const [year, month] = d.month.split('-')
