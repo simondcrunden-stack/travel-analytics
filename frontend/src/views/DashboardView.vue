@@ -520,6 +520,11 @@
         </div>
       </div>
 
+      <!-- Contract Expiry Alerts -->
+      <div class="mt-6">
+        <ContractExpiryWidget :organization="activeFilters.organization" />
+      </div>
+
       <!-- Recent Bookings -->
       <div class="bg-white rounded-lg shadow mt-6">
         <div class="p-6 border-b border-gray-200">
@@ -597,6 +602,7 @@ import { Chart } from 'chart.js/auto'
 import bookingService from '@/services/bookingService'
 import UniversalFilters from '@/components/common/UniversalFilters.vue'
 import TripMap from '@/components/dashboard/TripMap.vue'
+import ContractExpiryWidget from '@/components/ContractExpiryWidget.vue'
 
 // State
 const loading = ref(true)
