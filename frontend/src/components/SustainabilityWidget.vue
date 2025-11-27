@@ -226,9 +226,12 @@ const loadSustainabilityData = async () => {
 
     console.log('✅ [SustainabilityWidget] Loaded sustainability data:', data)
 
-    // Render charts after data loads
+    // Render charts after data loads - use setTimeout to ensure DOM is ready
     await nextTick()
-    renderCharts()
+    await nextTick() // Double nextTick for Chart.js
+    setTimeout(() => {
+      renderCharts()
+    }, 100)
   } catch (error) {
     console.error('❌ [SustainabilityWidget] Error loading sustainability data:', error)
     sustainabilityData.value = null
@@ -239,7 +242,16 @@ const loadSustainabilityData = async () => {
 
 // Render charts
 const renderCharts = () => {
-  if (!sustainabilityData.value) return
+  if (!sustainabilityData.value) {
+    console.log('⚠️ [SustainabilityWidget] No data available for charts')
+    return
+  }
+
+  console.log('🎨 [SustainabilityWidget] Rendering charts with data:', {
+    domestic: sustainabilityData.value.summary.domestic_emissions_kg,
+    international: sustainabilityData.value.summary.international_emissions_kg,
+    monthlyTrendPoints: sustainabilityData.value.monthly_trend?.length || 0
+  })
 
   // Emissions Breakdown Chart
   if (emissionsBreakdownChartInstance) {
@@ -248,6 +260,7 @@ const renderCharts = () => {
 
   if (emissionsBreakdownChart.value) {
     const ctx = emissionsBreakdownChart.value.getContext('2d')
+    console.log('📊 [SustainabilityWidget] Creating emissions breakdown chart')
     emissionsBreakdownChartInstance = new Chart(ctx, {
       type: 'doughnut',
       data: {

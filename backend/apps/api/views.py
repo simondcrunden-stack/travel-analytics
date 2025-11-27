@@ -2627,7 +2627,7 @@ class BudgetViewSet(viewsets.ReadOnlyModelViewSet):
         monthly_spend = defaultdict(Decimal)
         for booking in bookings_qs:
             month_key = booking.travel_date.strftime('%Y-%m')
-            monthly_spend[month_key] += booking.total_amount_with_transactions or booking.total_amount or Decimal('0')
+            monthly_spend[month_key] += booking.total_amount or Decimal('0')
 
         # Get total budget allocated
         total_budget = sum(float(b.total_budget) for b in budgets_qs)
