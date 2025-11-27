@@ -125,14 +125,18 @@ const loadData = async (filters = {}) => {
 
 // Load preferred airline data
 const loadPreferredAirlineData = async (filters = {}) => {
-  if (!authStore.user || !authStore.user.organization) {
-    console.log('⚠️ [AirView] No organization found for user, skipping preferred airline data')
+  // Only load if organization filter is specified
+  if (!filters.organization) {
+    console.log('ℹ️ [AirView] No organization selected, skipping preferred airline data')
+    complianceData.value = null
+    marketShareData.value = null
+    performanceData.value = null
     return
   }
 
   // Build params outside try block so it's accessible in catch
   const params = {
-    organization: authStore.user.organization.id,
+    organization: filters.organization,
     ...filters
   }
 
