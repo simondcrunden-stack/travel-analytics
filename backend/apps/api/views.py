@@ -1366,7 +1366,7 @@ class BookingViewSet(viewsets.ModelViewSet):
                 if segment.air_booking.booking.traveller:
                     route_data[route_key]['travellers'].add(segment.air_booking.booking.traveller.id)
 
-                route_data[route_key]['total_spend'] += float(segment.air_booking.booking.total_amount_with_transactions or 0)
+                route_data[route_key]['total_spend'] += float(segment.air_booking.booking.total_amount or 0)
 
                 # Track destinations
                 destination_data[destination]['trips'] += 1
@@ -1375,7 +1375,7 @@ class BookingViewSet(viewsets.ModelViewSet):
                 if segment.air_booking.booking.traveller:
                     destination_data[destination]['travellers'].add(segment.air_booking.booking.traveller.id)
 
-                destination_data[destination]['total_spend'] += float(segment.air_booking.booking.total_amount_with_transactions or 0)
+                destination_data[destination]['total_spend'] += float(segment.air_booking.booking.total_amount or 0)
 
                 # Track airport frequency (both origin and destination)
                 airport_frequency[origin] += 1
@@ -1523,7 +1523,7 @@ class BookingViewSet(viewsets.ModelViewSet):
             # Add to total
             total_emissions += Decimal(str(carbon_kg))
             total_emissions_air += Decimal(str(carbon_kg))
-            total_spend += booking.total_amount_with_transactions or booking.total_amount or Decimal('0')
+            total_spend += booking.total_amount or Decimal('0')
 
             # Determine if domestic or international
             is_domestic = True
