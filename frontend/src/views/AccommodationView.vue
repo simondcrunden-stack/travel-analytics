@@ -20,6 +20,7 @@ const summary = ref({
 })
 const complianceData = ref(null)
 const performanceData = ref(null)
+const expiringHotelsCount = ref(0)
 const complianceViewMode = ref('cost_center')  // 'cost_center' or 'traveller'
 const currentFilters = ref({})
 const currentPage = ref(1)
@@ -99,16 +100,21 @@ const loadData = async (filters = {}) => {
       }
 
       try {
-        [compliance, performance] = await Promise.all([
+        const [complianceRes, performanceRes, expiringRes] = await Promise.all([
           preferredHotelService.getComplianceReport(hotelParams),
-          preferredHotelService.getPerformanceDashboard(hotelParams)
+          preferredHotelService.getPerformanceDashboard(hotelParams),
+          preferredHotelService.getExpiringSoon(30, hotelParams).catch(() => [])
         ])
-        console.log('✅ [AccommodationView] Loaded compliance and performance data')
+        compliance = complianceRes
+        performance = performanceRes
+        expiringHotelsCount.value = expiringRes.length
+        console.log('✅ [AccommodationView] Loaded compliance, performance, and expiring data')
       } catch (err) {
         console.warn('⚠️ [AccommodationView] Could not load compliance/performance data:', err)
       }
     } else {
       console.log('ℹ️ [AccommodationView] No organization selected, skipping compliance and performance data')
+      expiringHotelsCount.value = 0
     }
 
     bookings.value = data.results || []
@@ -469,9 +475,16 @@ onMounted(async () => {
     <div v-if="!loading && !error && complianceData && complianceData.summary.total_room_nights > 0" class="space-y-6">
       <!-- Section Header -->
       <div class="flex items-center justify-between">
-        <div>
-          <h2 class="text-xl font-bold text-gray-900">Preferred Hotel Compliance</h2>
-          <p class="mt-1 text-sm text-gray-500">Track adherence to preferred hotel contracts and agreements</p>
+        <div class="flex items-center gap-3">
+          <div>
+            <h2 class="text-xl font-bold text-gray-900">Preferred Hotel Compliance</h2>
+            <p class="mt-1 text-sm text-gray-500">Track adherence to preferred hotel contracts and agreements</p>
+          </div>
+          <!-- Expiry Alert Badge -->
+          <div v-if="expiringHotelsCount > 0" class="flex items-center gap-2 px-3 py-1 bg-red-100 border border-red-300 rounded-full">
+            <span class="mdi mdi-alert-circle text-red-600" style="font-size: 16px;"></span>
+            <span class="text-xs font-semibold text-red-700">{{ expiringHotelsCount }} expiring soon</span>
+          </div>
         </div>
       </div>
 

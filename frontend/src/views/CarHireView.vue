@@ -23,6 +23,7 @@ const currentPage = ref(1)
 const itemsPerPage = ref(20)
 const complianceData = ref(null)
 const performanceData = ref(null)
+const expiringCarHireCount = ref(0)
 const complianceViewMode = ref('cost_center') // 'cost_center' or 'traveller'
 
 // Chart refs
@@ -93,16 +94,21 @@ const loadData = async (filters = {}) => {
       }
 
       try {
-        [complianceResponse, performanceResponse] = await Promise.all([
+        const [complianceRes, performanceRes, expiringRes] = await Promise.all([
           preferredCarHireService.getComplianceReport(carHireParams),
-          preferredCarHireService.getPerformanceDashboard(carHireParams)
+          preferredCarHireService.getPerformanceDashboard(carHireParams),
+          preferredCarHireService.getExpiringSoon(30, carHireParams).catch(() => [])
         ])
-        console.log('✅ [CarHireView] Loaded compliance and performance data')
+        complianceResponse = complianceRes
+        performanceResponse = performanceRes
+        expiringCarHireCount.value = expiringRes.length
+        console.log('✅ [CarHireView] Loaded compliance, performance, and expiring data')
       } catch (err) {
         console.warn('⚠️ [CarHireView] Could not load compliance/performance data:', err)
       }
     } else {
       console.log('ℹ️ [CarHireView] No organization selected, skipping compliance and performance data')
+      expiringCarHireCount.value = 0
     }
 
     bookings.value = bookingsData.results || []
@@ -454,11 +460,18 @@ onMounted(async () => {
       <!-- Section Header with Toggle -->
       <div class="border-b border-gray-200 px-6 py-4">
         <div class="flex items-center justify-between">
-          <div>
-            <h3 class="text-lg font-semibold text-gray-900">Preferred Supplier Compliance</h3>
-            <p class="text-sm text-gray-600 mt-1">
-              {{ complianceViewMode === 'cost_center' ? 'Compliance by Cost Center' : 'Compliance by Traveller' }}
-            </p>
+          <div class="flex items-center gap-3">
+            <div>
+              <h3 class="text-lg font-semibold text-gray-900">Preferred Supplier Compliance</h3>
+              <p class="text-sm text-gray-600 mt-1">
+                {{ complianceViewMode === 'cost_center' ? 'Compliance by Cost Center' : 'Compliance by Traveller' }}
+              </p>
+            </div>
+            <!-- Expiry Alert Badge -->
+            <div v-if="expiringCarHireCount > 0" class="flex items-center gap-2 px-3 py-1 bg-red-100 border border-red-300 rounded-full">
+              <span class="mdi mdi-alert-circle text-red-600" style="font-size: 16px;"></span>
+              <span class="text-xs font-semibold text-red-700">{{ expiringCarHireCount }} expiring soon</span>
+            </div>
           </div>
           <div class="flex gap-2">
             <button
