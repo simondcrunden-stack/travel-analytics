@@ -1381,10 +1381,27 @@ class BookingViewSet(viewsets.ModelViewSet):
                 airport_frequency[origin] += 1
                 airport_frequency[destination] += 1
 
-        # Get airport details for top airports
+        # Get airport details for all airports needed
         from apps.reference_data.models import Airport
-        top_airport_codes = [code for code, _ in airport_frequency.most_common(limit)]
-        airports = {a.iata_code: a for a in Airport.objects.filter(iata_code__in=top_airport_codes)}
+
+        # Collect all airport codes we need
+        all_airport_codes = set()
+
+        # Add codes from top routes
+        for route_key, data in sorted(route_data.items(), key=lambda x: x[1]['trips'], reverse=True)[:limit]:
+            all_airport_codes.add(data['origin'])
+            all_airport_codes.add(data['destination'])
+
+        # Add codes from top destinations
+        for dest_code in sorted(destination_data.keys(), key=lambda x: destination_data[x]['trips'], reverse=True)[:limit]:
+            all_airport_codes.add(dest_code)
+
+        # Add codes from top airports by frequency
+        for code, _ in airport_frequency.most_common(limit):
+            all_airport_codes.add(code)
+
+        # Fetch all airports at once
+        airports = {a.iata_code: a for a in Airport.objects.filter(iata_code__in=all_airport_codes)}
 
         # Format top routes
         top_routes = []
@@ -2519,9 +2536,17 @@ class BudgetViewSet(viewsets.ReadOnlyModelViewSet):
         - Budget forecast and risk assessment
         """
         from collections import defaultdict
-        from datetime import datetime, timedelta
+        from datetime import datetime, timedelta, date
         from decimal import Decimal
-        from dateutil.relativedelta import relativedelta
+        from calendar import monthrange
+
+        def add_months(source_date, months):
+            """Add months to a date"""
+            month = source_date.month - 1 + months
+            year = source_date.year + month // 12
+            month = month % 12 + 1
+            day = min(source_date.day, monthrange(year, month)[1])
+            return date(year, month, day)
 
         user = request.user
         organization_id = request.query_params.get('organization')
@@ -2664,7 +2689,7 @@ class BudgetViewSet(viewsets.ReadOnlyModelViewSet):
                 'is_actual': current_month <= today
             })
 
-            current_month += relativedelta(months=1)
+            current_month = add_months(current_month, 1)
 
         return Response({
             'fiscal_year': {
