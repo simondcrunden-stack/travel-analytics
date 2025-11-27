@@ -31,14 +31,14 @@
       </div>
 
       <!-- No Expiring Contracts -->
-      <div v-else-if="!loading && expiringContracts.length === 0" class="px-6 py-8 text-center">
+      <div v-else-if="!loading && Array.isArray(expiringContracts) && expiringContracts.length === 0" class="px-6 py-8 text-center">
         <span class="mdi mdi-check-circle text-4xl text-green-500"></span>
         <p class="text-sm text-gray-600 mt-2 font-medium">No contracts expiring in the next 90 days</p>
         <p class="text-xs text-gray-500 mt-1">All supplier contracts are in good standing</p>
       </div>
 
       <!-- Expiring Contracts -->
-      <div v-else class="p-6 space-y-6">
+      <div v-else-if="!loading && Array.isArray(expiringContracts) && expiringContracts.length > 0" class="p-6 space-y-6">
         <!-- Summary Cards -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div class="bg-red-50 border border-red-200 rounded-lg p-4">
@@ -137,18 +137,22 @@ const showSection = ref(true)
 const expiringContracts = ref([])
 
 // Computed counts
-const criticalCount = computed(() =>
-  expiringContracts.value.filter(c => c.daysRemaining < 30).length
-)
-const warningCount = computed(() =>
-  expiringContracts.value.filter(c => c.daysRemaining >= 30 && c.daysRemaining < 60).length
-)
-const upcomingCount = computed(() =>
-  expiringContracts.value.filter(c => c.daysRemaining >= 60).length
-)
+const criticalCount = computed(() => {
+  if (!Array.isArray(expiringContracts.value)) return 0
+  return expiringContracts.value.filter(c => c.daysRemaining < 30).length
+})
+const warningCount = computed(() => {
+  if (!Array.isArray(expiringContracts.value)) return 0
+  return expiringContracts.value.filter(c => c.daysRemaining >= 30 && c.daysRemaining < 60).length
+})
+const upcomingCount = computed(() => {
+  if (!Array.isArray(expiringContracts.value)) return 0
+  return expiringContracts.value.filter(c => c.daysRemaining >= 60).length
+})
 
 // Sorted contracts (most urgent first)
 const sortedContracts = computed(() => {
+  if (!Array.isArray(expiringContracts.value)) return []
   return [...expiringContracts.value].sort((a, b) => a.daysRemaining - b.daysRemaining)
 })
 
