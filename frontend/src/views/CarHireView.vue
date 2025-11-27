@@ -79,12 +79,31 @@ const loadData = async (filters = {}) => {
 
     console.log('🌐 [CarHireView] Loading car hire data with filters:', filters)
 
-    // Load bookings, compliance, and performance data in parallel
-    const [bookingsData, complianceResponse, performanceResponse] = await Promise.all([
-      bookingService.getBookings(filters),
-      filters.organization ? preferredCarHireService.getComplianceReport(filters) : Promise.resolve(null),
-      filters.organization ? preferredCarHireService.getPerformanceDashboard(filters) : Promise.resolve(null)
-    ])
+    // Load bookings first
+    const bookingsData = await bookingService.getBookings(filters)
+
+    // Load compliance and performance data only if organization is specified
+    let complianceResponse = null
+    let performanceResponse = null
+
+    if (filters.organization) {
+      const carHireParams = {
+        organization: filters.organization,
+        ...filters
+      }
+
+      try {
+        [complianceResponse, performanceResponse] = await Promise.all([
+          preferredCarHireService.getComplianceReport(carHireParams),
+          preferredCarHireService.getPerformanceDashboard(carHireParams)
+        ])
+        console.log('✅ [CarHireView] Loaded compliance and performance data')
+      } catch (err) {
+        console.warn('⚠️ [CarHireView] Could not load compliance/performance data:', err)
+      }
+    } else {
+      console.log('ℹ️ [CarHireView] No organization selected, skipping compliance and performance data')
+    }
 
     bookings.value = bookingsData.results || []
     complianceData.value = complianceResponse

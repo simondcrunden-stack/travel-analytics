@@ -85,18 +85,31 @@ const loadData = async (filters = {}) => {
       booking_type: 'accommodation'
     }
 
-    // Load bookings, compliance, and performance data in parallel
-    const [data, compliance, performance] = await Promise.all([
-      bookingService.getBookings(params),
-      preferredHotelService.getComplianceReport(params).catch(err => {
-        console.warn('⚠️ [AccommodationView] Could not load compliance data:', err)
-        return null
-      }),
-      preferredHotelService.getPerformanceDashboard(params).catch(err => {
-        console.warn('⚠️ [AccommodationView] Could not load performance data:', err)
-        return null
-      })
-    ])
+    // Load bookings first
+    const data = await bookingService.getBookings(params)
+
+    // Load compliance and performance data only if organization is specified
+    let compliance = null
+    let performance = null
+
+    if (filters.organization) {
+      const hotelParams = {
+        organization: filters.organization,
+        ...filters
+      }
+
+      try {
+        [compliance, performance] = await Promise.all([
+          preferredHotelService.getComplianceReport(hotelParams),
+          preferredHotelService.getPerformanceDashboard(hotelParams)
+        ])
+        console.log('✅ [AccommodationView] Loaded compliance and performance data')
+      } catch (err) {
+        console.warn('⚠️ [AccommodationView] Could not load compliance/performance data:', err)
+      }
+    } else {
+      console.log('ℹ️ [AccommodationView] No organization selected, skipping compliance and performance data')
+    }
 
     bookings.value = data.results || []
     complianceData.value = compliance
