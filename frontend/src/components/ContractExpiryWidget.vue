@@ -156,10 +156,47 @@ const sortedContracts = computed(() => {
   return [...expiringContracts.value].sort((a, b) => a.daysRemaining - b.daysRemaining)
 })
 
-// Watch for organization changes
-watch(() => props.organization, () => {
-  loadExpiringContracts()
-}, { immediate: true })
+// Helper: Calculate days remaining until contract end
+const calculateDaysRemaining = (endDate) => {
+  const today = new Date()
+  const end = new Date(endDate)
+  const diffTime = end - today
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+  return Math.max(0, diffDays)
+}
+
+// Transform airline contracts
+const transformAirlineContracts = (contracts) => {
+  return contracts.map(c => ({
+    ...c,
+    type: 'AIR',
+    name: c.airline_name,
+    market: c.market_type_display || c.market_type,
+    daysRemaining: calculateDaysRemaining(c.contract_end_date)
+  }))
+}
+
+// Transform hotel contracts
+const transformHotelContracts = (contracts) => {
+  return contracts.map(c => ({
+    ...c,
+    type: 'HOTEL',
+    name: c.hotel_chain_name || c.hotel_name,
+    market: c.location_display || `${c.city}, ${c.country}`,
+    daysRemaining: calculateDaysRemaining(c.contract_end_date)
+  }))
+}
+
+// Transform car hire contracts
+const transformCarHireContracts = (contracts) => {
+  return contracts.map(c => ({
+    ...c,
+    type: 'CAR',
+    name: c.supplier_name,
+    market: c.market_display || c.market,
+    daysRemaining: calculateDaysRemaining(c.contract_end_date)
+  }))
+}
 
 // Load expiring contracts from all three supplier types
 const loadExpiringContracts = async () => {
@@ -203,47 +240,10 @@ const loadExpiringContracts = async () => {
   }
 }
 
-// Transform airline contracts
-const transformAirlineContracts = (contracts) => {
-  return contracts.map(c => ({
-    ...c,
-    type: 'AIR',
-    name: c.airline_name,
-    market: c.market_type_display || c.market_type,
-    daysRemaining: calculateDaysRemaining(c.contract_end_date)
-  }))
-}
-
-// Transform hotel contracts
-const transformHotelContracts = (contracts) => {
-  return contracts.map(c => ({
-    ...c,
-    type: 'HOTEL',
-    name: c.hotel_chain_name || c.hotel_name,
-    market: c.location_display || `${c.city}, ${c.country}`,
-    daysRemaining: calculateDaysRemaining(c.contract_end_date)
-  }))
-}
-
-// Transform car hire contracts
-const transformCarHireContracts = (contracts) => {
-  return contracts.map(c => ({
-    ...c,
-    type: 'CAR',
-    name: c.supplier_name,
-    market: c.market_display || c.market,
-    daysRemaining: calculateDaysRemaining(c.contract_end_date)
-  }))
-}
-
-// Calculate days remaining until contract end
-const calculateDaysRemaining = (endDate) => {
-  const today = new Date()
-  const end = new Date(endDate)
-  const diffTime = end - today
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-  return Math.max(0, diffDays)
-}
+// Watch for organization changes
+watch(() => props.organization, () => {
+  loadExpiringContracts()
+}, { immediate: true })
 
 // Helper functions
 const formatDate = (dateString) => {
