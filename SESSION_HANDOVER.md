@@ -9,19 +9,22 @@
 ### 1. Top Routes & Destinations Analysis 📍
 **Backend**: `/api/v1/bookings/top_routes_destinations/`
 - Analyzes air segments to identify most traveled routes
-- Tracks destination popularity and airport usage frequency
+- **Smart Transit Detection**: Filters out stops with < 24 hour layovers (transits vs actual destinations)
+- **Route Normalization**: Combines round-trip routes (MEL ⇄ SIN instead of separate entries)
+- **Country-Level Aggregation**: Groups destinations by country with city lists
 - Calculates spend metrics per route and destination
-- Returns top 10 routes, destinations, and airports
+- Returns top 10 routes, destinations by country, and destination airports
 
 **Frontend**: `TopRoutesWidget.vue`
 - Three interactive tabs:
-  - **Top Routes**: Origin → Destination pairs with trip counts and spend
-  - **Top Destinations**: Most visited airports with statistics
-  - **Most Used Airports**: Frequency analysis of all airport usage
+  - **Top Routes**: Combined round-trip pairs (MEL ⇄ SIN) with trip counts and spend
+  - **Top Destinations**: Most visited countries with city lists and statistics
+  - **Top Destinations (Airports)**: Actual destination airports (excluding transits)
 - Ranked display with medal-style badges (🥇🥈🥉)
 - Organization filtering support
+- Full metrics display: trips, travellers, total spend, average per trip
 
-**Status**: ✅ Working - Displaying data correctly
+**Status**: ✅ Enhanced - Smart filtering and country aggregation implemented
 
 ---
 
@@ -139,16 +142,39 @@ bookingService.getBudgetBurnRate(params)
 - Detailed console logging for debugging
 **Commits**: `3373899`, `33c6a22`
 
+### Enhancement 5: Top Routes & Destinations Smart Filtering
+**Improvement Request**: Eliminate duplicate round-trip routes, filter transit stops, and aggregate by country
+**Changes Implemented**:
+1. **Route Normalization**: Combined round-trip routes (MEL ⇄ SIN instead of separate MEL>SIN and SIN>MEL entries)
+   - Uses alphabetically sorted tuples as dictionary keys
+   - Aggregates trip counts and spend for round trips
+2. **Transit Detection**: Added logic to identify and filter out transit stops
+   - Calculates layover time between consecutive segments
+   - Excludes destinations where layover < 24 hours (transit, not actual stop)
+   - Example: MEL > SIN > LHR > SIN > MEL - SIN excluded if layover < 24hr
+3. **Country-Level Aggregation**: Changed from individual airports to country grouping
+   - Shows country name with top 3 cities visited
+   - Displays "+N more" indicator for additional cities
+   - Provides higher-level travel pattern insights
+4. **UI Updates**:
+   - Route display: "MEL ⇄ SIN" with "Melbourne ⇄ Singapore" subtitle
+   - Destinations tab: Shows countries with city lists
+   - Renamed "Most Used Airports" to "Top Destinations"
+   - Added full metrics (trips, travellers, spend) to destination airports table
+**Commit**: `5a5d810`
+
 ---
 
 ## 📊 Git History
 
 ```bash
-693f77f - feat: Add enhanced dashboard analytics and sustainability tracking
-7507bbb - fix: Resolve 500 errors in analytics endpoints
-10ec1ec - fix: Use total_amount instead of total_amount_with_transactions
-3373899 - fix: Fix burn rate endpoint and improve sustainability chart rendering
+5a5d810 - feat: Improve Top Routes & Destinations widget with smart filtering
+5861749 - docs: Add session handover document for travel analytics refresh
 33c6a22 - fix: Improve budget burn rate chart rendering
+3373899 - fix: Fix burn rate endpoint and improve sustainability chart rendering
+10ec1ec - fix: Use total_amount instead of total_amount_with_transactions
+7507bbb - fix: Resolve 500 errors in analytics endpoints
+693f77f - feat: Add enhanced dashboard analytics and sustainability tracking
 ```
 
 **Branch**: `claude/travel-analytics-refresh-01F9YUY8Ci3462ZbtA5mEKRf`
@@ -286,6 +312,9 @@ All widgets support:
 2. **Chart.js Timing**: Canvas elements need time to render; use double nextTick + setTimeout
 3. **Python Dependencies**: Avoid external dependencies when stdlib alternatives exist (dateutil → datetime/calendar)
 4. **Defensive Querying**: Collect all required IDs before fetching related objects to avoid N+1 queries
+5. **Route Normalization**: Use sorted tuples as dictionary keys to combine bidirectional relationships (e.g., MEL-SIN and SIN-MEL)
+6. **Transit vs Destination Logic**: Calculate time differences between consecutive segments to identify meaningful stops vs brief layovers
+7. **Data Aggregation**: Group granular data (individual airports) into higher-level insights (countries) for better executive dashboards
 
 ---
 
