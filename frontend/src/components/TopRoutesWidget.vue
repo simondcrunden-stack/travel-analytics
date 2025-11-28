@@ -53,7 +53,7 @@
             :class="activeTab === 'airports' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'"
             class="px-4 py-2 border-b-2 font-medium text-sm transition-colors"
           >
-            Most Used Airports
+            Top Destinations
           </button>
         </div>
 
@@ -81,13 +81,9 @@
                   </span>
                 </td>
                 <td class="px-4 py-3 whitespace-nowrap">
-                  <div class="flex items-center gap-2">
-                    <span class="font-medium text-gray-900">{{ route.origin }}</span>
-                    <span class="mdi mdi-arrow-right text-gray-400"></span>
-                    <span class="font-medium text-gray-900">{{ route.destination }}</span>
-                  </div>
+                  <div class="font-medium text-gray-900">{{ route.route }}</div>
                   <div class="text-xs text-gray-500 mt-1">
-                    {{ route.origin_city }} → {{ route.destination_city }}
+                    {{ route.airport1_city }} ⇄ {{ route.airport2_city }}
                   </div>
                 </td>
                 <td class="px-4 py-3 whitespace-nowrap text-right text-sm text-gray-900 font-medium">
@@ -113,7 +109,7 @@
             <thead class="bg-gray-50">
               <tr>
                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rank</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Destination</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Country</th>
                 <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Trips</th>
                 <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Travellers</th>
                 <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total Spend</th>
@@ -121,7 +117,7 @@
               </tr>
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
-              <tr v-for="(dest, index) in routesData.top_destinations" :key="dest.destination" class="hover:bg-gray-50">
+              <tr v-for="(dest, index) in routesData.top_destinations" :key="dest.country" class="hover:bg-gray-50">
                 <td class="px-4 py-3 whitespace-nowrap">
                   <span
                     class="inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold"
@@ -130,9 +126,9 @@
                     {{ index + 1 }}
                   </span>
                 </td>
-                <td class="px-4 py-3 whitespace-nowrap">
-                  <div class="font-medium text-gray-900">{{ dest.destination }}</div>
-                  <div class="text-xs text-gray-500 mt-1">{{ dest.city }}, {{ dest.country }}</div>
+                <td class="px-4 py-3">
+                  <div class="font-medium text-gray-900">{{ dest.country }}</div>
+                  <div class="text-xs text-gray-500 mt-1">{{ dest.cities }}</div>
                 </td>
                 <td class="px-4 py-3 whitespace-nowrap text-right text-sm text-gray-900 font-medium">
                   {{ dest.trips }}
@@ -151,18 +147,21 @@
           </table>
         </div>
 
-        <!-- Most Used Airports Table -->
+        <!-- Top Destination Airports Table -->
         <div v-else-if="activeTab === 'airports'" class="overflow-x-auto">
           <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50">
               <tr>
                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rank</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Airport</th>
-                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Usage Count</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Destination</th>
+                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Trips</th>
+                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Travellers</th>
+                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total Spend</th>
+                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Avg/Trip</th>
               </tr>
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
-              <tr v-for="(airport, index) in routesData.top_airports" :key="airport.airport" class="hover:bg-gray-50">
+              <tr v-for="(airport, index) in routesData.top_destination_airports" :key="airport.airport" class="hover:bg-gray-50">
                 <td class="px-4 py-3 whitespace-nowrap">
                   <span
                     class="inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold"
@@ -176,7 +175,16 @@
                   <div class="text-xs text-gray-500 mt-1">{{ airport.city }}, {{ airport.country }}</div>
                 </td>
                 <td class="px-4 py-3 whitespace-nowrap text-right text-sm text-gray-900 font-medium">
-                  {{ airport.frequency }}
+                  {{ airport.trips }}
+                </td>
+                <td class="px-4 py-3 whitespace-nowrap text-right text-sm text-gray-600">
+                  {{ airport.unique_travellers }}
+                </td>
+                <td class="px-4 py-3 whitespace-nowrap text-right text-sm text-gray-900">
+                  {{ formatCurrency(airport.total_spend) }}
+                </td>
+                <td class="px-4 py-3 whitespace-nowrap text-right text-sm text-gray-600">
+                  {{ formatCurrency(airport.avg_spend_per_trip) }}
                 </td>
               </tr>
             </tbody>

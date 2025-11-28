@@ -1309,11 +1309,12 @@ class BookingViewSet(viewsets.ModelViewSet):
         Get top routes and destinations analysis for dashboard.
 
         Returns:
-        - Top routes (origin -> destination pairs)
-        - Top destinations (arrival airports)
-        - Most traveled airports (origin + destination combined)
+        - Top routes (combined round-trips: MEL ⇄ SIN)
+        - Top destinations by country (excluding < 24hr transits)
+        - Most traveled destinations (actual stops, not transits)
         """
         from collections import defaultdict, Counter
+        from datetime import timedelta
 
         user = request.user
         limit = int(request.query_params.get('limit', 10))
@@ -1332,125 +1333,157 @@ class BookingViewSet(viewsets.ModelViewSet):
         # Apply advanced filters from request
         base_queryset = self._apply_advanced_filters(base_queryset, user)
 
-        # Get all air segments from these bookings
-        air_segments = AirSegment.objects.filter(
-            air_booking__booking__in=base_queryset
-        ).select_related('air_booking', 'air_booking__booking')
+        # Get all air bookings with their segments
+        air_bookings = AirBooking.objects.filter(
+            booking__in=base_queryset
+        ).select_related('booking', 'booking__traveller').prefetch_related('segments').order_by('segments__departure_datetime')
 
-        # Aggregate route data
-        route_data = defaultdict(lambda: {
+        # Track route pairs, destinations by country, and actual destination stops
+        route_pairs = defaultdict(lambda: {
             'trips': 0,
             'travellers': set(),
             'total_spend': 0
         })
 
-        destination_data = defaultdict(lambda: {
+        country_destinations = defaultdict(lambda: {
+            'trips': 0,
+            'travellers': set(),
+            'total_spend': 0,
+            'cities': set()
+        })
+
+        destination_stops = defaultdict(lambda: {
             'trips': 0,
             'travellers': set(),
             'total_spend': 0
         })
 
-        airport_frequency = Counter()
+        # Process each air booking
+        for air_booking in air_bookings:
+            booking = air_booking.booking
+            segments = list(air_booking.segments.all().order_by('departure_datetime'))
 
-        for segment in air_segments:
-            origin = segment.origin_airport_iata_code
-            destination = segment.destination_airport_iata_code
+            if not segments:
+                continue
 
-            if origin and destination:
-                # Track route (origin -> destination)
-                route_key = f"{origin}-{destination}"
-                route_data[route_key]['trips'] += 1
-                route_data[route_key]['origin'] = origin
-                route_data[route_key]['destination'] = destination
+            # Identify actual destination stops (not transits)
+            actual_destinations = set()
 
-                if segment.air_booking.booking.traveller:
-                    route_data[route_key]['travellers'].add(segment.air_booking.booking.traveller.id)
+            for i, segment in enumerate(segments):
+                dest_code = segment.destination_airport_iata_code
 
-                route_data[route_key]['total_spend'] += float(segment.air_booking.booking.total_amount or 0)
+                # Check if this is a transit or actual stop
+                is_transit = False
+                if i < len(segments) - 1:  # Not the final destination
+                    next_segment = segments[i + 1]
+                    # If next segment departs from same airport
+                    if next_segment.origin_airport_iata_code == dest_code:
+                        # Calculate layover time
+                        if segment.arrival_datetime and next_segment.departure_datetime:
+                            layover = next_segment.departure_datetime - segment.arrival_datetime
+                            # If layover < 24 hours, it's a transit
+                            if layover < timedelta(hours=24):
+                                is_transit = True
 
-                # Track destinations
-                destination_data[destination]['trips'] += 1
-                destination_data[destination]['destination'] = destination
+                # If not a transit, it's an actual destination
+                if not is_transit:
+                    actual_destinations.add(dest_code)
 
-                if segment.air_booking.booking.traveller:
-                    destination_data[destination]['travellers'].add(segment.air_booking.booking.traveller.id)
+            # Track route pairs (combine round trips)
+            if len(segments) >= 2:
+                first_origin = segments[0].origin_airport_iata_code
+                last_destination = segments[-1].destination_airport_iata_code
 
-                destination_data[destination]['total_spend'] += float(segment.air_booking.booking.total_amount or 0)
+                # Create normalized route key (alphabetically sorted to combine round trips)
+                if first_origin and last_destination:
+                    route_key = tuple(sorted([first_origin, last_destination]))
+                    route_pairs[route_key]['trips'] += 1
+                    if booking.traveller:
+                        route_pairs[route_key]['travellers'].add(booking.traveller.id)
+                    route_pairs[route_key]['total_spend'] += float(booking.total_amount or 0)
+                    # Store the actual airports for display
+                    if 'airports' not in route_pairs[route_key]:
+                        route_pairs[route_key]['airports'] = route_key
 
-                # Track airport frequency (both origin and destination)
-                airport_frequency[origin] += 1
-                airport_frequency[destination] += 1
+            # Track actual destination stops
+            for dest_code in actual_destinations:
+                destination_stops[dest_code]['trips'] += 1
+                if booking.traveller:
+                    destination_stops[dest_code]['travellers'].add(booking.traveller.id)
+                destination_stops[dest_code]['total_spend'] += float(booking.total_amount or 0)
 
-        # Get airport details for all airports needed
+        # Get airport details for all airports
         from apps.reference_data.models import Airport
 
-        # Collect all airport codes we need
         all_airport_codes = set()
+        for route_key in route_pairs.keys():
+            all_airport_codes.update(route_key)
+        all_airport_codes.update(destination_stops.keys())
 
-        # Add codes from top routes
-        for route_key, data in sorted(route_data.items(), key=lambda x: x[1]['trips'], reverse=True)[:limit]:
-            all_airport_codes.add(data['origin'])
-            all_airport_codes.add(data['destination'])
-
-        # Add codes from top destinations
-        for dest_code in sorted(destination_data.keys(), key=lambda x: destination_data[x]['trips'], reverse=True)[:limit]:
-            all_airport_codes.add(dest_code)
-
-        # Add codes from top airports by frequency
-        for code, _ in airport_frequency.most_common(limit):
-            all_airport_codes.add(code)
-
-        # Fetch all airports at once
         airports = {a.iata_code: a for a in Airport.objects.filter(iata_code__in=all_airport_codes)}
 
-        # Format top routes
+        # Aggregate destinations by country
+        for dest_code, data in destination_stops.items():
+            airport = airports.get(dest_code)
+            if airport and airport.country:
+                country_destinations[airport.country]['trips'] += data['trips']
+                country_destinations[airport.country]['travellers'].update(data['travellers'])
+                country_destinations[airport.country]['total_spend'] += data['total_spend']
+                if airport.city:
+                    country_destinations[airport.country]['cities'].add(airport.city)
+
+        # Format top routes (round-trip combined)
         top_routes = []
-        for route_key, data in sorted(route_data.items(), key=lambda x: x[1]['trips'], reverse=True)[:limit]:
-            origin_airport = airports.get(data['origin'])
-            dest_airport = airports.get(data['destination'])
+        for route_key, data in sorted(route_pairs.items(), key=lambda x: x[1]['trips'], reverse=True)[:limit]:
+            airport1 = airports.get(route_key[0])
+            airport2 = airports.get(route_key[1])
 
             top_routes.append({
-                'route': route_key,
-                'origin': data['origin'],
-                'origin_city': origin_airport.city if origin_airport else data['origin'],
-                'destination': data['destination'],
-                'destination_city': dest_airport.city if dest_airport else data['destination'],
+                'route': f"{route_key[0]} ⇄ {route_key[1]}",
+                'airport1': route_key[0],
+                'airport1_city': airport1.city if airport1 else route_key[0],
+                'airport2': route_key[1],
+                'airport2_city': airport2.city if airport2 else route_key[1],
                 'trips': data['trips'],
                 'unique_travellers': len(data['travellers']),
                 'total_spend': round(data['total_spend'], 2),
                 'avg_spend_per_trip': round(data['total_spend'] / data['trips'], 2) if data['trips'] > 0 else 0
             })
 
-        # Format top destinations
+        # Format top destinations by country
         top_destinations = []
-        for dest_code, data in sorted(destination_data.items(), key=lambda x: x[1]['trips'], reverse=True)[:limit]:
-            dest_airport = airports.get(dest_code)
+        for country, data in sorted(country_destinations.items(), key=lambda x: x[1]['trips'], reverse=True)[:limit]:
+            cities_list = ', '.join(sorted(data['cities'])[:3])
+            if len(data['cities']) > 3:
+                cities_list += f" +{len(data['cities']) - 3} more"
 
             top_destinations.append({
-                'destination': dest_code,
-                'city': dest_airport.city if dest_airport else dest_code,
-                'country': dest_airport.country if dest_airport else 'Unknown',
+                'country': country,
+                'cities': cities_list,
                 'trips': data['trips'],
                 'unique_travellers': len(data['travellers']),
                 'total_spend': round(data['total_spend'], 2),
                 'avg_spend_per_trip': round(data['total_spend'] / data['trips'], 2) if data['trips'] > 0 else 0
             })
 
-        # Format top airports
-        top_airports = []
-        for airport_code, frequency in airport_frequency.most_common(limit):
-            airport = airports.get(airport_code)
-            top_airports.append({
-                'airport': airport_code,
-                'city': airport.city if airport else airport_code,
+        # Format top destination airports (actual stops, not transits)
+        top_destination_airports = []
+        for dest_code, data in sorted(destination_stops.items(), key=lambda x: x[1]['trips'], reverse=True)[:limit]:
+            airport = airports.get(dest_code)
+            top_destination_airports.append({
+                'airport': dest_code,
+                'city': airport.city if airport else dest_code,
                 'country': airport.country if airport else 'Unknown',
-                'frequency': frequency
+                'trips': data['trips'],
+                'unique_travellers': len(data['travellers']),
+                'total_spend': round(data['total_spend'], 2),
+                'avg_spend_per_trip': round(data['total_spend'] / data['trips'], 2) if data['trips'] > 0 else 0
             })
 
         return Response({
             'top_routes': top_routes,
             'top_destinations': top_destinations,
-            'top_airports': top_airports
+            'top_destination_airports': top_destination_airports
         })
 
     @action(detail=False, methods=['get'])
