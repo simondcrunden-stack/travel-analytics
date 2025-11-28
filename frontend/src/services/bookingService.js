@@ -150,7 +150,7 @@ export default {
   // Carbon budget analysis
   async getCarbonBudgetAnalysis(params = {}) {
     const backendParams = transformFiltersForBackend(params)
-    const response = await api.get('/bookings/carbon_budget_analysis/', { params: backendParams })
+    const response = await api.get('/budgets/carbon_budget_analysis/', { params: backendParams })
     return response.data
   },
 
