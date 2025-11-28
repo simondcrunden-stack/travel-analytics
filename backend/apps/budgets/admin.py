@@ -41,7 +41,7 @@ class BudgetAdmin(admin.ModelAdmin):
         }),
         ('Budget Allocations', {
             'fields': ('total_budget', 'air_budget', 'accommodation_budget',
-                      'car_hire_budget', 'other_budget', 'currency')
+                      'car_hire_budget', 'other_budget', 'currency', 'carbon_budget')
         }),
         ('Alert Thresholds', {
             'fields': ('warning_threshold', 'critical_threshold'),
