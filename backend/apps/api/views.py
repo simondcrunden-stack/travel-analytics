@@ -1336,7 +1336,7 @@ class BookingViewSet(viewsets.ModelViewSet):
         # Get all air bookings with their segments
         air_bookings = AirBooking.objects.filter(
             booking__in=base_queryset
-        ).select_related('booking', 'booking__traveller').prefetch_related('segments').order_by('segments__departure_datetime')
+        ).select_related('booking', 'booking__traveller').prefetch_related('segments')
 
         # Track route pairs, destinations by country, and actual destination stops
         route_pairs = defaultdict(lambda: {
