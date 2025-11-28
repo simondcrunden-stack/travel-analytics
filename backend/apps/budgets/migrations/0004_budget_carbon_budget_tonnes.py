@@ -62,8 +62,8 @@ class Migration(migrations.Migration):
                 validators=[django.core.validators.MinValueValidator(Decimal('0'))]
             ),
         ),
-        # Add carbon budget field
-        migrations.AddField(
+        # Change carbon budget to whole numbers (column already exists)
+        migrations.AlterField(
             model_name='budget',
             name='carbon_budget',
             field=models.DecimalField(
