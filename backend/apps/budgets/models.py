@@ -106,7 +106,16 @@ class Budget(models.Model):
         default=Decimal('0.00'),
         validators=[MinValueValidator(Decimal('0.00'))]
     )
-    
+
+    # Carbon emissions budget (in tonnes of CO2)
+    carbon_budget_tonnes = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        validators=[MinValueValidator(Decimal('0.00'))],
+        help_text="Annual carbon emissions budget in tonnes of CO2"
+    )
+
     # Currency
     currency = models.CharField(max_length=3, default='AUD')
     

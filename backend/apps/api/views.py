@@ -2802,6 +2802,202 @@ class BudgetViewSet(viewsets.ReadOnlyModelViewSet):
             'monthly_trend': monthly_trend
         })
 
+    @action(detail=False, methods=['get'])
+    def carbon_budget_analysis(self, request):
+        """
+        Get carbon budget burn rate analysis and forecasting.
+
+        Returns:
+        - Monthly emissions trend
+        - Carbon burn rate (emissions per month in tonnes CO2)
+        - Projected emissions for fiscal year
+        - Carbon budget forecast and risk assessment
+        """
+        from collections import defaultdict
+        from datetime import datetime, timedelta, date
+        from decimal import Decimal
+        from calendar import monthrange
+
+        def add_months(source_date, months):
+            """Add months to a date"""
+            month = source_date.month - 1 + months
+            year = source_date.year + month // 12
+            month = month % 12 + 1
+            day = min(source_date.day, monthrange(year, month)[1])
+            return date(year, month, day)
+
+        user = request.user
+        organization_id = request.query_params.get('organization')
+
+        # Build base budget queryset
+        if user.user_type == 'ADMIN':
+            budgets_qs = Budget.objects.filter(is_active=True)
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            budgets_qs = Budget.objects.filter(
+                Q(organization=user.organization) |
+                Q(organization__travel_agent=user.organization),
+                is_active=True
+            )
+        else:
+            budgets_qs = Budget.objects.filter(
+                organization=user.organization,
+                is_active=True
+            )
+
+        # Filter by organization if specified
+        if organization_id:
+            budgets_qs = budgets_qs.filter(organization_id=organization_id)
+
+        # Get current fiscal year
+        try:
+            if organization_id:
+                org = Organization.objects.get(id=organization_id)
+            elif user.organization:
+                org = user.organization
+            else:
+                org = None
+
+            if org:
+                current_fy = FiscalYear.objects.filter(
+                    organization=org,
+                    is_current=True
+                ).first()
+
+                if not current_fy:
+                    return Response({
+                        'error': 'No current fiscal year found'
+                    }, status=400)
+
+                budgets_qs = budgets_qs.filter(fiscal_year=current_fy)
+
+                fy_start = current_fy.start_date
+                fy_end = current_fy.end_date
+            else:
+                return Response({
+                    'error': 'No organization found'
+                }, status=400)
+        except Organization.DoesNotExist:
+            return Response({
+                'error': 'Organization not found'
+            }, status=404)
+
+        # Get air bookings for this organization in the fiscal year (carbon emissions from flights)
+        if user.user_type == 'ADMIN':
+            air_bookings_qs = AirBooking.objects.select_related('booking').all()
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            air_bookings_qs = AirBooking.objects.select_related('booking').filter(
+                Q(booking__organization=user.organization) |
+                Q(booking__organization__travel_agent=user.organization)
+            )
+        else:
+            air_bookings_qs = AirBooking.objects.select_related('booking').filter(
+                booking__organization=user.organization
+            )
+
+        if organization_id:
+            air_bookings_qs = air_bookings_qs.filter(booking__organization_id=organization_id)
+
+        # Filter by fiscal year
+        air_bookings_qs = air_bookings_qs.filter(
+            booking__travel_date__gte=fy_start,
+            booking__travel_date__lte=fy_end
+        )
+
+        # Calculate monthly emissions from air segments
+        monthly_emissions = defaultdict(float)
+        for air_booking in air_bookings_qs.prefetch_related('segments'):
+            travel_date = air_booking.booking.travel_date
+            if travel_date:
+                month_key = travel_date.strftime('%Y-%m')
+                # Sum carbon emissions from all segments
+                for segment in air_booking.segments.all():
+                    if segment.carbon_emissions_kg:
+                        monthly_emissions[month_key] += float(segment.carbon_emissions_kg) / 1000  # Convert kg to tonnes
+
+        # Get total carbon budget allocated
+        total_carbon_budget = sum(float(b.carbon_budget_tonnes) for b in budgets_qs)
+        total_emissions = sum(monthly_emissions.values())
+
+        # Calculate months elapsed and remaining
+        today = datetime.now().date()
+        months_elapsed = ((today.year - fy_start.year) * 12 + today.month - fy_start.month) + 1
+        total_months = ((fy_end.year - fy_start.year) * 12 + fy_end.month - fy_start.month) + 1
+        months_remaining = total_months - months_elapsed
+
+        # Calculate burn rate (average emissions per month)
+        burn_rate = total_emissions / months_elapsed if months_elapsed > 0 else 0
+
+        # Project end-of-year emissions
+        projected_total_emissions = total_emissions + (burn_rate * months_remaining)
+
+        # Calculate carbon budget health
+        if total_carbon_budget > 0:
+            current_utilization = (total_emissions / total_carbon_budget) * 100
+            projected_utilization = (projected_total_emissions / total_carbon_budget) * 100
+
+            if projected_utilization > 100:
+                status = 'WILL_EXCEED'
+                risk_level = 'HIGH'
+            elif projected_utilization > 95:
+                status = 'AT_RISK'
+                risk_level = 'MEDIUM'
+            elif projected_utilization > 80:
+                status = 'ON_TRACK_WARN'
+                risk_level = 'LOW'
+            else:
+                status = 'ON_TRACK'
+                risk_level = 'LOW'
+        else:
+            current_utilization = 0
+            projected_utilization = 0
+            status = 'NO_BUDGET'
+            risk_level = 'UNKNOWN'
+
+        # Format monthly trend data
+        monthly_trend = []
+        current_month = fy_start
+        cumulative_emissions = 0
+        cumulative_budget_allocation = 0
+        monthly_budget_allocation = total_carbon_budget / total_months if total_months > 0 else 0
+
+        while current_month <= fy_end:
+            month_key = current_month.strftime('%Y-%m')
+            month_emissions = monthly_emissions.get(month_key, 0)
+            cumulative_emissions += month_emissions
+            cumulative_budget_allocation += monthly_budget_allocation
+
+            monthly_trend.append({
+                'month': month_key,
+                'emissions': round(month_emissions, 2),
+                'cumulative_emissions': round(cumulative_emissions, 2),
+                'cumulative_budget': round(cumulative_budget_allocation, 2),
+                'is_actual': current_month <= today
+            })
+
+            current_month = add_months(current_month, 1)
+
+        return Response({
+            'fiscal_year': {
+                'start_date': fy_start.isoformat(),
+                'end_date': fy_end.isoformat(),
+                'total_months': total_months,
+                'months_elapsed': months_elapsed,
+                'months_remaining': months_remaining
+            },
+            'summary': {
+                'total_carbon_budget': round(total_carbon_budget, 2),
+                'total_emissions': round(total_emissions, 2),
+                'burn_rate': round(burn_rate, 2),
+                'projected_total_emissions': round(projected_total_emissions, 2),
+                'projected_overrun': round(max(0, projected_total_emissions - total_carbon_budget), 2),
+                'current_utilization': round(current_utilization, 2),
+                'projected_utilization': round(projected_utilization, 2),
+                'status': status,
+                'risk_level': risk_level
+            },
+            'monthly_trend': monthly_trend
+        })
+
 
 # ============================================================================
 # REFERENCE DATA VIEWSETS

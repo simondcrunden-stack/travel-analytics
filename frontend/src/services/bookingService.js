@@ -147,6 +147,13 @@ export default {
     return response.data
   },
 
+  // Carbon budget analysis
+  async getCarbonBudgetAnalysis(params = {}) {
+    const backendParams = transformFiltersForBackend(params)
+    const response = await api.get('/bookings/carbon_budget_analysis/', { params: backendParams })
+    return response.data
+  },
+
   // Top rankings for dashboard (cost centers and travellers)
   async getTopRankings(params = {}) {
     const backendParams = transformFiltersForBackend(params)

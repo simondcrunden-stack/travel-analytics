@@ -415,6 +415,11 @@
         <div class="mt-6">
           <BudgetBurnRateWidget :organization="activeFilters.organization" />
         </div>
+
+        <!-- Carbon Budget Tracking -->
+        <div class="mt-6">
+          <CarbonBudgetWidget :organization="activeFilters.organization" />
+        </div>
       </div>
 
       <!-- Top Rankings -->
@@ -621,6 +626,7 @@ import ContractExpiryWidget from '@/components/ContractExpiryWidget.vue'
 import TopRoutesWidget from '@/components/TopRoutesWidget.vue'
 import SustainabilityWidget from '@/components/SustainabilityWidget.vue'
 import BudgetBurnRateWidget from '@/components/BudgetBurnRateWidget.vue'
+import CarbonBudgetWidget from '@/components/CarbonBudgetWidget.vue'
 
 // State
 const loading = ref(true)
