@@ -1485,15 +1485,21 @@ class BookingViewSet(viewsets.ModelViewSet):
 
         # Helper function to format duration
         def format_duration(td):
-            """Format timedelta as days and hours"""
+            """Format timedelta as whole days (rounded up)"""
             if not td or td.total_seconds() == 0:
-                return "0 hours"
+                return "0 days"
             total_hours = td.total_seconds() / 3600
             days = int(total_hours // 24)
             hours = int(total_hours % 24)
-            if days > 0:
-                return f"{days}d {hours}h" if hours > 0 else f"{days}d"
-            return f"{hours}h"
+
+            # Round up if there are any hours
+            if hours > 0:
+                days += 1
+
+            # Handle singular/plural
+            if days == 1:
+                return "1 day"
+            return f"{days} days"
 
         # Format top destinations by country
         top_destinations = []
