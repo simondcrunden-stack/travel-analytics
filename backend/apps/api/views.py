@@ -1314,7 +1314,7 @@ class BookingViewSet(viewsets.ModelViewSet):
         - Most traveled destinations (actual stops, not transits)
         """
         from collections import defaultdict, Counter
-        from datetime import timedelta
+        from datetime import datetime, timedelta
 
         user = request.user
         limit = int(request.query_params.get('limit', 10))
@@ -1361,7 +1361,7 @@ class BookingViewSet(viewsets.ModelViewSet):
         # Process each air booking
         for air_booking in air_bookings:
             booking = air_booking.booking
-            segments = list(air_booking.segments.all().order_by('departure_datetime'))
+            segments = list(air_booking.segments.all().order_by('segment_number'))
 
             if not segments:
                 continue
@@ -1379,8 +1379,11 @@ class BookingViewSet(viewsets.ModelViewSet):
                     # If next segment departs from same airport
                     if next_segment.origin_airport_iata_code == dest_code:
                         # Calculate layover time
-                        if segment.arrival_datetime and next_segment.departure_datetime:
-                            layover = next_segment.departure_datetime - segment.arrival_datetime
+                        if (segment.arrival_date and segment.arrival_time and
+                            next_segment.departure_date and next_segment.departure_time):
+                            arrival_dt = datetime.combine(segment.arrival_date, segment.arrival_time)
+                            departure_dt = datetime.combine(next_segment.departure_date, next_segment.departure_time)
+                            layover = departure_dt - arrival_dt
                             # If layover < 24 hours, it's a transit
                             if layover < timedelta(hours=24):
                                 is_transit = True
