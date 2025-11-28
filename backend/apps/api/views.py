@@ -1397,16 +1397,24 @@ class BookingViewSet(viewsets.ModelViewSet):
                 first_origin = segments[0].origin_airport_iata_code
                 last_destination = segments[-1].destination_airport_iata_code
 
-                # Create normalized route key (alphabetically sorted to combine round trips)
-                if first_origin and last_destination:
-                    route_key = tuple(sorted([first_origin, last_destination]))
-                    route_pairs[route_key]['trips'] += 1
-                    if booking.traveller:
-                        route_pairs[route_key]['travellers'].add(booking.traveller.id)
-                    route_pairs[route_key]['total_spend'] += float(booking.total_amount or 0)
-                    # Store the actual airports for display
-                    if 'airports' not in route_pairs[route_key]:
-                        route_pairs[route_key]['airports'] = route_key
+                # For round trips (origin = final destination), create routes to actual destinations
+                if first_origin == last_destination:
+                    # Create routes from origin to each actual destination visited
+                    for dest_code in actual_destinations:
+                        if dest_code != first_origin:  # Don't create origin to origin routes
+                            route_key = tuple(sorted([first_origin, dest_code]))
+                            route_pairs[route_key]['trips'] += 1
+                            if booking.traveller:
+                                route_pairs[route_key]['travellers'].add(booking.traveller.id)
+                            route_pairs[route_key]['total_spend'] += float(booking.total_amount or 0)
+                else:
+                    # One-way trip: use first origin and last destination
+                    if first_origin and last_destination:
+                        route_key = tuple(sorted([first_origin, last_destination]))
+                        route_pairs[route_key]['trips'] += 1
+                        if booking.traveller:
+                            route_pairs[route_key]['travellers'].add(booking.traveller.id)
+                        route_pairs[route_key]['total_spend'] += float(booking.total_amount or 0)
 
             # Track actual destination stops
             for dest_code in actual_destinations:
