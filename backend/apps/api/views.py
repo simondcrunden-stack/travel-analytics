@@ -2915,7 +2915,7 @@ class BudgetViewSet(viewsets.ReadOnlyModelViewSet):
                         monthly_emissions[month_key] += float(segment.carbon_emissions_kg) / 1000  # Convert kg to tonnes
 
         # Get total carbon budget allocated
-        total_carbon_budget = sum(float(b.carbon_budget_tonnes) for b in budgets_qs)
+        total_carbon_budget = sum(float(b.carbon_budget) for b in budgets_qs)
         total_emissions = sum(monthly_emissions.values())
 
         # Calculate months elapsed and remaining

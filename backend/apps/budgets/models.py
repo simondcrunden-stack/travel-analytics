@@ -75,50 +75,50 @@ class Budget(models.Model):
         blank=True,
         help_text="DEPRECATED: Use organizational_node.name instead. Kept for backward compatibility."
     )
-    
+
     # Budget allocation by category
     total_budget = models.DecimalField(
         max_digits=12,
-        decimal_places=2,
-        validators=[MinValueValidator(Decimal('0.00'))]
+        decimal_places=0,
+        validators=[MinValueValidator(Decimal('0'))]
     )
     air_budget = models.DecimalField(
         max_digits=12,
-        decimal_places=2,
-        default=Decimal('0.00'),
-        validators=[MinValueValidator(Decimal('0.00'))]
+        decimal_places=0,
+        default=Decimal('0'),
+        validators=[MinValueValidator(Decimal('0'))]
     )
     accommodation_budget = models.DecimalField(
         max_digits=12,
-        decimal_places=2,
-        default=Decimal('0.00'),
-        validators=[MinValueValidator(Decimal('0.00'))]
+        decimal_places=0,
+        default=Decimal('0'),
+        validators=[MinValueValidator(Decimal('0'))]
     )
     car_hire_budget = models.DecimalField(
         max_digits=12,
-        decimal_places=2,
-        default=Decimal('0.00'),
-        validators=[MinValueValidator(Decimal('0.00'))]
+        decimal_places=0,
+        default=Decimal('0'),
+        validators=[MinValueValidator(Decimal('0'))]
     )
     other_budget = models.DecimalField(
         max_digits=12,
-        decimal_places=2,
-        default=Decimal('0.00'),
-        validators=[MinValueValidator(Decimal('0.00'))]
-    )
-
-    # Carbon emissions budget (in tonnes of CO2)
-    carbon_budget_tonnes = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        default=Decimal('0.00'),
-        validators=[MinValueValidator(Decimal('0.00'))],
-        help_text="Annual carbon emissions budget in tonnes of CO2"
+        decimal_places=0,
+        default=Decimal('0'),
+        validators=[MinValueValidator(Decimal('0'))]
     )
 
     # Currency
     currency = models.CharField(max_length=3, default='AUD')
-    
+
+    # Carbon emissions budget (in tonnes of CO2)
+    carbon_budget = models.DecimalField(
+        max_digits=10,
+        decimal_places=0,
+        default=Decimal('0'),
+        validators=[MinValueValidator(Decimal('0'))],
+        help_text="Annual carbon emissions budget in tonnes of CO2"
+    )
+
     # Alert thresholds (percentage)
     warning_threshold = models.IntegerField(default=80)  # Alert at 80% spent
     critical_threshold = models.IntegerField(default=95)  # Critical alert at 95%
