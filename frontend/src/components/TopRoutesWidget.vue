@@ -46,14 +46,14 @@
             :class="activeTab === 'destinations' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'"
             class="px-4 py-2 border-b-2 font-medium text-sm transition-colors"
           >
-            Top Destinations
+            Top Destinations (Country)
           </button>
           <button
             @click="activeTab = 'airports'"
             :class="activeTab === 'airports' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'"
             class="px-4 py-2 border-b-2 font-medium text-sm transition-colors"
           >
-            Top Destinations
+            Top Destinations (Location)
           </button>
         </div>
 
@@ -112,6 +112,7 @@
                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Country</th>
                 <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Trips</th>
                 <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Travellers</th>
+                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Avg Duration</th>
                 <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total Spend</th>
                 <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Avg/Trip</th>
               </tr>
@@ -136,6 +137,9 @@
                 <td class="px-4 py-3 whitespace-nowrap text-right text-sm text-gray-600">
                   {{ dest.unique_travellers }}
                 </td>
+                <td class="px-4 py-3 whitespace-nowrap text-right text-sm text-gray-600">
+                  {{ dest.avg_duration || '—' }}
+                </td>
                 <td class="px-4 py-3 whitespace-nowrap text-right text-sm text-gray-900">
                   {{ formatCurrency(dest.total_spend) }}
                 </td>
@@ -156,6 +160,7 @@
                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Destination</th>
                 <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Trips</th>
                 <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Travellers</th>
+                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Avg Duration</th>
                 <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total Spend</th>
                 <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Avg/Trip</th>
               </tr>
@@ -179,6 +184,9 @@
                 </td>
                 <td class="px-4 py-3 whitespace-nowrap text-right text-sm text-gray-600">
                   {{ airport.unique_travellers }}
+                </td>
+                <td class="px-4 py-3 whitespace-nowrap text-right text-sm text-gray-600">
+                  {{ airport.avg_duration || '—' }}
                 </td>
                 <td class="px-4 py-3 whitespace-nowrap text-right text-sm text-gray-900">
                   {{ formatCurrency(airport.total_spend) }}

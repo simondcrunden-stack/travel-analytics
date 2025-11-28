@@ -1349,13 +1349,15 @@ class BookingViewSet(viewsets.ModelViewSet):
             'trips': 0,
             'travellers': set(),
             'total_spend': 0,
-            'cities': set()
+            'cities': set(),
+            'total_duration': timedelta()
         })
 
         destination_stops = defaultdict(lambda: {
             'trips': 0,
             'travellers': set(),
-            'total_spend': 0
+            'total_spend': 0,
+            'total_duration': timedelta()
         })
 
         # Process each air booking
@@ -1366,14 +1368,17 @@ class BookingViewSet(viewsets.ModelViewSet):
             if not segments:
                 continue
 
-            # Identify actual destination stops (not transits)
+            # Identify actual destination stops (not transits) and track duration
             actual_destinations = set()
+            destination_durations = {}  # Track duration for each destination in this booking
 
             for i, segment in enumerate(segments):
                 dest_code = segment.destination_airport_iata_code
 
                 # Check if this is a transit or actual stop
                 is_transit = False
+                stay_duration = None
+
                 if i < len(segments) - 1:  # Not the final destination
                     next_segment = segments[i + 1]
                     # If next segment departs from same airport
@@ -1384,13 +1389,24 @@ class BookingViewSet(viewsets.ModelViewSet):
                             arrival_dt = datetime.combine(segment.arrival_date, segment.arrival_time)
                             departure_dt = datetime.combine(next_segment.departure_date, next_segment.departure_time)
                             layover = departure_dt - arrival_dt
+                            stay_duration = layover
                             # If layover < 24 hours, it's a transit
                             if layover < timedelta(hours=24):
                                 is_transit = True
+                else:
+                    # Final destination - calculate from arrival to end of trip
+                    # For simplicity, we'll use a default duration or skip for final destinations
+                    # since we don't know when they actually left
+                    pass
 
                 # If not a transit, it's an actual destination
                 if not is_transit:
                     actual_destinations.add(dest_code)
+                    if stay_duration and dest_code:
+                        # Track the duration for this destination
+                        if dest_code not in destination_durations:
+                            destination_durations[dest_code] = timedelta()
+                        destination_durations[dest_code] += stay_duration
 
             # Track route pairs (combine round trips)
             if len(segments) >= 2:
@@ -1422,6 +1438,9 @@ class BookingViewSet(viewsets.ModelViewSet):
                 if booking.traveller:
                     destination_stops[dest_code]['travellers'].add(booking.traveller.id)
                 destination_stops[dest_code]['total_spend'] += float(booking.total_amount or 0)
+                # Add duration if we tracked it for this destination
+                if dest_code in destination_durations:
+                    destination_stops[dest_code]['total_duration'] += destination_durations[dest_code]
 
         # Get airport details for all airports
         from apps.reference_data.models import Airport
@@ -1440,6 +1459,7 @@ class BookingViewSet(viewsets.ModelViewSet):
                 country_destinations[airport.country]['trips'] += data['trips']
                 country_destinations[airport.country]['travellers'].update(data['travellers'])
                 country_destinations[airport.country]['total_spend'] += data['total_spend']
+                country_destinations[airport.country]['total_duration'] += data['total_duration']
                 if airport.city:
                     country_destinations[airport.country]['cities'].add(airport.city)
 
@@ -1461,6 +1481,18 @@ class BookingViewSet(viewsets.ModelViewSet):
                 'avg_spend_per_trip': round(data['total_spend'] / data['trips'], 2) if data['trips'] > 0 else 0
             })
 
+        # Helper function to format duration
+        def format_duration(td):
+            """Format timedelta as days and hours"""
+            if not td or td.total_seconds() == 0:
+                return "0 hours"
+            total_hours = td.total_seconds() / 3600
+            days = int(total_hours // 24)
+            hours = int(total_hours % 24)
+            if days > 0:
+                return f"{days}d {hours}h" if hours > 0 else f"{days}d"
+            return f"{hours}h"
+
         # Format top destinations by country
         top_destinations = []
         for country, data in sorted(country_destinations.items(), key=lambda x: x[1]['trips'], reverse=True)[:limit]:
@@ -1468,19 +1500,26 @@ class BookingViewSet(viewsets.ModelViewSet):
             if len(data['cities']) > 3:
                 cities_list += f" +{len(data['cities']) - 3} more"
 
+            avg_duration = data['total_duration'] / data['trips'] if data['trips'] > 0 else timedelta()
+
             top_destinations.append({
                 'country': country,
                 'cities': cities_list,
                 'trips': data['trips'],
                 'unique_travellers': len(data['travellers']),
                 'total_spend': round(data['total_spend'], 2),
-                'avg_spend_per_trip': round(data['total_spend'] / data['trips'], 2) if data['trips'] > 0 else 0
+                'avg_spend_per_trip': round(data['total_spend'] / data['trips'], 2) if data['trips'] > 0 else 0,
+                'total_duration_seconds': int(data['total_duration'].total_seconds()),
+                'avg_duration': format_duration(avg_duration),
+                'avg_duration_seconds': int(avg_duration.total_seconds())
             })
 
         # Format top destination airports (actual stops, not transits)
         top_destination_airports = []
         for dest_code, data in sorted(destination_stops.items(), key=lambda x: x[1]['trips'], reverse=True)[:limit]:
             airport = airports.get(dest_code)
+            avg_duration = data['total_duration'] / data['trips'] if data['trips'] > 0 else timedelta()
+
             top_destination_airports.append({
                 'airport': dest_code,
                 'city': airport.city if airport else dest_code,
@@ -1488,7 +1527,10 @@ class BookingViewSet(viewsets.ModelViewSet):
                 'trips': data['trips'],
                 'unique_travellers': len(data['travellers']),
                 'total_spend': round(data['total_spend'], 2),
-                'avg_spend_per_trip': round(data['total_spend'] / data['trips'], 2) if data['trips'] > 0 else 0
+                'avg_spend_per_trip': round(data['total_spend'] / data['trips'], 2) if data['trips'] > 0 else 0,
+                'total_duration_seconds': int(data['total_duration'].total_seconds()),
+                'avg_duration': format_duration(avg_duration),
+                'avg_duration_seconds': int(avg_duration.total_seconds())
             })
 
         return Response({
