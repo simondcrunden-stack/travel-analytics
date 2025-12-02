@@ -2623,7 +2623,7 @@ class BookingViewSet(viewsets.ModelViewSet):
 
             # Count overnight bookings that have a hotel
             overnight_bookings_with_hotel = overnight_bookings.filter(
-                accommodationbooking__isnull=False
+                accommodation_bookings__isnull=False
             ).distinct().count()
 
             # Calculate hotel attachment rate
@@ -2888,7 +2888,7 @@ class BookingViewSet(viewsets.ModelViewSet):
 
             # Count overnight bookings that have a hotel
             overnight_bookings_with_hotel = overnight_bookings.filter(
-                accommodationbooking__isnull=False
+                accommodation_bookings__isnull=False
             ).distinct().count()
 
             # Calculate hotel attachment rate
@@ -3149,7 +3149,7 @@ class BookingViewSet(viewsets.ModelViewSet):
 
             # Count overnight bookings that have a hotel
             overnight_bookings_with_hotel = overnight_bookings.filter(
-                accommodationbooking__isnull=False
+                accommodation_bookings__isnull=False
             ).distinct().count()
 
             # Calculate hotel attachment rate
