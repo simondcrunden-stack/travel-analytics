@@ -2820,6 +2820,196 @@ class BookingViewSet(viewsets.ModelViewSet):
             'customer_count': len(customer_data)
         })
 
+    @action(detail=False, methods=['get'])
+    def organization_yield_analysis(self, request):
+        """
+        Get comprehensive yield analysis by customer organization.
+
+        Returns metrics including:
+        - Booking numbers (count, changes, $ value)
+        - Revenue generated (service fees + commissions)
+        - Overnight stays (hotel bookings)
+        - Online/offline booking split
+        """
+        from django.db.models import Count, Sum, Q, Avg, F
+        from decimal import Decimal
+
+        user = request.user
+
+        # Build base queryset using same logic as get_queryset()
+        if user.user_type == 'ADMIN':
+            queryset = Booking.objects.all()
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            queryset = Booking.objects.filter(
+                Q(organization=user.organization) |
+                Q(organization__travel_agent=user.organization)
+            )
+        else:
+            queryset = Booking.objects.filter(organization=user.organization)
+
+        # Apply filters from query params
+        org_id = request.query_params.get('organization')
+        if org_id:
+            queryset = queryset.filter(organization_id=org_id)
+
+        # Apply date range filters
+        travel_date_after = request.query_params.get('travel_date_after')
+        if travel_date_after:
+            queryset = queryset.filter(travel_date__gte=travel_date_after)
+
+        travel_date_before = request.query_params.get('travel_date_before')
+        if travel_date_before:
+            queryset = queryset.filter(travel_date__lte=travel_date_before)
+
+        # Get unique organizations from these bookings
+        from apps.organizations.models import Organization
+        organizations = Organization.objects.filter(
+            bookings__in=queryset
+        ).distinct()
+
+        organization_data = []
+
+        for org in organizations:
+            # Get all bookings for this organization
+            org_bookings = queryset.filter(organization=org)
+            booking_count = org_bookings.count()
+
+            if booking_count == 0:
+                continue
+
+            # 1. BOOKING NUMBERS
+            total_booking_value = org_bookings.aggregate(
+                total=Sum('total_amount')
+            )['total'] or Decimal('0')
+
+            # Count booking changes from audit logs
+            from apps.bookings.models import BookingAuditLog
+            modification_count = BookingAuditLog.objects.filter(
+                booking__in=org_bookings,
+                action__in=['BOOKING_MODIFIED', 'COMPONENT_MODIFIED', 'TRANSACTION_MODIFIED']
+            ).values('booking').distinct().count()
+
+            # 2. REVENUE (Service Fees + Commissions)
+            from apps.bookings.models import ServiceFee
+            from apps.commissions.models import Commission
+
+            # Service fees for these bookings
+            service_fee_revenue = ServiceFee.objects.filter(
+                booking__in=org_bookings
+            ).aggregate(
+                total=Sum('fee_amount')
+            )['total'] or Decimal('0')
+
+            # Commissions for these bookings
+            commission_revenue = Commission.objects.filter(
+                booking__in=org_bookings
+            ).aggregate(
+                total=Sum('commission_amount')
+            )['total'] or Decimal('0')
+
+            total_revenue = service_fee_revenue + commission_revenue
+
+            # 3. OVERNIGHT STAYS (Hotel Bookings)
+            from apps.bookings.models import AccommodationBooking
+
+            accommodation_stats = AccommodationBooking.objects.filter(
+                booking__in=org_bookings
+            ).aggregate(
+                hotel_booking_count=Count('id'),
+                total_nights=Sum('number_of_nights')
+            )
+
+            hotel_booking_count = accommodation_stats['hotel_booking_count'] or 0
+            total_nights = accommodation_stats['total_nights'] or 0
+
+            # 4. ONLINE/OFFLINE SPLIT
+            online_bookings = org_bookings.filter(
+                Q(service_fees__fee_type__in=['BOOKING_ONLINE_DOM', 'BOOKING_ONLINE_INTL']) |
+                Q(service_fees__booking_channel='Online')
+            ).distinct().count()
+
+            offline_bookings = org_bookings.filter(
+                Q(service_fees__fee_type__in=['BOOKING_OFFLINE_DOM', 'BOOKING_OFFLINE_INTL']) |
+                Q(service_fees__booking_channel='Offline')
+            ).distinct().count()
+
+            # Calculate percentages
+            online_percentage = (online_bookings / booking_count * 100) if booking_count > 0 else 0
+            offline_percentage = (offline_bookings / booking_count * 100) if booking_count > 0 else 0
+
+            # Calculate yield metrics
+            revenue_per_booking = (total_revenue / booking_count) if booking_count > 0 else Decimal('0')
+
+            # Count unique travellers for this organization
+            unique_travellers = org_bookings.values('traveller').distinct().count()
+
+            organization_data.append({
+                'organization_id': str(org.id),
+                'organization_name': org.name,
+                'organization_type': org.organization_type if hasattr(org, 'organization_type') else 'CUSTOMER',
+
+                # Booking numbers
+                'booking_count': booking_count,
+                'total_booking_value': float(total_booking_value),
+                'modification_count': modification_count,
+                'average_booking_value': float(total_booking_value / booking_count) if booking_count > 0 else 0,
+
+                # Revenue
+                'service_fee_revenue': float(service_fee_revenue),
+                'commission_revenue': float(commission_revenue),
+                'total_revenue': float(total_revenue),
+                'revenue_per_booking': float(revenue_per_booking),
+
+                # Overnight stays
+                'hotel_booking_count': hotel_booking_count,
+                'total_nights': total_nights,
+                'bookings_with_hotel_percentage': (hotel_booking_count / booking_count * 100) if booking_count > 0 else 0,
+
+                # Online/offline
+                'online_bookings': online_bookings,
+                'offline_bookings': offline_bookings,
+                'online_percentage': round(online_percentage, 1),
+                'offline_percentage': round(offline_percentage, 1),
+
+                # Additional metrics
+                'unique_travellers': unique_travellers,
+            })
+
+        # Sort by total revenue (highest first)
+        organization_data.sort(key=lambda x: x['total_revenue'], reverse=True)
+
+        # Calculate totals/averages across all organizations
+        if organization_data:
+            totals = {
+                'total_bookings': sum(o['booking_count'] for o in organization_data),
+                'total_booking_value': sum(o['total_booking_value'] for o in organization_data),
+                'total_revenue': sum(o['total_revenue'] for o in organization_data),
+                'total_service_fees': sum(o['service_fee_revenue'] for o in organization_data),
+                'total_commissions': sum(o['commission_revenue'] for o in organization_data),
+                'total_modifications': sum(o['modification_count'] for o in organization_data),
+                'total_hotel_bookings': sum(o['hotel_booking_count'] for o in organization_data),
+                'total_nights': sum(o['total_nights'] for o in organization_data),
+                'total_online_bookings': sum(o['online_bookings'] for o in organization_data),
+                'total_offline_bookings': sum(o['offline_bookings'] for o in organization_data),
+                'total_unique_travellers': sum(o['unique_travellers'] for o in organization_data),
+            }
+
+            totals['average_revenue_per_booking'] = (
+                totals['total_revenue'] / totals['total_bookings']
+            ) if totals['total_bookings'] > 0 else 0
+
+            totals['overall_online_percentage'] = (
+                totals['total_online_bookings'] / totals['total_bookings'] * 100
+            ) if totals['total_bookings'] > 0 else 0
+        else:
+            totals = {}
+
+        return Response({
+            'organizations': organization_data,
+            'totals': totals,
+            'organization_count': len(organization_data)
+        })
+
 
 # ============================================================================
 # BUDGET VIEWSETS
