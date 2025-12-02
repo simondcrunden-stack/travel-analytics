@@ -2642,6 +2642,7 @@ class BookingViewSet(viewsets.ModelViewSet):
             # Calculate yield metrics
             revenue_per_booking = (total_revenue / booking_count) if booking_count > 0 else Decimal('0')
             yield_percentage = (total_revenue / total_booking_value * 100) if total_booking_value > 0 else 0
+            modification_percentage = (modification_count / booking_count * 100) if booking_count > 0 else 0
 
             consultant_data.append({
                 'consultant_id': str(consultant.id),
@@ -2651,7 +2652,8 @@ class BookingViewSet(viewsets.ModelViewSet):
                 # Booking numbers
                 'booking_count': booking_count,
                 'total_booking_value': float(total_booking_value),
-                'modification_count': modification_count,
+                'modification_count': modification_count,  # Keep for totals calculation
+                'modification_percentage': round(modification_percentage, 1),
                 'average_booking_value': float(total_booking_value / booking_count) if booking_count > 0 else 0,
 
                 # Revenue
@@ -2902,6 +2904,7 @@ class BookingViewSet(viewsets.ModelViewSet):
             # Calculate yield metrics
             revenue_per_booking = (total_revenue / booking_count) if booking_count > 0 else Decimal('0')
             yield_percentage = (total_revenue / total_booking_value * 100) if total_booking_value > 0 else 0
+            modification_percentage = (modification_count / booking_count * 100) if booking_count > 0 else 0
 
             customer_data.append({
                 'traveller_id': str(traveller.id),
@@ -2912,7 +2915,8 @@ class BookingViewSet(viewsets.ModelViewSet):
                 # Booking numbers
                 'booking_count': booking_count,
                 'total_booking_value': float(total_booking_value),
-                'modification_count': modification_count,
+                'modification_count': modification_count,  # Keep for totals calculation
+                'modification_percentage': round(modification_percentage, 1),
                 'average_booking_value': float(total_booking_value / booking_count) if booking_count > 0 else 0,
 
                 # Revenue
@@ -3159,6 +3163,7 @@ class BookingViewSet(viewsets.ModelViewSet):
             # Calculate yield metrics
             revenue_per_booking = (total_revenue / booking_count) if booking_count > 0 else Decimal('0')
             yield_percentage = (total_revenue / total_booking_value * 100) if total_booking_value > 0 else 0
+            modification_percentage = (modification_count / booking_count * 100) if booking_count > 0 else 0
 
             # Count unique travellers for this organization
             unique_travellers = org_bookings.values('traveller').distinct().count()
@@ -3171,7 +3176,8 @@ class BookingViewSet(viewsets.ModelViewSet):
                 # Booking numbers
                 'booking_count': booking_count,
                 'total_booking_value': float(total_booking_value),
-                'modification_count': modification_count,
+                'modification_count': modification_count,  # Keep for totals calculation
+                'modification_percentage': round(modification_percentage, 1),
                 'average_booking_value': float(total_booking_value / booking_count) if booking_count > 0 else 0,
 
                 # Revenue

@@ -124,9 +124,9 @@
                 Online %
                 <span v-if="sortField === 'online_percentage'" class="mdi" :class="sortAscending ? 'mdi-arrow-up' : 'mdi-arrow-down'"></span>
               </th>
-              <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" @click="sortBy('modification_count')">
+              <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" @click="sortBy('modification_percentage')">
                 Changes
-                <span v-if="sortField === 'modification_count'" class="mdi" :class="sortAscending ? 'mdi-arrow-up' : 'mdi-arrow-down'"></span>
+                <span v-if="sortField === 'modification_percentage'" class="mdi" :class="sortAscending ? 'mdi-arrow-up' : 'mdi-arrow-down'"></span>
               </th>
             </tr>
           </thead>
@@ -168,7 +168,7 @@
                 </span>
               </td>
               <td class="px-4 py-3 whitespace-nowrap text-right text-sm text-gray-900">
-                {{ consultant.modification_count }}
+                {{ consultant.modification_percentage }}%
               </td>
             </tr>
           </tbody>
