@@ -102,16 +102,16 @@ class AirBookingInline(admin.TabularInline):
     """Show air bookings within a main Booking"""
     model = AirBooking
     extra = 0
-    fields = ['trip_type', 'travel_class', 'origin_airport_iata_code', 
-              'destination_airport_iata_code', 'ticket_number', 'total_fare']
+    fields = ['trip_type', 'travel_class', 'origin_airport_iata_code',
+              'destination_airport_iata_code', 'ticket_number', 'total_fare', 'commission_amount']
     show_change_link = True  # Allows clicking to see full air booking with segments
 
 class AccommodationBookingInline(admin.TabularInline):
     """Show accommodation bookings within a main Booking"""
     model = AccommodationBooking
     extra = 0
-    fields = ['hotel_name', 'city', 'country', 'check_in_date', 
-              'check_out_date', 'number_of_nights', 'nightly_rate']
+    fields = ['hotel_name', 'city', 'country', 'check_in_date',
+              'check_out_date', 'number_of_nights', 'nightly_rate', 'commission_amount']
 
     def get_formset(self, request, obj=None, **kwargs):
         formset = super().get_formset(request, obj, **kwargs)
@@ -166,7 +166,7 @@ class CarHireBookingInline(admin.TabularInline):
     model = CarHireBooking
     extra = 0
     fields = ['rental_company', 'vehicle_type', 'pickup_city', 'country',
-              'pickup_date', 'dropoff_date', 'number_of_days', 'daily_rate']
+              'pickup_date', 'dropoff_date', 'number_of_days', 'daily_rate', 'commission_amount']
 
     def get_formset(self, request, obj=None, **kwargs):
         formset = super().get_formset(request, obj, **kwargs)
@@ -1069,7 +1069,8 @@ class AirBookingAdmin(admin.ModelAdmin):
             'fields': ('primary_airline_iata_code', 'primary_airline_name')
         }),
         ('Financial Breakdown', {
-            'fields': ('base_fare', 'taxes', 'gst_amount', 'total_fare')
+            'fields': ('base_fare', 'taxes', 'gst_amount', 'total_fare',
+                      'commission_amount', 'commission_rate', 'commission_currency')
         }),
         ('Compliance', {
             'fields': ('lowest_fare_available', 'lowest_fare_currency', 'potential_savings')
@@ -1133,7 +1134,8 @@ class AccommodationBookingAdmin(admin.ModelAdmin):
             'fields': ('check_in_date', 'check_out_date', 'number_of_nights', 'room_type')
         }),
         ('Rate', {
-            'fields': ('nightly_rate', 'currency', 'nightly_rate_base', 'total_amount_base')
+            'fields': ('nightly_rate', 'currency', 'nightly_rate_base', 'total_amount_base',
+                      'commission_amount', 'commission_rate', 'commission_currency')
         }),
     )
 
@@ -1164,7 +1166,8 @@ class CarHireBookingAdmin(admin.ModelAdmin):
             'fields': ('country',)
         }),
         ('Rate', {
-            'fields': ('number_of_days', 'daily_rate', 'currency', 'daily_rate_base', 'total_amount_base')
+            'fields': ('number_of_days', 'daily_rate', 'currency', 'daily_rate_base', 'total_amount_base',
+                      'commission_amount', 'commission_rate', 'commission_currency')
         }),
     )
 

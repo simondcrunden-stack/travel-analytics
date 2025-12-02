@@ -306,7 +306,27 @@ class AirBooking(models.Model):
     gst_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     total_fare = models.DecimalField(max_digits=12, decimal_places=2)
     currency = models.CharField(max_length=3, default='AUD')
-    
+
+    # Commission (from airline/supplier)
+    commission_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        help_text="Commission earned from airline/supplier"
+    )
+    commission_rate = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Commission percentage (e.g., 5.00 for 5%)"
+    )
+    commission_currency = models.CharField(
+        max_length=3,
+        default='AUD',
+        help_text="Currency of commission (defaults to booking currency)"
+    )
+
     # Carbon emissions (total from all segments)
     total_carbon_kg = models.DecimalField(
         max_digits=10,
@@ -696,12 +716,32 @@ class AccommodationBooking(models.Model):
     # Rate
     nightly_rate = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     currency = models.CharField(max_length=3, default='AUD')
-    
+
     # Converted to base currency
     nightly_rate_base = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     gst_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     total_amount_base = models.DecimalField(max_digits=12, decimal_places=2, default=0)
-    
+
+    # Commission (from hotel/supplier)
+    commission_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        help_text="Commission earned from hotel/supplier"
+    )
+    commission_rate = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Commission percentage (e.g., 10.00 for 10%)"
+    )
+    commission_currency = models.CharField(
+        max_length=3,
+        default='AUD',
+        help_text="Currency of commission (defaults to booking currency)"
+    )
+
     class Meta:
         db_table = 'accommodation_bookings'
         indexes = [
@@ -845,12 +885,32 @@ class CarHireBooking(models.Model):
     number_of_days = models.IntegerField()
     daily_rate = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     currency = models.CharField(max_length=3, default='AUD')
-    
+
     # Converted to base currency
     daily_rate_base = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     gst_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     total_amount_base = models.DecimalField(max_digits=12, decimal_places=2, default=0)
-    
+
+    # Commission (from rental company/supplier)
+    commission_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        help_text="Commission earned from rental company/supplier"
+    )
+    commission_rate = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Commission percentage (e.g., 15.00 for 15%)"
+    )
+    commission_currency = models.CharField(
+        max_length=3,
+        default='AUD',
+        help_text="Currency of commission (defaults to booking currency)"
+    )
+
     class Meta:
         db_table = 'car_hire_bookings'
         indexes = [
