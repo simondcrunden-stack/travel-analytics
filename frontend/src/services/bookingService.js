@@ -175,6 +175,13 @@ export default {
     return response.data
   },
 
+  // Organization yield analysis
+  async getOrganizationYieldAnalysis(params = {}) {
+    const backendParams = transformFiltersForBackend(params)
+    const response = await api.get('/bookings/organization_yield_analysis/', { params: backendParams })
+    return response.data
+  },
+
   // Helper: Calculate totals from bookings
   calculateTotals(bookings) {
     return bookings.reduce((acc, booking) => {

@@ -54,6 +54,18 @@
               <span class="mdi mdi-account-star"></span>
               Customer Analysis
             </button>
+            <button
+              @click="activeTab = 'organizations'"
+              :class="[
+                activeTab === 'organizations'
+                  ? 'border-indigo-500 text-indigo-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300',
+                'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2'
+              ]"
+            >
+              <span class="mdi mdi-office-building"></span>
+              Organization Analysis
+            </button>
           </nav>
         </div>
       </div>
@@ -74,6 +86,14 @@
           :end-date="activeFilters.travel_date_before"
         />
       </div>
+
+      <div v-if="activeTab === 'organizations'">
+        <OrganizationYieldAnalysis
+          :organization="activeFilters.organization"
+          :start-date="activeFilters.travel_date_after"
+          :end-date="activeFilters.travel_date_before"
+        />
+      </div>
     </div>
   </div>
 </template>
@@ -83,6 +103,7 @@ import { ref } from 'vue'
 import UniversalFilters from '@/components/common/UniversalFilters.vue'
 import ConsultantYieldAnalysis from '@/components/ConsultantYieldAnalysis.vue'
 import CustomerYieldAnalysis from '@/components/CustomerYieldAnalysis.vue'
+import OrganizationYieldAnalysis from '@/components/OrganizationYieldAnalysis.vue'
 
 const activeTab = ref('consultants')
 
