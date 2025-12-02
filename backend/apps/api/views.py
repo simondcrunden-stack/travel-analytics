@@ -2444,6 +2444,362 @@ class BookingViewSet(viewsets.ModelViewSet):
 
         return Response(rankings)
 
+    @action(detail=False, methods=['get'])
+    def consultant_yield_analysis(self, request):
+        """
+        Get comprehensive yield analysis for travel consultants.
+
+        Returns metrics including:
+        - Booking numbers (count, changes, $ value)
+        - Revenue (service fees + commissions)
+        - Overnight stays (hotel bookings)
+        - Online/offline booking split
+        """
+        from django.db.models import Count, Sum, Q, Avg, F
+        from decimal import Decimal
+
+        user = request.user
+
+        # Build base queryset using same logic as get_queryset()
+        if user.user_type == 'ADMIN':
+            queryset = Booking.objects.all()
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            queryset = Booking.objects.filter(
+                Q(organization=user.organization) |
+                Q(organization__travel_agent=user.organization)
+            )
+        else:
+            queryset = Booking.objects.filter(organization=user.organization)
+
+        # Apply standard filters
+        queryset = self._apply_standard_filters(queryset, request)
+
+        # Get consultants with bookings
+        from apps.users.models import User
+        consultants = User.objects.filter(
+            Q(bookings_consulted__in=queryset) |
+            Q(user_type__in=['AGENT_ADMIN', 'AGENT_USER'])
+        ).distinct()
+
+        # Filter by organization if specified
+        org_id = request.query_params.get('organization')
+        if org_id:
+            consultants = consultants.filter(organization_id=org_id)
+
+        consultant_data = []
+
+        for consultant in consultants:
+            # Get all bookings for this consultant
+            consultant_bookings = queryset.filter(travel_consultant=consultant)
+            booking_count = consultant_bookings.count()
+
+            if booking_count == 0:
+                continue
+
+            # 1. BOOKING NUMBERS
+            total_booking_value = consultant_bookings.aggregate(
+                total=Sum('total_amount')
+            )['total'] or Decimal('0')
+
+            # Count booking changes from audit logs
+            from apps.bookings.models import BookingAuditLog
+            modification_count = BookingAuditLog.objects.filter(
+                booking__in=consultant_bookings,
+                action__in=['BOOKING_MODIFIED', 'COMPONENT_MODIFIED', 'TRANSACTION_MODIFIED']
+            ).values('booking').distinct().count()
+
+            # 2. REVENUE (Service Fees + Commissions)
+            from apps.bookings.models import ServiceFee
+            from apps.commissions.models import Commission
+
+            # Service fees for these bookings
+            service_fee_revenue = ServiceFee.objects.filter(
+                booking__in=consultant_bookings
+            ).aggregate(
+                total=Sum('fee_amount')
+            )['total'] or Decimal('0')
+
+            # Commissions for these bookings
+            commission_revenue = Commission.objects.filter(
+                booking__in=consultant_bookings
+            ).aggregate(
+                total=Sum('commission_amount')
+            )['total'] or Decimal('0')
+
+            total_revenue = service_fee_revenue + commission_revenue
+
+            # 3. OVERNIGHT STAYS (Hotel Bookings)
+            from apps.bookings.models import AccommodationBooking
+
+            accommodation_stats = AccommodationBooking.objects.filter(
+                booking__in=consultant_bookings
+            ).aggregate(
+                hotel_booking_count=Count('id'),
+                total_nights=Sum('number_of_nights')
+            )
+
+            hotel_booking_count = accommodation_stats['hotel_booking_count'] or 0
+            total_nights = accommodation_stats['total_nights'] or 0
+
+            # 4. ONLINE/OFFLINE SPLIT
+            online_bookings = consultant_bookings.filter(
+                Q(service_fees__fee_type__in=['BOOKING_ONLINE_DOM', 'BOOKING_ONLINE_INTL']) |
+                Q(service_fees__booking_channel='Online')
+            ).distinct().count()
+
+            offline_bookings = consultant_bookings.filter(
+                Q(service_fees__fee_type__in=['BOOKING_OFFLINE_DOM', 'BOOKING_OFFLINE_INTL']) |
+                Q(service_fees__booking_channel='Offline')
+            ).distinct().count()
+
+            # Calculate percentages
+            online_percentage = (online_bookings / booking_count * 100) if booking_count > 0 else 0
+            offline_percentage = (offline_bookings / booking_count * 100) if booking_count > 0 else 0
+
+            # Calculate yield metrics
+            revenue_per_booking = (total_revenue / booking_count) if booking_count > 0 else Decimal('0')
+
+            consultant_data.append({
+                'consultant_id': str(consultant.id),
+                'consultant_name': consultant.get_full_name() or consultant.username,
+                'consultant_email': consultant.email,
+
+                # Booking numbers
+                'booking_count': booking_count,
+                'total_booking_value': float(total_booking_value),
+                'modification_count': modification_count,
+                'average_booking_value': float(total_booking_value / booking_count) if booking_count > 0 else 0,
+
+                # Revenue
+                'service_fee_revenue': float(service_fee_revenue),
+                'commission_revenue': float(commission_revenue),
+                'total_revenue': float(total_revenue),
+                'revenue_per_booking': float(revenue_per_booking),
+
+                # Overnight stays
+                'hotel_booking_count': hotel_booking_count,
+                'total_nights': total_nights,
+                'bookings_with_hotel_percentage': (hotel_booking_count / booking_count * 100) if booking_count > 0 else 0,
+
+                # Online/offline
+                'online_bookings': online_bookings,
+                'offline_bookings': offline_bookings,
+                'online_percentage': round(online_percentage, 1),
+                'offline_percentage': round(offline_percentage, 1),
+            })
+
+        # Sort by total revenue (highest first)
+        consultant_data.sort(key=lambda x: x['total_revenue'], reverse=True)
+
+        # Calculate totals/averages across all consultants
+        if consultant_data:
+            totals = {
+                'total_bookings': sum(c['booking_count'] for c in consultant_data),
+                'total_booking_value': sum(c['total_booking_value'] for c in consultant_data),
+                'total_revenue': sum(c['total_revenue'] for c in consultant_data),
+                'total_service_fees': sum(c['service_fee_revenue'] for c in consultant_data),
+                'total_commissions': sum(c['commission_revenue'] for c in consultant_data),
+                'total_modifications': sum(c['modification_count'] for c in consultant_data),
+                'total_hotel_bookings': sum(c['hotel_booking_count'] for c in consultant_data),
+                'total_nights': sum(c['total_nights'] for c in consultant_data),
+                'total_online_bookings': sum(c['online_bookings'] for c in consultant_data),
+                'total_offline_bookings': sum(c['offline_bookings'] for c in consultant_data),
+            }
+
+            totals['average_revenue_per_booking'] = (
+                totals['total_revenue'] / totals['total_bookings']
+            ) if totals['total_bookings'] > 0 else 0
+
+            totals['overall_online_percentage'] = (
+                totals['total_online_bookings'] / totals['total_bookings'] * 100
+            ) if totals['total_bookings'] > 0 else 0
+        else:
+            totals = {}
+
+        return Response({
+            'consultants': consultant_data,
+            'totals': totals,
+            'consultant_count': len(consultant_data)
+        })
+
+    @action(detail=False, methods=['get'])
+    def customer_yield_analysis(self, request):
+        """
+        Get comprehensive yield analysis for customers/travellers.
+
+        Returns metrics including:
+        - Booking numbers (count, changes, $ value)
+        - Revenue generated (service fees + commissions)
+        - Overnight stays (hotel bookings)
+        - Online/offline booking split
+        """
+        from django.db.models import Count, Sum, Q, Avg, F
+        from decimal import Decimal
+
+        user = request.user
+
+        # Build base queryset using same logic as get_queryset()
+        if user.user_type == 'ADMIN':
+            queryset = Booking.objects.all()
+        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
+            queryset = Booking.objects.filter(
+                Q(organization=user.organization) |
+                Q(organization__travel_agent=user.organization)
+            )
+        else:
+            queryset = Booking.objects.filter(organization=user.organization)
+
+        # Apply standard filters
+        queryset = self._apply_standard_filters(queryset, request)
+
+        # Get unique travellers from these bookings
+        from apps.travellers.models import Traveller
+        travellers = Traveller.objects.filter(
+            bookings__in=queryset
+        ).distinct()
+
+        # Filter by organization if specified
+        org_id = request.query_params.get('organization')
+        if org_id:
+            travellers = travellers.filter(organization_id=org_id)
+
+        customer_data = []
+
+        for traveller in travellers:
+            # Get all bookings for this traveller
+            traveller_bookings = queryset.filter(traveller=traveller)
+            booking_count = traveller_bookings.count()
+
+            if booking_count == 0:
+                continue
+
+            # 1. BOOKING NUMBERS
+            total_booking_value = traveller_bookings.aggregate(
+                total=Sum('total_amount')
+            )['total'] or Decimal('0')
+
+            # Count booking changes from audit logs
+            from apps.bookings.models import BookingAuditLog
+            modification_count = BookingAuditLog.objects.filter(
+                booking__in=traveller_bookings,
+                action__in=['BOOKING_MODIFIED', 'COMPONENT_MODIFIED', 'TRANSACTION_MODIFIED']
+            ).values('booking').distinct().count()
+
+            # 2. REVENUE (Service Fees + Commissions)
+            from apps.bookings.models import ServiceFee
+            from apps.commissions.models import Commission
+
+            # Service fees for these bookings
+            service_fee_revenue = ServiceFee.objects.filter(
+                booking__in=traveller_bookings
+            ).aggregate(
+                total=Sum('fee_amount')
+            )['total'] or Decimal('0')
+
+            # Commissions for these bookings
+            commission_revenue = Commission.objects.filter(
+                booking__in=traveller_bookings
+            ).aggregate(
+                total=Sum('commission_amount')
+            )['total'] or Decimal('0')
+
+            total_revenue = service_fee_revenue + commission_revenue
+
+            # 3. OVERNIGHT STAYS (Hotel Bookings)
+            from apps.bookings.models import AccommodationBooking
+
+            accommodation_stats = AccommodationBooking.objects.filter(
+                booking__in=traveller_bookings
+            ).aggregate(
+                hotel_booking_count=Count('id'),
+                total_nights=Sum('number_of_nights')
+            )
+
+            hotel_booking_count = accommodation_stats['hotel_booking_count'] or 0
+            total_nights = accommodation_stats['total_nights'] or 0
+
+            # 4. ONLINE/OFFLINE SPLIT
+            online_bookings = traveller_bookings.filter(
+                Q(service_fees__fee_type__in=['BOOKING_ONLINE_DOM', 'BOOKING_ONLINE_INTL']) |
+                Q(service_fees__booking_channel='Online')
+            ).distinct().count()
+
+            offline_bookings = traveller_bookings.filter(
+                Q(service_fees__fee_type__in=['BOOKING_OFFLINE_DOM', 'BOOKING_OFFLINE_INTL']) |
+                Q(service_fees__booking_channel='Offline')
+            ).distinct().count()
+
+            # Calculate percentages
+            online_percentage = (online_bookings / booking_count * 100) if booking_count > 0 else 0
+            offline_percentage = (offline_bookings / booking_count * 100) if booking_count > 0 else 0
+
+            # Calculate yield metrics
+            revenue_per_booking = (total_revenue / booking_count) if booking_count > 0 else Decimal('0')
+
+            customer_data.append({
+                'traveller_id': str(traveller.id),
+                'traveller_name': f"{traveller.first_name} {traveller.last_name}",
+                'traveller_email': traveller.email,
+                'organization_name': traveller.organization.name,
+
+                # Booking numbers
+                'booking_count': booking_count,
+                'total_booking_value': float(total_booking_value),
+                'modification_count': modification_count,
+                'average_booking_value': float(total_booking_value / booking_count) if booking_count > 0 else 0,
+
+                # Revenue
+                'service_fee_revenue': float(service_fee_revenue),
+                'commission_revenue': float(commission_revenue),
+                'total_revenue': float(total_revenue),
+                'revenue_per_booking': float(revenue_per_booking),
+
+                # Overnight stays
+                'hotel_booking_count': hotel_booking_count,
+                'total_nights': total_nights,
+                'bookings_with_hotel_percentage': (hotel_booking_count / booking_count * 100) if booking_count > 0 else 0,
+
+                # Online/offline
+                'online_bookings': online_bookings,
+                'offline_bookings': offline_bookings,
+                'online_percentage': round(online_percentage, 1),
+                'offline_percentage': round(offline_percentage, 1),
+            })
+
+        # Sort by total revenue (highest first)
+        customer_data.sort(key=lambda x: x['total_revenue'], reverse=True)
+
+        # Calculate totals/averages across all customers
+        if customer_data:
+            totals = {
+                'total_bookings': sum(c['booking_count'] for c in customer_data),
+                'total_booking_value': sum(c['total_booking_value'] for c in customer_data),
+                'total_revenue': sum(c['total_revenue'] for c in customer_data),
+                'total_service_fees': sum(c['service_fee_revenue'] for c in customer_data),
+                'total_commissions': sum(c['commission_revenue'] for c in customer_data),
+                'total_modifications': sum(c['modification_count'] for c in customer_data),
+                'total_hotel_bookings': sum(c['hotel_booking_count'] for c in customer_data),
+                'total_nights': sum(c['total_nights'] for c in customer_data),
+                'total_online_bookings': sum(c['online_bookings'] for c in customer_data),
+                'total_offline_bookings': sum(c['offline_bookings'] for c in customer_data),
+            }
+
+            totals['average_revenue_per_booking'] = (
+                totals['total_revenue'] / totals['total_bookings']
+            ) if totals['total_bookings'] > 0 else 0
+
+            totals['overall_online_percentage'] = (
+                totals['total_online_bookings'] / totals['total_bookings'] * 100
+            ) if totals['total_bookings'] > 0 else 0
+        else:
+            totals = {}
+
+        return Response({
+            'customers': customer_data,
+            'totals': totals,
+            'customer_count': len(customer_data)
+        })
+
 
 # ============================================================================
 # BUDGET VIEWSETS
