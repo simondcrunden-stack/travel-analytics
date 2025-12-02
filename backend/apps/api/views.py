@@ -3375,61 +3375,63 @@ class BookingViewSet(viewsets.ModelViewSet):
             revenue_per_booking = (total_revenue / booking_count) if booking_count > 0 else Decimal('0')
             yield_percentage = (total_revenue / data['total_booking_value'] * 100) if data['total_booking_value'] > 0 else 0
 
-            # Count bookings with changes (based on transaction types)
+            # Count bookings with changes (based on transaction types specific to this supplier's component type)
             change_transaction_types = [
                 'EXCHANGE', 'REISSUE', 'VOID', 'MODIFICATION', 'DATE_CHANGE',
                 'UPGRADE', 'DOWNGRADE', 'CANCELLATION', 'PARTIAL_CANCELLATION',
                 'REFUND', 'PARTIAL_REFUND'
             ]
 
-            # Get booking IDs that have change transactions through their components
-            changed_booking_ids = set()
+            modification_count = 0
+            supplier_type = data['supplier_type']
 
-            # Get ContentTypes for booking components
-            air_ct = ContentType.objects.get_for_model(AirBooking)
-            accommodation_ct = ContentType.objects.get_for_model(AccommodationBooking)
-            car_ct = ContentType.objects.get_for_model(CarHireBooking)
+            if supplier_type == 'Air':
+                # Only count changes to Air components for this airline
+                air_ct = ContentType.objects.get_for_model(AirBooking)
+                air_component_ids = BookingTransaction.objects.filter(
+                    content_type=air_ct,
+                    transaction_type__in=change_transaction_types
+                ).values_list('object_id', flat=True).distinct()
 
-            # Get Air booking component IDs that have change transactions
-            air_component_ids = BookingTransaction.objects.filter(
-                content_type=air_ct,
-                transaction_type__in=change_transaction_types
-            ).values_list('object_id', flat=True).distinct()
+                if air_component_ids:
+                    changed_booking_ids = AirBooking.objects.filter(
+                        id__in=air_component_ids,
+                        booking__in=supplier_bookings,
+                        primary_airline_name=supplier_name
+                    ).values_list('booking_id', flat=True).distinct()
+                    modification_count = len(set(changed_booking_ids))
 
-            if air_component_ids:
-                air_booking_ids = AirBooking.objects.filter(
-                    id__in=air_component_ids,
-                    booking__in=supplier_bookings
-                ).values_list('booking_id', flat=True).distinct()
-                changed_booking_ids.update(air_booking_ids)
+            elif supplier_type == 'Accommodation':
+                # Only count changes to Accommodation components for this hotel
+                accommodation_ct = ContentType.objects.get_for_model(AccommodationBooking)
+                accommodation_component_ids = BookingTransaction.objects.filter(
+                    content_type=accommodation_ct,
+                    transaction_type__in=change_transaction_types
+                ).values_list('object_id', flat=True).distinct()
 
-            # Get Accommodation booking component IDs that have change transactions
-            accommodation_component_ids = BookingTransaction.objects.filter(
-                content_type=accommodation_ct,
-                transaction_type__in=change_transaction_types
-            ).values_list('object_id', flat=True).distinct()
+                if accommodation_component_ids:
+                    changed_booking_ids = AccommodationBooking.objects.filter(
+                        id__in=accommodation_component_ids,
+                        booking__in=supplier_bookings,
+                        hotel_name=supplier_name
+                    ).values_list('booking_id', flat=True).distinct()
+                    modification_count = len(set(changed_booking_ids))
 
-            if accommodation_component_ids:
-                accommodation_booking_ids = AccommodationBooking.objects.filter(
-                    id__in=accommodation_component_ids,
-                    booking__in=supplier_bookings
-                ).values_list('booking_id', flat=True).distinct()
-                changed_booking_ids.update(accommodation_booking_ids)
+            elif supplier_type == 'Car Hire':
+                # Only count changes to Car Hire components for this rental company
+                car_ct = ContentType.objects.get_for_model(CarHireBooking)
+                car_component_ids = BookingTransaction.objects.filter(
+                    content_type=car_ct,
+                    transaction_type__in=change_transaction_types
+                ).values_list('object_id', flat=True).distinct()
 
-            # Get Car Hire booking component IDs that have change transactions
-            car_component_ids = BookingTransaction.objects.filter(
-                content_type=car_ct,
-                transaction_type__in=change_transaction_types
-            ).values_list('object_id', flat=True).distinct()
-
-            if car_component_ids:
-                car_booking_ids = CarHireBooking.objects.filter(
-                    id__in=car_component_ids,
-                    booking__in=supplier_bookings
-                ).values_list('booking_id', flat=True).distinct()
-                changed_booking_ids.update(car_booking_ids)
-
-            modification_count = len(changed_booking_ids)
+                if car_component_ids:
+                    changed_booking_ids = CarHireBooking.objects.filter(
+                        id__in=car_component_ids,
+                        booking__in=supplier_bookings,
+                        rental_company=supplier_name
+                    ).values_list('booking_id', flat=True).distinct()
+                    modification_count = len(set(changed_booking_ids))
 
             # Online/offline split
             online_bookings = supplier_bookings.filter(
