@@ -3077,6 +3077,242 @@ class BookingViewSet(viewsets.ModelViewSet):
             'organization_count': len(organization_data)
         })
 
+    @action(detail=False, methods=['get'])
+    def supplier_yield_analysis(self, request):
+        """
+        Get comprehensive yield analysis by supplier.
+        Aggregates data from airlines, hotels, and car rental companies.
+        """
+        # Apply filters from query params
+        queryset = Booking.objects.all()
+
+        org_id = request.query_params.get('organization')
+        if org_id:
+            queryset = queryset.filter(organization_id=org_id)
+
+        travel_date_after = request.query_params.get('travel_date_after')
+        if travel_date_after:
+            queryset = queryset.filter(travel_date__gte=travel_date_after)
+
+        travel_date_before = request.query_params.get('travel_date_before')
+        if travel_date_before:
+            queryset = queryset.filter(travel_date__lte=travel_date_before)
+
+        # Collect supplier data from all three booking types
+        supplier_data = {}
+
+        # 1. AIR BOOKINGS - Group by airline
+        air_bookings = AirBooking.objects.filter(
+            booking__in=queryset
+        ).exclude(
+            primary_airline_name=''
+        ).values('primary_airline_name').annotate(
+            booking_count=Count('booking', distinct=True),
+            total_fare=Sum('total_fare'),
+            commission=Sum('commission_amount')
+        )
+
+        for air in air_bookings:
+            supplier_name = air['primary_airline_name']
+            if supplier_name not in supplier_data:
+                supplier_data[supplier_name] = {
+                    'supplier_name': supplier_name,
+                    'supplier_type': 'Air',
+                    'booking_count': 0,
+                    'total_booking_value': Decimal('0'),
+                    'commission_revenue': Decimal('0'),
+                    'booking_ids': set()
+                }
+
+            # Get bookings for this airline
+            airline_bookings = AirBooking.objects.filter(
+                booking__in=queryset,
+                primary_airline_name=supplier_name
+            ).values_list('booking_id', flat=True).distinct()
+
+            supplier_data[supplier_name]['booking_ids'].update(airline_bookings)
+            supplier_data[supplier_name]['total_booking_value'] += air['total_fare'] or Decimal('0')
+            supplier_data[supplier_name]['commission_revenue'] += air['commission'] or Decimal('0')
+
+        # 2. ACCOMMODATION BOOKINGS - Group by hotel
+        hotel_bookings = AccommodationBooking.objects.filter(
+            booking__in=queryset
+        ).exclude(
+            hotel_name=''
+        ).values('hotel_name').annotate(
+            total_amount=Sum('total_amount_base'),
+            commission=Sum('commission_amount')
+        )
+
+        for hotel in hotel_bookings:
+            supplier_name = hotel['hotel_name']
+            if supplier_name not in supplier_data:
+                supplier_data[supplier_name] = {
+                    'supplier_name': supplier_name,
+                    'supplier_type': 'Accommodation',
+                    'booking_count': 0,
+                    'total_booking_value': Decimal('0'),
+                    'commission_revenue': Decimal('0'),
+                    'booking_ids': set()
+                }
+
+            # Get bookings for this hotel
+            hotel_booking_ids = AccommodationBooking.objects.filter(
+                booking__in=queryset,
+                hotel_name=supplier_name
+            ).values_list('booking_id', flat=True).distinct()
+
+            supplier_data[supplier_name]['booking_ids'].update(hotel_booking_ids)
+            supplier_data[supplier_name]['total_booking_value'] += hotel['total_amount'] or Decimal('0')
+            supplier_data[supplier_name]['commission_revenue'] += hotel['commission'] or Decimal('0')
+
+        # 3. CAR HIRE BOOKINGS - Group by rental company
+        car_bookings = CarHireBooking.objects.filter(
+            booking__in=queryset
+        ).exclude(
+            rental_company=''
+        ).values('rental_company').annotate(
+            total_amount=Sum('total_amount_base'),
+            commission=Sum('commission_amount')
+        )
+
+        for car in car_bookings:
+            supplier_name = car['rental_company']
+            if supplier_name not in supplier_data:
+                supplier_data[supplier_name] = {
+                    'supplier_name': supplier_name,
+                    'supplier_type': 'Car Hire',
+                    'booking_count': 0,
+                    'total_booking_value': Decimal('0'),
+                    'commission_revenue': Decimal('0'),
+                    'booking_ids': set()
+                }
+
+            # Get bookings for this rental company
+            car_booking_ids = CarHireBooking.objects.filter(
+                booking__in=queryset,
+                rental_company=supplier_name
+            ).values_list('booking_id', flat=True).distinct()
+
+            supplier_data[supplier_name]['booking_ids'].update(car_booking_ids)
+            supplier_data[supplier_name]['total_booking_value'] += car['total_amount'] or Decimal('0')
+            supplier_data[supplier_name]['commission_revenue'] += car['commission'] or Decimal('0')
+
+        # Now process each supplier to calculate full metrics
+        supplier_list = []
+        for supplier_name, data in supplier_data.items():
+            booking_ids = list(data['booking_ids'])
+            supplier_bookings = queryset.filter(id__in=booking_ids)
+
+            # Update booking count with actual distinct bookings
+            booking_count = len(booking_ids)
+            data['booking_count'] = booking_count
+
+            if booking_count == 0:
+                continue
+
+            # Get service fee revenue for these bookings
+            service_fee_revenue = ServiceFee.objects.filter(
+                booking__in=supplier_bookings
+            ).aggregate(total=Sum('fee_amount'))['total'] or Decimal('0')
+
+            # Total revenue = service fees + commissions
+            total_revenue = service_fee_revenue + data['commission_revenue']
+
+            # Calculate yield and other metrics
+            revenue_per_booking = (total_revenue / booking_count) if booking_count > 0 else Decimal('0')
+            yield_percentage = (total_revenue / data['total_booking_value'] * 100) if data['total_booking_value'] > 0 else 0
+
+            # Modification count
+            modification_count = BookingModification.objects.filter(
+                booking__in=supplier_bookings
+            ).count()
+
+            # Online/offline split
+            online_bookings = supplier_bookings.filter(
+                Q(service_fees__fee_type__in=['BOOKING_ONLINE_DOM', 'BOOKING_ONLINE_INTL']) |
+                Q(service_fees__booking_channel='Online')
+            ).distinct().count()
+
+            offline_bookings = supplier_bookings.filter(
+                Q(service_fees__fee_type__in=['BOOKING_OFFLINE_DOM', 'BOOKING_OFFLINE_INTL']) |
+                Q(service_fees__booking_channel='Offline')
+            ).distinct().count()
+
+            online_percentage = (online_bookings / booking_count * 100) if booking_count > 0 else 0
+
+            # Hotel stats (only for accommodation suppliers)
+            hotel_booking_count = 0
+            total_nights = 0
+            if data['supplier_type'] == 'Accommodation':
+                accommodation_stats = AccommodationBooking.objects.filter(
+                    booking__in=supplier_bookings,
+                    hotel_name=supplier_name
+                ).aggregate(
+                    hotel_booking_count=Count('id'),
+                    total_nights=Sum('number_of_nights')
+                )
+                hotel_booking_count = accommodation_stats['hotel_booking_count'] or 0
+                total_nights = accommodation_stats['total_nights'] or 0
+
+            supplier_list.append({
+                'supplier_name': supplier_name,
+                'supplier_type': data['supplier_type'],
+
+                # Booking numbers
+                'booking_count': booking_count,
+                'total_booking_value': float(data['total_booking_value']),
+                'modification_count': modification_count,
+
+                # Revenue
+                'service_fee_revenue': float(service_fee_revenue),
+                'commission_revenue': float(data['commission_revenue']),
+                'total_revenue': float(total_revenue),
+                'yield_percentage': round(float(yield_percentage), 2),
+                'revenue_per_booking': float(revenue_per_booking),
+
+                # Overnight stays (for hotels)
+                'hotel_booking_count': hotel_booking_count,
+                'total_nights': total_nights,
+
+                # Online/offline
+                'online_bookings': online_bookings,
+                'offline_bookings': offline_bookings,
+                'online_percentage': round(online_percentage, 1),
+            })
+
+        # Sort by total revenue (highest first)
+        supplier_list.sort(key=lambda x: x['total_revenue'], reverse=True)
+
+        # Calculate totals
+        if supplier_list:
+            totals = {
+                'total_bookings': sum(s['booking_count'] for s in supplier_list),
+                'total_booking_value': sum(s['total_booking_value'] for s in supplier_list),
+                'total_revenue': sum(s['total_revenue'] for s in supplier_list),
+                'total_service_fees': sum(s['service_fee_revenue'] for s in supplier_list),
+                'total_commissions': sum(s['commission_revenue'] for s in supplier_list),
+                'total_modifications': sum(s['modification_count'] for s in supplier_list),
+                'total_online_bookings': sum(s['online_bookings'] for s in supplier_list),
+                'total_offline_bookings': sum(s['offline_bookings'] for s in supplier_list),
+            }
+
+            totals['average_revenue_per_booking'] = (
+                totals['total_revenue'] / totals['total_bookings']
+            ) if totals['total_bookings'] > 0 else 0
+
+            totals['overall_online_percentage'] = (
+                totals['total_online_bookings'] / totals['total_bookings'] * 100
+            ) if totals['total_bookings'] > 0 else 0
+        else:
+            totals = {}
+
+        return Response({
+            'suppliers': supplier_list,
+            'totals': totals,
+            'supplier_count': len(supplier_list)
+        })
+
 
 # ============================================================================
 # BUDGET VIEWSETS

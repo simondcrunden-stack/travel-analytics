@@ -182,6 +182,13 @@ export default {
     return response.data
   },
 
+  // Supplier yield analysis
+  async getSupplierYieldAnalysis(params = {}) {
+    const backendParams = transformFiltersForBackend(params)
+    const response = await api.get('/bookings/supplier_yield_analysis/', { params: backendParams })
+    return response.data
+  },
+
   // Helper: Calculate totals from bookings
   calculateTotals(bookings) {
     return bookings.reduce((acc, booking) => {

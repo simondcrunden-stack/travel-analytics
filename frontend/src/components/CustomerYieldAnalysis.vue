@@ -25,14 +25,34 @@
     <!-- Data Display -->
     <div v-else-if="data" class="p-6">
       <!-- Summary Cards -->
-      <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+      <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
         <div class="bg-purple-50 rounded-lg p-4">
           <div class="flex items-center justify-between">
             <div>
-              <p class="text-sm text-purple-600 font-medium">Total Customers</p>
+              <p class="text-sm text-purple-600 font-medium">Total Travellers</p>
               <p class="text-2xl font-bold text-purple-900">{{ data.customer_count }}</p>
             </div>
             <span class="mdi mdi-account-multiple text-3xl text-purple-400"></span>
+          </div>
+        </div>
+
+        <div class="bg-blue-50 rounded-lg p-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm text-blue-600 font-medium">Total Bookings</p>
+              <p class="text-2xl font-bold text-blue-900">{{ data.totals?.total_bookings || 0 }}</p>
+            </div>
+            <span class="mdi mdi-briefcase text-3xl text-blue-400"></span>
+          </div>
+        </div>
+
+        <div class="bg-indigo-50 rounded-lg p-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm text-indigo-600 font-medium">Booking Value</p>
+              <p class="text-2xl font-bold text-indigo-900">{{ formatCurrency(data.totals?.total_booking_value || 0) }}</p>
+            </div>
+            <span class="mdi mdi-cash-multiple text-3xl text-indigo-400"></span>
           </div>
         </div>
 
@@ -46,15 +66,13 @@
           </div>
         </div>
 
-        <div class="bg-blue-50 rounded-lg p-4">
+        <div class="bg-cyan-50 rounded-lg p-4">
           <div class="flex items-center justify-between">
             <div>
-              <p class="text-sm text-blue-600 font-medium">Avg Revenue/Customer</p>
-              <p class="text-2xl font-bold text-blue-900">
-                {{ formatCurrency((data.totals?.total_revenue || 0) / (data.customer_count || 1)) }}
-              </p>
+              <p class="text-sm text-cyan-600 font-medium">Avg Yield</p>
+              <p class="text-2xl font-bold text-cyan-900">{{ ((data.totals?.total_revenue || 0) / (data.totals?.total_booking_value || 1) * 100).toFixed(1) }}%</p>
             </div>
-            <span class="mdi mdi-chart-line text-3xl text-blue-400"></span>
+            <span class="mdi mdi-percent text-3xl text-cyan-400"></span>
           </div>
         </div>
 

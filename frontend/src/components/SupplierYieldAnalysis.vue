@@ -1,18 +1,18 @@
 <template>
   <div class="bg-white rounded-xl shadow-sm overflow-hidden">
     <!-- Header -->
-    <div class="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-indigo-50 to-blue-50">
+    <div class="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-teal-50 to-cyan-50">
       <h3 class="text-lg font-semibold text-gray-900 flex items-center gap-2">
-        <span class="mdi mdi-office-building text-indigo-600"></span>
-        Organization Yield Analysis
+        <span class="mdi mdi-store text-teal-600"></span>
+        Supplier Yield Analysis
       </h3>
-      <p class="text-sm text-gray-600 mt-1">Revenue and booking metrics by customer organization</p>
+      <p class="text-sm text-gray-600 mt-1">Revenue and booking metrics by supplier (airlines, hotels, car rental)</p>
     </div>
 
     <!-- Loading State -->
     <div v-if="loading" class="p-8 text-center">
-      <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-      <p class="mt-2 text-gray-600">Loading organization data...</p>
+      <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600"></div>
+      <p class="mt-2 text-gray-600">Loading supplier data...</p>
     </div>
 
     <!-- Error State -->
@@ -26,13 +26,13 @@
     <div v-else-if="data" class="p-6">
       <!-- Summary Cards -->
       <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
-        <div class="bg-indigo-50 rounded-lg p-4">
+        <div class="bg-teal-50 rounded-lg p-4">
           <div class="flex items-center justify-between">
             <div>
-              <p class="text-sm text-indigo-600 font-medium">Total Organizations</p>
-              <p class="text-2xl font-bold text-indigo-900">{{ data.organization_count }}</p>
+              <p class="text-sm text-teal-600 font-medium">Total Suppliers</p>
+              <p class="text-2xl font-bold text-teal-900">{{ data.supplier_count }}</p>
             </div>
-            <span class="mdi mdi-domain text-3xl text-indigo-400"></span>
+            <span class="mdi mdi-store-outline text-3xl text-teal-400"></span>
           </div>
         </div>
 
@@ -46,13 +46,13 @@
           </div>
         </div>
 
-        <div class="bg-purple-50 rounded-lg p-4">
+        <div class="bg-indigo-50 rounded-lg p-4">
           <div class="flex items-center justify-between">
             <div>
-              <p class="text-sm text-purple-600 font-medium">Booking Value</p>
-              <p class="text-2xl font-bold text-purple-900">{{ formatCurrency(data.totals?.total_booking_value || 0) }}</p>
+              <p class="text-sm text-indigo-600 font-medium">Booking Value</p>
+              <p class="text-2xl font-bold text-indigo-900">{{ formatCurrency(data.totals?.total_booking_value || 0) }}</p>
             </div>
-            <span class="mdi mdi-cash-multiple text-3xl text-purple-400"></span>
+            <span class="mdi mdi-cash-multiple text-3xl text-indigo-400"></span>
           </div>
         </div>
 
@@ -87,22 +87,22 @@
         </div>
       </div>
 
-      <!-- Organization Table -->
+      <!-- Supplier Table -->
       <div class="overflow-x-auto">
         <table class="min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-50">
             <tr>
-              <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" @click="sortBy('organization_name')">
-                Organization
-                <span v-if="sortField === 'organization_name'" class="mdi" :class="sortAscending ? 'mdi-arrow-up' : 'mdi-arrow-down'"></span>
+              <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" @click="sortBy('supplier_name')">
+                Supplier
+                <span v-if="sortField === 'supplier_name'" class="mdi" :class="sortAscending ? 'mdi-arrow-up' : 'mdi-arrow-down'"></span>
+              </th>
+              <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" @click="sortBy('supplier_type')">
+                Type
+                <span v-if="sortField === 'supplier_type'" class="mdi" :class="sortAscending ? 'mdi-arrow-up' : 'mdi-arrow-down'"></span>
               </th>
               <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" @click="sortBy('booking_count')">
                 Bookings
                 <span v-if="sortField === 'booking_count'" class="mdi" :class="sortAscending ? 'mdi-arrow-up' : 'mdi-arrow-down'"></span>
-              </th>
-              <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" @click="sortBy('unique_travellers')">
-                Travellers
-                <span v-if="sortField === 'unique_travellers'" class="mdi" :class="sortAscending ? 'mdi-arrow-up' : 'mdi-arrow-down'"></span>
               </th>
               <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" @click="sortBy('total_booking_value')">
                 Booking Value
@@ -135,47 +135,51 @@
             </tr>
           </thead>
           <tbody class="bg-white divide-y divide-gray-200">
-            <tr v-for="org in sortedOrganizations" :key="org.organization_id" class="hover:bg-gray-50">
+            <tr v-for="supplier in sortedSuppliers" :key="supplier.supplier_name" class="hover:bg-gray-50">
               <td class="px-4 py-3 whitespace-nowrap">
                 <div class="flex items-center">
-                  <div class="flex-shrink-0 h-8 w-8 bg-indigo-100 rounded-full flex items-center justify-center">
-                    <span class="mdi mdi-domain text-indigo-600 text-lg"></span>
+                  <div class="flex-shrink-0 h-8 w-8 bg-teal-100 rounded-full flex items-center justify-center">
+                    <span class="mdi text-teal-600 text-lg" :class="getSupplierIcon(supplier.supplier_type)"></span>
                   </div>
                   <div class="ml-3">
-                    <div class="text-sm font-medium text-gray-900">{{ org.organization_name }}</div>
-                    <div class="text-xs text-gray-500">{{ org.organization_type }}</div>
+                    <div class="text-sm font-medium text-gray-900">{{ supplier.supplier_name }}</div>
                   </div>
                 </div>
               </td>
-              <td class="px-4 py-3 whitespace-nowrap text-right text-sm text-gray-900">
-                {{ org.booking_count }}
-              </td>
-              <td class="px-4 py-3 whitespace-nowrap text-right text-sm text-gray-900">
-                {{ org.unique_travellers }}
-              </td>
-              <td class="px-4 py-3 whitespace-nowrap text-right text-sm text-gray-900">
-                {{ formatCurrency(org.total_booking_value) }}
-              </td>
-              <td class="px-4 py-3 whitespace-nowrap text-right text-sm font-semibold text-green-600">
-                {{ formatCurrency(org.total_revenue) }}
-              </td>
-              <td class="px-4 py-3 whitespace-nowrap text-right text-sm font-semibold text-blue-600">
-                {{ org.yield_percentage?.toFixed(1) || 0 }}%
-              </td>
-              <td class="px-4 py-3 whitespace-nowrap text-right text-sm text-gray-900">
-                {{ formatCurrency(org.revenue_per_booking) }}
-              </td>
-              <td class="px-4 py-3 whitespace-nowrap text-right text-sm text-gray-900">
-                {{ org.hotel_booking_count }}
-                <span class="text-xs text-gray-500">({{ org.total_nights }}n)</span>
-              </td>
-              <td class="px-4 py-3 whitespace-nowrap text-right text-sm">
-                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" :class="getOnlinePercentageClass(org.online_percentage)">
-                  {{ org.online_percentage }}%
+              <td class="px-4 py-3 whitespace-nowrap text-sm">
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" :class="getSupplierTypeClass(supplier.supplier_type)">
+                  {{ supplier.supplier_type }}
                 </span>
               </td>
               <td class="px-4 py-3 whitespace-nowrap text-right text-sm text-gray-900">
-                {{ org.modification_count }}
+                {{ supplier.booking_count }}
+              </td>
+              <td class="px-4 py-3 whitespace-nowrap text-right text-sm text-gray-900">
+                {{ formatCurrency(supplier.total_booking_value) }}
+              </td>
+              <td class="px-4 py-3 whitespace-nowrap text-right text-sm font-semibold text-green-600">
+                {{ formatCurrency(supplier.total_revenue) }}
+              </td>
+              <td class="px-4 py-3 whitespace-nowrap text-right text-sm font-semibold text-blue-600">
+                {{ supplier.yield_percentage?.toFixed(1) || 0 }}%
+              </td>
+              <td class="px-4 py-3 whitespace-nowrap text-right text-sm text-gray-900">
+                {{ formatCurrency(supplier.revenue_per_booking) }}
+              </td>
+              <td class="px-4 py-3 whitespace-nowrap text-right text-sm text-gray-900">
+                <span v-if="supplier.supplier_type === 'Accommodation'">
+                  {{ supplier.hotel_booking_count }}
+                  <span class="text-xs text-gray-500">({{ supplier.total_nights }}n)</span>
+                </span>
+                <span v-else class="text-gray-400">-</span>
+              </td>
+              <td class="px-4 py-3 whitespace-nowrap text-right text-sm">
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" :class="getOnlinePercentageClass(supplier.online_percentage)">
+                  {{ supplier.online_percentage }}%
+                </span>
+              </td>
+              <td class="px-4 py-3 whitespace-nowrap text-right text-sm text-gray-900">
+                {{ supplier.modification_count }}
               </td>
             </tr>
           </tbody>
@@ -183,9 +187,9 @@
       </div>
 
       <!-- No Data -->
-      <div v-if="!data.organizations || data.organizations.length === 0" class="text-center py-12">
-        <span class="mdi mdi-office-building-outline text-6xl text-gray-300"></span>
-        <p class="mt-2 text-gray-500">No organization data available for the selected period</p>
+      <div v-if="!data.suppliers || data.suppliers.length === 0" class="text-center py-12">
+        <span class="mdi mdi-store-off-outline text-6xl text-gray-300"></span>
+        <p class="mt-2 text-gray-500">No supplier data available for the selected period</p>
       </div>
     </div>
   </div>
@@ -226,10 +230,10 @@ const loadData = async () => {
     if (props.startDate) params.travel_date_after = props.startDate
     if (props.endDate) params.travel_date_before = props.endDate
 
-    data.value = await bookingService.getOrganizationYieldAnalysis(params)
+    data.value = await bookingService.getSupplierYieldAnalysis(params)
   } catch (err) {
-    console.error('Error loading organization yield data:', err)
-    error.value = 'Failed to load organization yield analysis data'
+    console.error('Error loading supplier yield data:', err)
+    error.value = 'Failed to load supplier yield analysis data'
   } finally {
     loading.value = false
   }
@@ -244,11 +248,11 @@ const sortBy = (field) => {
   }
 }
 
-const sortedOrganizations = computed(() => {
-  if (!data.value?.organizations) return []
+const sortedSuppliers = computed(() => {
+  if (!data.value?.suppliers) return []
 
-  const organizations = [...data.value.organizations]
-  organizations.sort((a, b) => {
+  const suppliers = [...data.value.suppliers]
+  suppliers.sort((a, b) => {
     let aVal = a[sortField.value]
     let bVal = b[sortField.value]
 
@@ -265,7 +269,7 @@ const sortedOrganizations = computed(() => {
     }
   })
 
-  return organizations
+  return suppliers
 })
 
 const formatCurrency = (value) => {
@@ -275,6 +279,32 @@ const formatCurrency = (value) => {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0
   }).format(value || 0)
+}
+
+const getSupplierIcon = (type) => {
+  switch (type) {
+    case 'Air':
+      return 'mdi-airplane'
+    case 'Accommodation':
+      return 'mdi-bed'
+    case 'Car Hire':
+      return 'mdi-car'
+    default:
+      return 'mdi-store'
+  }
+}
+
+const getSupplierTypeClass = (type) => {
+  switch (type) {
+    case 'Air':
+      return 'bg-sky-100 text-sky-800'
+    case 'Accommodation':
+      return 'bg-purple-100 text-purple-800'
+    case 'Car Hire':
+      return 'bg-amber-100 text-amber-800'
+    default:
+      return 'bg-gray-100 text-gray-800'
+  }
 }
 
 const getOnlinePercentageClass = (percentage) => {
