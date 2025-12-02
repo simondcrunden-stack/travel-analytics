@@ -3454,19 +3454,24 @@ class BookingViewSet(viewsets.ModelViewSet):
 
             online_percentage = (online_bookings / booking_count * 100) if booking_count > 0 else 0
 
-            # Hotel stats (only for accommodation suppliers)
-            hotel_booking_count = 0
-            total_nights = 0
+            # Accommodation/Car Hire stats (nights for hotels, days for car rentals)
+            nights_or_days = 0
             if data['supplier_type'] == 'Accommodation':
                 accommodation_stats = AccommodationBooking.objects.filter(
                     booking__in=supplier_bookings,
                     hotel_name=supplier_name
                 ).aggregate(
-                    hotel_booking_count=Count('id'),
                     total_nights=Sum('number_of_nights')
                 )
-                hotel_booking_count = accommodation_stats['hotel_booking_count'] or 0
-                total_nights = accommodation_stats['total_nights'] or 0
+                nights_or_days = accommodation_stats['total_nights'] or 0
+            elif data['supplier_type'] == 'Car Hire':
+                car_stats = CarHireBooking.objects.filter(
+                    booking__in=supplier_bookings,
+                    rental_company=supplier_name
+                ).aggregate(
+                    total_days=Sum('rental_days')
+                )
+                nights_or_days = car_stats['total_days'] or 0
 
             # Calculate modification percentage
             modification_percentage = (modification_count / booking_count * 100) if booking_count > 0 else 0
@@ -3487,9 +3492,8 @@ class BookingViewSet(viewsets.ModelViewSet):
                 'yield_percentage': round(float(yield_percentage), 2),
                 'revenue_per_booking': float(revenue_per_booking),
 
-                # Overnight stays (for hotels)
-                'hotel_booking_count': hotel_booking_count,
-                'total_nights': total_nights,
+                # Nights/Days (room nights for hotels, rental days for car hire)
+                'nights_or_days': nights_or_days,
 
                 # Online/offline
                 'online_bookings': online_bookings,
