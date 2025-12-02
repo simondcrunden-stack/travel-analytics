@@ -2471,8 +2471,19 @@ class BookingViewSet(viewsets.ModelViewSet):
         else:
             queryset = Booking.objects.filter(organization=user.organization)
 
-        # Apply standard filters
-        queryset = self._apply_standard_filters(queryset, request)
+        # Apply filters from query params
+        org_id = request.query_params.get('organization')
+        if org_id:
+            queryset = queryset.filter(organization_id=org_id)
+
+        # Apply date range filters
+        travel_date_after = request.query_params.get('travel_date_after')
+        if travel_date_after:
+            queryset = queryset.filter(travel_date__gte=travel_date_after)
+
+        travel_date_before = request.query_params.get('travel_date_before')
+        if travel_date_before:
+            queryset = queryset.filter(travel_date__lte=travel_date_before)
 
         # Get consultants with bookings
         from apps.users.models import User
@@ -2481,8 +2492,7 @@ class BookingViewSet(viewsets.ModelViewSet):
             Q(user_type__in=['AGENT_ADMIN', 'AGENT_USER'])
         ).distinct()
 
-        # Filter by organization if specified
-        org_id = request.query_params.get('organization')
+        # Filter consultants by organization if specified
         if org_id:
             consultants = consultants.filter(organization_id=org_id)
 
@@ -2649,8 +2659,19 @@ class BookingViewSet(viewsets.ModelViewSet):
         else:
             queryset = Booking.objects.filter(organization=user.organization)
 
-        # Apply standard filters
-        queryset = self._apply_standard_filters(queryset, request)
+        # Apply filters from query params
+        org_id = request.query_params.get('organization')
+        if org_id:
+            queryset = queryset.filter(organization_id=org_id)
+
+        # Apply date range filters
+        travel_date_after = request.query_params.get('travel_date_after')
+        if travel_date_after:
+            queryset = queryset.filter(travel_date__gte=travel_date_after)
+
+        travel_date_before = request.query_params.get('travel_date_before')
+        if travel_date_before:
+            queryset = queryset.filter(travel_date__lte=travel_date_before)
 
         # Get unique travellers from these bookings
         from apps.travellers.models import Traveller
@@ -2658,8 +2679,7 @@ class BookingViewSet(viewsets.ModelViewSet):
             bookings__in=queryset
         ).distinct()
 
-        # Filter by organization if specified
-        org_id = request.query_params.get('organization')
+        # Filter travellers by organization if specified
         if org_id:
             travellers = travellers.filter(organization_id=org_id)
 
