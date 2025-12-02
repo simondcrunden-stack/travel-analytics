@@ -2511,15 +2511,45 @@ class BookingViewSet(viewsets.ModelViewSet):
                 total=Sum('total_amount')
             )['total'] or Decimal('0')
 
-            # Count booking changes from audit logs
-            from apps.bookings.models import BookingAuditLog
-            modification_count = BookingAuditLog.objects.filter(
-                booking__in=consultant_bookings,
-                action__in=['BOOKING_MODIFIED', 'COMPONENT_MODIFIED', 'TRANSACTION_MODIFIED']
-            ).values('booking').distinct().count()
+            # Count bookings with changes (based on transaction types)
+            # Change transaction types include exchanges, voids, refunds, modifications, etc.
+            change_transaction_types = [
+                'EXCHANGE', 'REISSUE', 'VOID', 'MODIFICATION', 'DATE_CHANGE',
+                'UPGRADE', 'DOWNGRADE', 'CANCELLATION', 'PARTIAL_CANCELLATION',
+                'REFUND', 'PARTIAL_REFUND'
+            ]
+
+            # Get booking IDs that have change transactions through their components
+            changed_booking_ids = set()
+
+            # Check Air bookings for change transactions
+            air_with_changes = AirBooking.objects.filter(
+                booking__in=consultant_bookings
+            ).filter(
+                bookingtransaction__transaction_type__in=change_transaction_types
+            ).values_list('booking_id', flat=True).distinct()
+            changed_booking_ids.update(air_with_changes)
+
+            # Check Accommodation bookings for change transactions
+            accommodation_with_changes = AccommodationBooking.objects.filter(
+                booking__in=consultant_bookings
+            ).filter(
+                bookingtransaction__transaction_type__in=change_transaction_types
+            ).values_list('booking_id', flat=True).distinct()
+            changed_booking_ids.update(accommodation_with_changes)
+
+            # Check Car Hire bookings for change transactions
+            car_with_changes = CarHireBooking.objects.filter(
+                booking__in=consultant_bookings
+            ).filter(
+                bookingtransaction__transaction_type__in=change_transaction_types
+            ).values_list('booking_id', flat=True).distinct()
+            changed_booking_ids.update(car_with_changes)
+
+            modification_count = len(changed_booking_ids)
 
             # 2. REVENUE (Service Fees + Commissions)
-            from apps.bookings.models import ServiceFee, AirBooking, AccommodationBooking, CarHireBooking
+            from apps.bookings.models import ServiceFee
             from apps.commissions.models import Commission
 
             # Service fees for these bookings
@@ -2721,15 +2751,44 @@ class BookingViewSet(viewsets.ModelViewSet):
                 total=Sum('total_amount')
             )['total'] or Decimal('0')
 
-            # Count booking changes from audit logs
-            from apps.bookings.models import BookingAuditLog
-            modification_count = BookingAuditLog.objects.filter(
-                booking__in=traveller_bookings,
-                action__in=['BOOKING_MODIFIED', 'COMPONENT_MODIFIED', 'TRANSACTION_MODIFIED']
-            ).values('booking').distinct().count()
+            # Count bookings with changes (based on transaction types)
+            change_transaction_types = [
+                'EXCHANGE', 'REISSUE', 'VOID', 'MODIFICATION', 'DATE_CHANGE',
+                'UPGRADE', 'DOWNGRADE', 'CANCELLATION', 'PARTIAL_CANCELLATION',
+                'REFUND', 'PARTIAL_REFUND'
+            ]
+
+            # Get booking IDs that have change transactions through their components
+            changed_booking_ids = set()
+
+            # Check Air bookings for change transactions
+            air_with_changes = AirBooking.objects.filter(
+                booking__in=traveller_bookings
+            ).filter(
+                bookingtransaction__transaction_type__in=change_transaction_types
+            ).values_list('booking_id', flat=True).distinct()
+            changed_booking_ids.update(air_with_changes)
+
+            # Check Accommodation bookings for change transactions
+            accommodation_with_changes = AccommodationBooking.objects.filter(
+                booking__in=traveller_bookings
+            ).filter(
+                bookingtransaction__transaction_type__in=change_transaction_types
+            ).values_list('booking_id', flat=True).distinct()
+            changed_booking_ids.update(accommodation_with_changes)
+
+            # Check Car Hire bookings for change transactions
+            car_with_changes = CarHireBooking.objects.filter(
+                booking__in=traveller_bookings
+            ).filter(
+                bookingtransaction__transaction_type__in=change_transaction_types
+            ).values_list('booking_id', flat=True).distinct()
+            changed_booking_ids.update(car_with_changes)
+
+            modification_count = len(changed_booking_ids)
 
             # 2. REVENUE (Service Fees + Commissions)
-            from apps.bookings.models import ServiceFee, AirBooking, AccommodationBooking, CarHireBooking
+            from apps.bookings.models import ServiceFee
             from apps.commissions.models import Commission
 
             # Service fees for these bookings
@@ -2927,15 +2986,44 @@ class BookingViewSet(viewsets.ModelViewSet):
                 total=Sum('total_amount')
             )['total'] or Decimal('0')
 
-            # Count booking changes from audit logs
-            from apps.bookings.models import BookingAuditLog
-            modification_count = BookingAuditLog.objects.filter(
-                booking__in=org_bookings,
-                action__in=['BOOKING_MODIFIED', 'COMPONENT_MODIFIED', 'TRANSACTION_MODIFIED']
-            ).values('booking').distinct().count()
+            # Count bookings with changes (based on transaction types)
+            change_transaction_types = [
+                'EXCHANGE', 'REISSUE', 'VOID', 'MODIFICATION', 'DATE_CHANGE',
+                'UPGRADE', 'DOWNGRADE', 'CANCELLATION', 'PARTIAL_CANCELLATION',
+                'REFUND', 'PARTIAL_REFUND'
+            ]
+
+            # Get booking IDs that have change transactions through their components
+            changed_booking_ids = set()
+
+            # Check Air bookings for change transactions
+            air_with_changes = AirBooking.objects.filter(
+                booking__in=org_bookings
+            ).filter(
+                bookingtransaction__transaction_type__in=change_transaction_types
+            ).values_list('booking_id', flat=True).distinct()
+            changed_booking_ids.update(air_with_changes)
+
+            # Check Accommodation bookings for change transactions
+            accommodation_with_changes = AccommodationBooking.objects.filter(
+                booking__in=org_bookings
+            ).filter(
+                bookingtransaction__transaction_type__in=change_transaction_types
+            ).values_list('booking_id', flat=True).distinct()
+            changed_booking_ids.update(accommodation_with_changes)
+
+            # Check Car Hire bookings for change transactions
+            car_with_changes = CarHireBooking.objects.filter(
+                booking__in=org_bookings
+            ).filter(
+                bookingtransaction__transaction_type__in=change_transaction_types
+            ).values_list('booking_id', flat=True).distinct()
+            changed_booking_ids.update(car_with_changes)
+
+            modification_count = len(changed_booking_ids)
 
             # 2. REVENUE (Service Fees + Commissions)
-            from apps.bookings.models import ServiceFee, AirBooking, AccommodationBooking, CarHireBooking
+            from apps.bookings.models import ServiceFee
             from apps.commissions.models import Commission
 
             # Service fees for these bookings
@@ -3220,11 +3308,41 @@ class BookingViewSet(viewsets.ModelViewSet):
             revenue_per_booking = (total_revenue / booking_count) if booking_count > 0 else Decimal('0')
             yield_percentage = (total_revenue / data['total_booking_value'] * 100) if data['total_booking_value'] > 0 else 0
 
-            # Modification count
-            modification_count = BookingAuditLog.objects.filter(
-                booking__in=supplier_bookings,
-                action__in=['BOOKING_MODIFIED', 'COMPONENT_MODIFIED', 'TRANSACTION_MODIFIED']
-            ).values('booking').distinct().count()
+            # Count bookings with changes (based on transaction types)
+            change_transaction_types = [
+                'EXCHANGE', 'REISSUE', 'VOID', 'MODIFICATION', 'DATE_CHANGE',
+                'UPGRADE', 'DOWNGRADE', 'CANCELLATION', 'PARTIAL_CANCELLATION',
+                'REFUND', 'PARTIAL_REFUND'
+            ]
+
+            # Get booking IDs that have change transactions through their components
+            changed_booking_ids = set()
+
+            # Check Air bookings for change transactions
+            air_with_changes = AirBooking.objects.filter(
+                booking__in=supplier_bookings
+            ).filter(
+                bookingtransaction__transaction_type__in=change_transaction_types
+            ).values_list('booking_id', flat=True).distinct()
+            changed_booking_ids.update(air_with_changes)
+
+            # Check Accommodation bookings for change transactions
+            accommodation_with_changes = AccommodationBooking.objects.filter(
+                booking__in=supplier_bookings
+            ).filter(
+                bookingtransaction__transaction_type__in=change_transaction_types
+            ).values_list('booking_id', flat=True).distinct()
+            changed_booking_ids.update(accommodation_with_changes)
+
+            # Check Car Hire bookings for change transactions
+            car_with_changes = CarHireBooking.objects.filter(
+                booking__in=supplier_bookings
+            ).filter(
+                bookingtransaction__transaction_type__in=change_transaction_types
+            ).values_list('booking_id', flat=True).distinct()
+            changed_booking_ids.update(car_with_changes)
+
+            modification_count = len(changed_booking_ids)
 
             # Online/offline split
             online_bookings = supplier_bookings.filter(
