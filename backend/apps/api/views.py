@@ -2674,7 +2674,7 @@ class BookingViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(travel_date__lte=travel_date_before)
 
         # Get unique travellers from these bookings
-        from apps.travellers.models import Traveller
+        from apps.bookings.models import Traveller
         travellers = Traveller.objects.filter(
             bookings__in=queryset
         ).distinct()
