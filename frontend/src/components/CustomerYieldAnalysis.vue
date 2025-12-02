@@ -220,6 +220,10 @@ const props = defineProps({
   endDate: {
     type: String,
     default: null
+  },
+  productType: {
+    type: String,
+    default: null
   }
 })
 
@@ -237,8 +241,9 @@ const loadData = async () => {
   try {
     const params = {}
     if (props.organization) params.organization = props.organization
-    if (props.startDate) params.travel_date_after = props.startDate
-    if (props.endDate) params.travel_date_before = props.endDate
+    if (props.startDate) params.booking_date_after = props.startDate
+    if (props.endDate) params.booking_date_before = props.endDate
+    if (props.productType) params.product_type = props.productType
 
     data.value = await bookingService.getCustomerYieldAnalysis(params)
   } catch (err) {
@@ -318,5 +323,5 @@ const getOnlinePercentageClass = (percentage) => {
 }
 
 // Watch for prop changes
-watch([() => props.organization, () => props.startDate, () => props.endDate], loadData, { immediate: true })
+watch([() => props.organization, () => props.startDate, () => props.endDate, () => props.productType], loadData, { immediate: true })
 </script>
