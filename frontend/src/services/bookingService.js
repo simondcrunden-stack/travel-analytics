@@ -161,6 +161,20 @@ export default {
     return response.data
   },
 
+  // Consultant yield analysis
+  async getConsultantYieldAnalysis(params = {}) {
+    const backendParams = transformFiltersForBackend(params)
+    const response = await api.get('/bookings/consultant_yield_analysis/', { params: backendParams })
+    return response.data
+  },
+
+  // Customer yield analysis
+  async getCustomerYieldAnalysis(params = {}) {
+    const backendParams = transformFiltersForBackend(params)
+    const response = await api.get('/bookings/customer_yield_analysis/', { params: backendParams })
+    return response.data
+  },
+
   // Helper: Calculate totals from bookings
   calculateTotals(bookings) {
     return bookings.reduce((acc, booking) => {

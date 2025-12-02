@@ -122,6 +122,19 @@ const router = createRouter({
           }
         },
         {
+          path: '/agent-reports',
+          name: 'AgentReports',
+          component: () => import('@/views/AgentReportsView.vue'),
+          meta: {
+            requiresAuth: true,
+            title: 'Agent Reports',
+            breadcrumbs: [
+              { label: 'Dashboard', path: '/' },
+              { label: 'Agent Reports', path: '/agent-reports' }
+            ]
+          }
+        },
+        {
           path: '/organization-structure',
           name: 'OrganizationStructure',
           component: () => import('@/views/OrganizationStructureView.vue'),

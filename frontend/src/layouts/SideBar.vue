@@ -147,6 +147,12 @@ const baseMenuItems = [
     badge: null
   },
   {
+    name: 'Agent Reports',
+    path: '/agent-reports',
+    icon: 'mdi-chart-box',
+    badge: null
+  },
+  {
     name: 'Compliance',
     path: '/compliance',
     icon: 'mdi-shield-check',
