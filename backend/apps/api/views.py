@@ -13,7 +13,7 @@ from apps.users.models import User
 from apps.bookings.models import (
     Traveller, Booking, AirBooking, AirSegment,
     AccommodationBooking, CarHireBooking, Invoice, ServiceFee, BookingTransaction,
-    PreferredAirline, PreferredHotel, PreferredCarHire, OtherProduct
+    PreferredAirline, PreferredHotel, PreferredCarHire, OtherProduct, BookingModification
 )
 from apps.budgets.models import FiscalYear, Budget, BudgetAlert
 from apps.compliance.models import ComplianceViolation, TravelRiskAlert
@@ -3083,6 +3083,8 @@ class BookingViewSet(viewsets.ModelViewSet):
         Get comprehensive yield analysis by supplier.
         Aggregates data from airlines, hotels, and car rental companies.
         """
+        from decimal import Decimal
+
         # Apply filters from query params
         queryset = Booking.objects.all()
 
