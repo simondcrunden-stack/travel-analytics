@@ -3470,6 +3470,7 @@ class BookingViewSet(viewsets.ModelViewSet):
                 # Booking numbers
                 'booking_count': booking_count,
                 'total_booking_value': float(data['total_booking_value']),
+                'modification_count': modification_count,  # Keep for totals calculation
                 'modification_percentage': round(modification_percentage, 1),
 
                 # Revenue (commissions only - service fees are paid by customers, not suppliers)
