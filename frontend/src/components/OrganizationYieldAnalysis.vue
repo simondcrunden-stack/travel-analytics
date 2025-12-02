@@ -87,6 +87,21 @@
         </div>
       </div>
 
+      <!-- Search Bar -->
+      <div class="mb-4">
+        <div class="relative">
+          <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <span class="mdi mdi-magnify text-gray-400"></span>
+          </div>
+          <input
+            v-model="searchQuery"
+            type="text"
+            class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+            placeholder="Search organizations by name..."
+          />
+        </div>
+      </div>
+
       <!-- Organization Table -->
       <div class="overflow-x-auto">
         <table class="min-w-full divide-y divide-gray-200">
@@ -214,6 +229,7 @@ const loading = ref(false)
 const error = ref(null)
 const sortField = ref('total_revenue')
 const sortAscending = ref(false)
+const searchQuery = ref('')
 
 const loadData = async () => {
   loading.value = true
@@ -246,7 +262,18 @@ const sortBy = (field) => {
 const sortedOrganizations = computed(() => {
   if (!data.value?.organizations) return []
 
-  const organizations = [...data.value.organizations]
+  let organizations = [...data.value.organizations]
+
+  // Filter by search query
+  if (searchQuery.value) {
+    const query = searchQuery.value.toLowerCase()
+    organizations = organizations.filter(org => {
+      const name = (org.organization_name || '').toLowerCase()
+      return name.includes(query)
+    })
+  }
+
+  // Sort
   organizations.sort((a, b) => {
     let aVal = a[sortField.value]
     let bVal = b[sortField.value]
