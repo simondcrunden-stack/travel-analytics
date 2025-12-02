@@ -94,6 +94,10 @@
                 Total Revenue
                 <span v-if="sortField === 'total_revenue'" class="mdi" :class="sortAscending ? 'mdi-arrow-up' : 'mdi-arrow-down'"></span>
               </th>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" @click="sortBy('yield_percentage')">
+                Yield %
+                <span v-if="sortField === 'yield_percentage'" class="mdi" :class="sortAscending ? 'mdi-arrow-up' : 'mdi-arrow-down'"></span>
+              </th>
               <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" @click="sortBy('revenue_per_booking')">
                 Rev/Booking
                 <span v-if="sortField === 'revenue_per_booking'" class="mdi" :class="sortAscending ? 'mdi-arrow-up' : 'mdi-arrow-down'"></span>
@@ -136,6 +140,9 @@
               </td>
               <td class="px-4 py-3 whitespace-nowrap text-right text-sm font-semibold text-green-600">
                 {{ formatCurrency(customer.total_revenue) }}
+              </td>
+              <td class="px-4 py-3 whitespace-nowrap text-right text-sm font-semibold text-blue-600">
+                {{ customer.yield_percentage?.toFixed(1) || 0 }}%
               </td>
               <td class="px-4 py-3 whitespace-nowrap text-right text-sm text-gray-900">
                 {{ formatCurrency(customer.revenue_per_booking) }}
