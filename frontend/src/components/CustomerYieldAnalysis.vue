@@ -97,7 +97,7 @@
             v-model="searchQuery"
             type="text"
             class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-            placeholder="Search travellers by name or email..."
+            placeholder="Search travellers by name..."
           />
         </div>
       </div>
@@ -158,7 +158,6 @@
                   </div>
                   <div class="ml-3">
                     <div class="text-sm font-medium text-gray-900">{{ customer.traveller_name }}</div>
-                    <div class="text-xs text-gray-500">{{ customer.traveller_email }}</div>
                   </div>
                 </div>
               </td>
@@ -269,8 +268,7 @@ const sortedCustomers = computed(() => {
     const query = searchQuery.value.toLowerCase()
     customers = customers.filter(customer => {
       const name = (customer.traveller_name || '').toLowerCase()
-      const email = (customer.traveller_email || '').toLowerCase()
-      return name.includes(query) || email.includes(query)
+      return name.includes(query)
     })
   }
 
