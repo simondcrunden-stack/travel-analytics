@@ -2611,18 +2611,23 @@ class BookingViewSet(viewsets.ModelViewSet):
             total_revenue = (service_fee_revenue + commission_revenue +
                            air_commission + accommodation_commission + car_hire_commission)
 
-            # 3. OVERNIGHT STAYS (Hotel Bookings)
+            # 3. HOTEL ATTACHMENT RATE (for overnight bookings only)
             from apps.bookings.models import AccommodationBooking
+            from django.db.models import F
 
-            accommodation_stats = AccommodationBooking.objects.filter(
-                booking__in=consultant_bookings
-            ).aggregate(
-                hotel_booking_count=Count('id'),
-                total_nights=Sum('number_of_nights')
-            )
+            # Count bookings with overnight stays (travel_date != end_date)
+            overnight_bookings = consultant_bookings.exclude(
+                travel_date=F('end_date')
+            ).distinct()
+            overnight_booking_count = overnight_bookings.count()
 
-            hotel_booking_count = accommodation_stats['hotel_booking_count'] or 0
-            total_nights = accommodation_stats['total_nights'] or 0
+            # Count overnight bookings that have a hotel
+            overnight_bookings_with_hotel = overnight_bookings.filter(
+                accommodationbooking__isnull=False
+            ).distinct().count()
+
+            # Calculate hotel attachment rate
+            hotel_attachment_rate = (overnight_bookings_with_hotel / overnight_booking_count * 100) if overnight_booking_count > 0 else 0
 
             # 4. ONLINE/OFFLINE SPLIT
             online_bookings = consultant_bookings.filter(
@@ -2663,10 +2668,8 @@ class BookingViewSet(viewsets.ModelViewSet):
                 'yield_percentage': round(float(yield_percentage), 2),
                 'revenue_per_booking': float(revenue_per_booking),
 
-                # Overnight stays
-                'hotel_booking_count': hotel_booking_count,
-                'total_nights': total_nights,
-                'bookings_with_hotel_percentage': (hotel_booking_count / booking_count * 100) if booking_count > 0 else 0,
+                # Hotel metrics
+                'hotel_attachment_rate': round(hotel_attachment_rate, 1),
 
                 # Online/offline
                 'online_bookings': online_bookings,
@@ -2874,17 +2877,22 @@ class BookingViewSet(viewsets.ModelViewSet):
             total_revenue = (service_fee_revenue + commission_revenue +
                            air_commission + accommodation_commission + car_hire_commission)
 
-            # 3. OVERNIGHT STAYS (Hotel Bookings)
+            # 3. HOTEL ATTACHMENT RATE (for overnight bookings only)
+            from django.db.models import F
 
-            accommodation_stats = AccommodationBooking.objects.filter(
-                booking__in=traveller_bookings
-            ).aggregate(
-                hotel_booking_count=Count('id'),
-                total_nights=Sum('number_of_nights')
-            )
+            # Count bookings with overnight stays (travel_date != end_date)
+            overnight_bookings = traveller_bookings.exclude(
+                travel_date=F('end_date')
+            ).distinct()
+            overnight_booking_count = overnight_bookings.count()
 
-            hotel_booking_count = accommodation_stats['hotel_booking_count'] or 0
-            total_nights = accommodation_stats['total_nights'] or 0
+            # Count overnight bookings that have a hotel
+            overnight_bookings_with_hotel = overnight_bookings.filter(
+                accommodationbooking__isnull=False
+            ).distinct().count()
+
+            # Calculate hotel attachment rate
+            hotel_attachment_rate = (overnight_bookings_with_hotel / overnight_booking_count * 100) if overnight_booking_count > 0 else 0
 
             # 4. ONLINE/OFFLINE SPLIT
             online_bookings = traveller_bookings.filter(
@@ -2926,10 +2934,8 @@ class BookingViewSet(viewsets.ModelViewSet):
                 'yield_percentage': round(float(yield_percentage), 2),
                 'revenue_per_booking': float(revenue_per_booking),
 
-                # Overnight stays
-                'hotel_booking_count': hotel_booking_count,
-                'total_nights': total_nights,
-                'bookings_with_hotel_percentage': (hotel_booking_count / booking_count * 100) if booking_count > 0 else 0,
+                # Hotel metrics
+                'hotel_attachment_rate': round(hotel_attachment_rate, 1),
 
                 # Online/offline
                 'online_bookings': online_bookings,
@@ -3133,17 +3139,21 @@ class BookingViewSet(viewsets.ModelViewSet):
             total_revenue = (service_fee_revenue + commission_revenue +
                            air_commission + accommodation_commission + car_hire_commission)
 
-            # 3. OVERNIGHT STAYS (Hotel Bookings)
+            # 3. HOTEL ATTACHMENT RATE (for overnight bookings only)
 
-            accommodation_stats = AccommodationBooking.objects.filter(
-                booking__in=org_bookings
-            ).aggregate(
-                hotel_booking_count=Count('id'),
-                total_nights=Sum('number_of_nights')
-            )
+            # Count bookings with overnight stays (travel_date != end_date)
+            overnight_bookings = org_bookings.exclude(
+                travel_date=F('end_date')
+            ).distinct()
+            overnight_booking_count = overnight_bookings.count()
 
-            hotel_booking_count = accommodation_stats['hotel_booking_count'] or 0
-            total_nights = accommodation_stats['total_nights'] or 0
+            # Count overnight bookings that have a hotel
+            overnight_bookings_with_hotel = overnight_bookings.filter(
+                accommodationbooking__isnull=False
+            ).distinct().count()
+
+            # Calculate hotel attachment rate
+            hotel_attachment_rate = (overnight_bookings_with_hotel / overnight_booking_count * 100) if overnight_booking_count > 0 else 0
 
             # 4. ONLINE/OFFLINE SPLIT
             online_bookings = org_bookings.filter(
@@ -3187,10 +3197,8 @@ class BookingViewSet(viewsets.ModelViewSet):
                 'yield_percentage': round(float(yield_percentage), 2),
                 'revenue_per_booking': float(revenue_per_booking),
 
-                # Overnight stays
-                'hotel_booking_count': hotel_booking_count,
-                'total_nights': total_nights,
-                'bookings_with_hotel_percentage': (hotel_booking_count / booking_count * 100) if booking_count > 0 else 0,
+                # Hotel metrics
+                'hotel_attachment_rate': round(hotel_attachment_rate, 1),
 
                 # Online/offline
                 'online_bookings': online_bookings,

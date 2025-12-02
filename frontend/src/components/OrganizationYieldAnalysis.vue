@@ -120,9 +120,9 @@
                 Rev/Booking
                 <span v-if="sortField === 'revenue_per_booking'" class="mdi" :class="sortAscending ? 'mdi-arrow-up' : 'mdi-arrow-down'"></span>
               </th>
-              <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" @click="sortBy('hotel_booking_count')">
-                Hotel Bookings
-                <span v-if="sortField === 'hotel_booking_count'" class="mdi" :class="sortAscending ? 'mdi-arrow-up' : 'mdi-arrow-down'"></span>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" @click="sortBy('hotel_attachment_rate')">
+                Hotel Attach %
+                <span v-if="sortField === 'hotel_attachment_rate'" class="mdi" :class="sortAscending ? 'mdi-arrow-up' : 'mdi-arrow-down'"></span>
               </th>
               <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" @click="sortBy('online_percentage')">
                 Online %
@@ -166,8 +166,7 @@
                 {{ formatCurrency(org.revenue_per_booking) }}
               </td>
               <td class="px-4 py-3 whitespace-nowrap text-right text-sm text-gray-900">
-                {{ org.hotel_booking_count }}
-                <span class="text-xs text-gray-500">({{ org.total_nights }}n)</span>
+                {{ org.hotel_attachment_rate }}%
               </td>
               <td class="px-4 py-3 whitespace-nowrap text-right text-sm">
                 <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" :class="getOnlinePercentageClass(org.online_percentage)">
