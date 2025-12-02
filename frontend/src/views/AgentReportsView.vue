@@ -86,32 +86,36 @@
       <div v-if="activeTab === 'organizations'">
         <OrganizationYieldAnalysis
           :organization="activeFilters.organization"
-          :start-date="activeFilters.travel_date_after"
-          :end-date="activeFilters.travel_date_before"
+          :start-date="activeFilters.booking_date_after"
+          :end-date="activeFilters.booking_date_before"
+          :product-type="activeFilters.product_type"
         />
       </div>
 
       <div v-if="activeTab === 'suppliers'">
         <SupplierYieldAnalysis
           :organization="activeFilters.organization"
-          :start-date="activeFilters.travel_date_after"
-          :end-date="activeFilters.travel_date_before"
+          :start-date="activeFilters.booking_date_after"
+          :end-date="activeFilters.booking_date_before"
+          :product-type="activeFilters.product_type"
         />
       </div>
 
       <div v-if="activeTab === 'consultants'">
         <ConsultantYieldAnalysis
           :organization="activeFilters.organization"
-          :start-date="activeFilters.travel_date_after"
-          :end-date="activeFilters.travel_date_before"
+          :start-date="activeFilters.booking_date_after"
+          :end-date="activeFilters.booking_date_before"
+          :product-type="activeFilters.product_type"
         />
       </div>
 
       <div v-if="activeTab === 'customers'">
         <CustomerYieldAnalysis
           :organization="activeFilters.organization"
-          :start-date="activeFilters.travel_date_after"
-          :end-date="activeFilters.travel_date_before"
+          :start-date="activeFilters.booking_date_after"
+          :end-date="activeFilters.booking_date_before"
+          :product-type="activeFilters.product_type"
         />
       </div>
     </div>
@@ -130,13 +134,15 @@ const activeTab = ref('organizations')
 
 const availableFilters = [
   'organization',
-  'travel_date_range'
+  'booking_date_range',
+  'product_type'
 ]
 
 const activeFilters = ref({
   organization: null,
-  travel_date_after: null,
-  travel_date_before: null
+  booking_date_after: null,
+  booking_date_before: null,
+  product_type: null
 })
 
 const handleFiltersChanged = (filters) => {

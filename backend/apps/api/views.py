@@ -2477,13 +2477,13 @@ class BookingViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(organization_id=org_id)
 
         # Apply date range filters
-        travel_date_after = request.query_params.get('travel_date_after')
-        if travel_date_after:
-            queryset = queryset.filter(travel_date__gte=travel_date_after)
+        booking_date_after = request.query_params.get('booking_date_after')
+        if booking_date_after:
+            queryset = queryset.filter(booking_date__gte=booking_date_after)
 
-        travel_date_before = request.query_params.get('travel_date_before')
-        if travel_date_before:
-            queryset = queryset.filter(travel_date__lte=travel_date_before)
+        booking_date_before = request.query_params.get('booking_date_before')
+        if booking_date_before:
+            queryset = queryset.filter(booking_date__lte=booking_date_before)
 
         # Get consultants with bookings
         from apps.users.models import User
@@ -2743,13 +2743,13 @@ class BookingViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(organization_id=org_id)
 
         # Apply date range filters
-        travel_date_after = request.query_params.get('travel_date_after')
-        if travel_date_after:
-            queryset = queryset.filter(travel_date__gte=travel_date_after)
+        booking_date_after = request.query_params.get('booking_date_after')
+        if booking_date_after:
+            queryset = queryset.filter(booking_date__gte=booking_date_after)
 
-        travel_date_before = request.query_params.get('travel_date_before')
-        if travel_date_before:
-            queryset = queryset.filter(travel_date__lte=travel_date_before)
+        booking_date_before = request.query_params.get('booking_date_before')
+        if booking_date_before:
+            queryset = queryset.filter(booking_date__lte=booking_date_before)
 
         # Get unique travellers from these bookings
         from apps.bookings.models import Traveller
@@ -3007,13 +3007,13 @@ class BookingViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(organization_id=org_id)
 
         # Apply date range filters
-        travel_date_after = request.query_params.get('travel_date_after')
-        if travel_date_after:
-            queryset = queryset.filter(travel_date__gte=travel_date_after)
+        booking_date_after = request.query_params.get('booking_date_after')
+        if booking_date_after:
+            queryset = queryset.filter(booking_date__gte=booking_date_after)
 
-        travel_date_before = request.query_params.get('travel_date_before')
-        if travel_date_before:
-            queryset = queryset.filter(travel_date__lte=travel_date_before)
+        booking_date_before = request.query_params.get('booking_date_before')
+        if booking_date_before:
+            queryset = queryset.filter(booking_date__lte=booking_date_before)
 
         # Get unique organizations from these bookings
         from apps.organizations.models import Organization

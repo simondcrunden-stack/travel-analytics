@@ -50,12 +50,20 @@ export function transformFiltersForBackend(filters) {
 
   const backendParams = {}
 
-  // Date range transformation
+  // Date range transformation (travel dates)
   if (filters.dateFrom) {
     backendParams.travel_date__gte = filters.dateFrom
   }
   if (filters.dateTo) {
     backendParams.travel_date__lte = filters.dateTo
+  }
+
+  // Booking date range transformation
+  if (filters.booking_date_after) {
+    backendParams.booking_date_after = filters.booking_date_after
+  }
+  if (filters.booking_date_before) {
+    backendParams.booking_date_before = filters.booking_date_before
   }
 
   // Travellers - convert array to comma-separated string
@@ -82,7 +90,7 @@ export function transformFiltersForBackend(filters) {
   }
 
   // Pass-through filters (no transformation needed)
-  const passThroughFilters = ['organization', 'status', 'city', 'supplier', 'booking_type']
+  const passThroughFilters = ['organization', 'status', 'city', 'supplier', 'booking_type', 'product_type']
   passThroughFilters.forEach(key => {
     if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
       backendParams[key] = filters[key]
