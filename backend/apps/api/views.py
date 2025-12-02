@@ -2615,9 +2615,9 @@ class BookingViewSet(viewsets.ModelViewSet):
             from apps.bookings.models import AccommodationBooking
             from django.db.models import F
 
-            # Count bookings with overnight stays (travel_date != end_date)
+            # Count bookings with overnight stays (travel_date != return_date)
             overnight_bookings = consultant_bookings.exclude(
-                travel_date=F('end_date')
+                travel_date=F('return_date')
             ).distinct()
             overnight_booking_count = overnight_bookings.count()
 
@@ -2880,9 +2880,9 @@ class BookingViewSet(viewsets.ModelViewSet):
             # 3. HOTEL ATTACHMENT RATE (for overnight bookings only)
             from django.db.models import F
 
-            # Count bookings with overnight stays (travel_date != end_date)
+            # Count bookings with overnight stays (travel_date != return_date)
             overnight_bookings = traveller_bookings.exclude(
-                travel_date=F('end_date')
+                travel_date=F('return_date')
             ).distinct()
             overnight_booking_count = overnight_bookings.count()
 
@@ -3141,9 +3141,9 @@ class BookingViewSet(viewsets.ModelViewSet):
 
             # 3. HOTEL ATTACHMENT RATE (for overnight bookings only)
 
-            # Count bookings with overnight stays (travel_date != end_date)
+            # Count bookings with overnight stays (travel_date != return_date)
             overnight_bookings = org_bookings.exclude(
-                travel_date=F('end_date')
+                travel_date=F('return_date')
             ).distinct()
             overnight_booking_count = overnight_bookings.count()
 
