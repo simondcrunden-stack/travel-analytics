@@ -3213,13 +3213,8 @@ class BookingViewSet(viewsets.ModelViewSet):
             if booking_count == 0:
                 continue
 
-            # Get service fee revenue for these bookings
-            service_fee_revenue = ServiceFee.objects.filter(
-                booking__in=supplier_bookings
-            ).aggregate(total=Sum('fee_amount'))['total'] or Decimal('0')
-
-            # Total revenue = service fees + commissions
-            total_revenue = service_fee_revenue + data['commission_revenue']
+            # For suppliers, revenue is ONLY commissions (not service fees which customers pay)
+            total_revenue = data['commission_revenue']
 
             # Calculate yield and other metrics
             revenue_per_booking = (total_revenue / booking_count) if booking_count > 0 else Decimal('0')
@@ -3267,8 +3262,7 @@ class BookingViewSet(viewsets.ModelViewSet):
                 'total_booking_value': float(data['total_booking_value']),
                 'modification_count': modification_count,
 
-                # Revenue
-                'service_fee_revenue': float(service_fee_revenue),
+                # Revenue (commissions only - service fees are paid by customers, not suppliers)
                 'commission_revenue': float(data['commission_revenue']),
                 'total_revenue': float(total_revenue),
                 'yield_percentage': round(float(yield_percentage), 2),
@@ -3293,7 +3287,6 @@ class BookingViewSet(viewsets.ModelViewSet):
                 'total_bookings': sum(s['booking_count'] for s in supplier_list),
                 'total_booking_value': sum(s['total_booking_value'] for s in supplier_list),
                 'total_revenue': sum(s['total_revenue'] for s in supplier_list),
-                'total_service_fees': sum(s['service_fee_revenue'] for s in supplier_list),
                 'total_commissions': sum(s['commission_revenue'] for s in supplier_list),
                 'total_modifications': sum(s['modification_count'] for s in supplier_list),
                 'total_online_bookings': sum(s['online_bookings'] for s in supplier_list),
