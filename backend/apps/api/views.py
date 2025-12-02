@@ -3460,6 +3460,9 @@ class BookingViewSet(viewsets.ModelViewSet):
                 hotel_booking_count = accommodation_stats['hotel_booking_count'] or 0
                 total_nights = accommodation_stats['total_nights'] or 0
 
+            # Calculate modification percentage
+            modification_percentage = (modification_count / booking_count * 100) if booking_count > 0 else 0
+
             supplier_list.append({
                 'supplier_name': supplier_name,
                 'supplier_type': data['supplier_type'],
@@ -3467,7 +3470,7 @@ class BookingViewSet(viewsets.ModelViewSet):
                 # Booking numbers
                 'booking_count': booking_count,
                 'total_booking_value': float(data['total_booking_value']),
-                'modification_count': modification_count,
+                'modification_percentage': round(modification_percentage, 1),
 
                 # Revenue (commissions only - service fees are paid by customers, not suppliers)
                 'commission_revenue': float(data['commission_revenue']),
