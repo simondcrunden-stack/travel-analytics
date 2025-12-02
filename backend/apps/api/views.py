@@ -2519,7 +2519,7 @@ class BookingViewSet(viewsets.ModelViewSet):
             ).values('booking').distinct().count()
 
             # 2. REVENUE (Service Fees + Commissions)
-            from apps.bookings.models import ServiceFee
+            from apps.bookings.models import ServiceFee, AirBooking, AccommodationBooking, CarHireBooking
             from apps.commissions.models import Commission
 
             # Service fees for these bookings
@@ -2529,14 +2529,35 @@ class BookingViewSet(viewsets.ModelViewSet):
                 total=Sum('fee_amount')
             )['total'] or Decimal('0')
 
-            # Commissions for these bookings
+            # Commissions from separate Commission model
             commission_revenue = Commission.objects.filter(
                 booking__in=consultant_bookings
             ).aggregate(
                 total=Sum('commission_amount')
             )['total'] or Decimal('0')
 
-            total_revenue = service_fee_revenue + commission_revenue
+            # Commissions from booking components
+            air_commission = AirBooking.objects.filter(
+                booking__in=consultant_bookings
+            ).aggregate(
+                total=Sum('commission_amount')
+            )['total'] or Decimal('0')
+
+            accommodation_commission = AccommodationBooking.objects.filter(
+                booking__in=consultant_bookings
+            ).aggregate(
+                total=Sum('commission_amount')
+            )['total'] or Decimal('0')
+
+            car_hire_commission = CarHireBooking.objects.filter(
+                booking__in=consultant_bookings
+            ).aggregate(
+                total=Sum('commission_amount')
+            )['total'] or Decimal('0')
+
+            # Total revenue = service fees + all commission sources
+            total_revenue = (service_fee_revenue + commission_revenue +
+                           air_commission + accommodation_commission + car_hire_commission)
 
             # 3. OVERNIGHT STAYS (Hotel Bookings)
             from apps.bookings.models import AccommodationBooking
@@ -2706,7 +2727,7 @@ class BookingViewSet(viewsets.ModelViewSet):
             ).values('booking').distinct().count()
 
             # 2. REVENUE (Service Fees + Commissions)
-            from apps.bookings.models import ServiceFee
+            from apps.bookings.models import ServiceFee, AirBooking, AccommodationBooking, CarHireBooking
             from apps.commissions.models import Commission
 
             # Service fees for these bookings
@@ -2716,17 +2737,37 @@ class BookingViewSet(viewsets.ModelViewSet):
                 total=Sum('fee_amount')
             )['total'] or Decimal('0')
 
-            # Commissions for these bookings
+            # Commissions from separate Commission model
             commission_revenue = Commission.objects.filter(
                 booking__in=traveller_bookings
             ).aggregate(
                 total=Sum('commission_amount')
             )['total'] or Decimal('0')
 
-            total_revenue = service_fee_revenue + commission_revenue
+            # Commissions from booking components
+            air_commission = AirBooking.objects.filter(
+                booking__in=traveller_bookings
+            ).aggregate(
+                total=Sum('commission_amount')
+            )['total'] or Decimal('0')
+
+            accommodation_commission = AccommodationBooking.objects.filter(
+                booking__in=traveller_bookings
+            ).aggregate(
+                total=Sum('commission_amount')
+            )['total'] or Decimal('0')
+
+            car_hire_commission = CarHireBooking.objects.filter(
+                booking__in=traveller_bookings
+            ).aggregate(
+                total=Sum('commission_amount')
+            )['total'] or Decimal('0')
+
+            # Total revenue = service fees + all commission sources
+            total_revenue = (service_fee_revenue + commission_revenue +
+                           air_commission + accommodation_commission + car_hire_commission)
 
             # 3. OVERNIGHT STAYS (Hotel Bookings)
-            from apps.bookings.models import AccommodationBooking
 
             accommodation_stats = AccommodationBooking.objects.filter(
                 booking__in=traveller_bookings
@@ -2890,7 +2931,7 @@ class BookingViewSet(viewsets.ModelViewSet):
             ).values('booking').distinct().count()
 
             # 2. REVENUE (Service Fees + Commissions)
-            from apps.bookings.models import ServiceFee
+            from apps.bookings.models import ServiceFee, AirBooking, AccommodationBooking, CarHireBooking
             from apps.commissions.models import Commission
 
             # Service fees for these bookings
@@ -2900,17 +2941,37 @@ class BookingViewSet(viewsets.ModelViewSet):
                 total=Sum('fee_amount')
             )['total'] or Decimal('0')
 
-            # Commissions for these bookings
+            # Commissions from separate Commission model
             commission_revenue = Commission.objects.filter(
                 booking__in=org_bookings
             ).aggregate(
                 total=Sum('commission_amount')
             )['total'] or Decimal('0')
 
-            total_revenue = service_fee_revenue + commission_revenue
+            # Commissions from booking components
+            air_commission = AirBooking.objects.filter(
+                booking__in=org_bookings
+            ).aggregate(
+                total=Sum('commission_amount')
+            )['total'] or Decimal('0')
+
+            accommodation_commission = AccommodationBooking.objects.filter(
+                booking__in=org_bookings
+            ).aggregate(
+                total=Sum('commission_amount')
+            )['total'] or Decimal('0')
+
+            car_hire_commission = CarHireBooking.objects.filter(
+                booking__in=org_bookings
+            ).aggregate(
+                total=Sum('commission_amount')
+            )['total'] or Decimal('0')
+
+            # Total revenue = service fees + all commission sources
+            total_revenue = (service_fee_revenue + commission_revenue +
+                           air_commission + accommodation_commission + car_hire_commission)
 
             # 3. OVERNIGHT STAYS (Hotel Bookings)
-            from apps.bookings.models import AccommodationBooking
 
             accommodation_stats = AccommodationBooking.objects.filter(
                 booking__in=org_bookings
