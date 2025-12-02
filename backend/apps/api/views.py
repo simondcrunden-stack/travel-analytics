@@ -2513,6 +2513,8 @@ class BookingViewSet(viewsets.ModelViewSet):
 
             # Count bookings with changes (based on transaction types)
             # Change transaction types include exchanges, voids, refunds, modifications, etc.
+            from apps.bookings.models import AirBooking, AccommodationBooking, CarHireBooking
+
             change_transaction_types = [
                 'EXCHANGE', 'REISSUE', 'VOID', 'MODIFICATION', 'DATE_CHANGE',
                 'UPGRADE', 'DOWNGRADE', 'CANCELLATION', 'PARTIAL_CANCELLATION',
@@ -2772,6 +2774,8 @@ class BookingViewSet(viewsets.ModelViewSet):
             )['total'] or Decimal('0')
 
             # Count bookings with changes (based on transaction types)
+            from apps.bookings.models import AirBooking, AccommodationBooking, CarHireBooking
+
             change_transaction_types = [
                 'EXCHANGE', 'REISSUE', 'VOID', 'MODIFICATION', 'DATE_CHANGE',
                 'UPGRADE', 'DOWNGRADE', 'CANCELLATION', 'PARTIAL_CANCELLATION',
@@ -3027,6 +3031,8 @@ class BookingViewSet(viewsets.ModelViewSet):
             )['total'] or Decimal('0')
 
             # Count bookings with changes (based on transaction types)
+            from apps.bookings.models import AirBooking, AccommodationBooking, CarHireBooking
+
             change_transaction_types = [
                 'EXCHANGE', 'REISSUE', 'VOID', 'MODIFICATION', 'DATE_CHANGE',
                 'UPGRADE', 'DOWNGRADE', 'CANCELLATION', 'PARTIAL_CANCELLATION',
@@ -3369,6 +3375,8 @@ class BookingViewSet(viewsets.ModelViewSet):
             yield_percentage = (total_revenue / data['total_booking_value'] * 100) if data['total_booking_value'] > 0 else 0
 
             # Count bookings with changes (based on transaction types)
+            from apps.bookings.models import AirBooking, AccommodationBooking, CarHireBooking
+
             change_transaction_types = [
                 'EXCHANGE', 'REISSUE', 'VOID', 'MODIFICATION', 'DATE_CHANGE',
                 'UPGRADE', 'DOWNGRADE', 'CANCELLATION', 'PARTIAL_CANCELLATION',
