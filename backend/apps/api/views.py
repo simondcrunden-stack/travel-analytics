@@ -2522,29 +2522,49 @@ class BookingViewSet(viewsets.ModelViewSet):
             # Get booking IDs that have change transactions through their components
             changed_booking_ids = set()
 
-            # Check Air bookings for change transactions
-            air_with_changes = AirBooking.objects.filter(
-                booking__in=consultant_bookings
-            ).filter(
-                bookingtransaction__transaction_type__in=change_transaction_types
-            ).values_list('booking_id', flat=True).distinct()
-            changed_booking_ids.update(air_with_changes)
+            # Get ContentTypes for booking components
+            air_ct = ContentType.objects.get_for_model(AirBooking)
+            accommodation_ct = ContentType.objects.get_for_model(AccommodationBooking)
+            car_ct = ContentType.objects.get_for_model(CarHireBooking)
 
-            # Check Accommodation bookings for change transactions
-            accommodation_with_changes = AccommodationBooking.objects.filter(
-                booking__in=consultant_bookings
-            ).filter(
-                bookingtransaction__transaction_type__in=change_transaction_types
-            ).values_list('booking_id', flat=True).distinct()
-            changed_booking_ids.update(accommodation_with_changes)
+            # Get Air booking component IDs that have change transactions
+            air_component_ids = BookingTransaction.objects.filter(
+                content_type=air_ct,
+                transaction_type__in=change_transaction_types
+            ).values_list('object_id', flat=True).distinct()
 
-            # Check Car Hire bookings for change transactions
-            car_with_changes = CarHireBooking.objects.filter(
-                booking__in=consultant_bookings
-            ).filter(
-                bookingtransaction__transaction_type__in=change_transaction_types
-            ).values_list('booking_id', flat=True).distinct()
-            changed_booking_ids.update(car_with_changes)
+            if air_component_ids:
+                air_booking_ids = AirBooking.objects.filter(
+                    id__in=air_component_ids,
+                    booking__in=consultant_bookings
+                ).values_list('booking_id', flat=True).distinct()
+                changed_booking_ids.update(air_booking_ids)
+
+            # Get Accommodation booking component IDs that have change transactions
+            accommodation_component_ids = BookingTransaction.objects.filter(
+                content_type=accommodation_ct,
+                transaction_type__in=change_transaction_types
+            ).values_list('object_id', flat=True).distinct()
+
+            if accommodation_component_ids:
+                accommodation_booking_ids = AccommodationBooking.objects.filter(
+                    id__in=accommodation_component_ids,
+                    booking__in=consultant_bookings
+                ).values_list('booking_id', flat=True).distinct()
+                changed_booking_ids.update(accommodation_booking_ids)
+
+            # Get Car Hire booking component IDs that have change transactions
+            car_component_ids = BookingTransaction.objects.filter(
+                content_type=car_ct,
+                transaction_type__in=change_transaction_types
+            ).values_list('object_id', flat=True).distinct()
+
+            if car_component_ids:
+                car_booking_ids = CarHireBooking.objects.filter(
+                    id__in=car_component_ids,
+                    booking__in=consultant_bookings
+                ).values_list('booking_id', flat=True).distinct()
+                changed_booking_ids.update(car_booking_ids)
 
             modification_count = len(changed_booking_ids)
 
@@ -2761,29 +2781,49 @@ class BookingViewSet(viewsets.ModelViewSet):
             # Get booking IDs that have change transactions through their components
             changed_booking_ids = set()
 
-            # Check Air bookings for change transactions
-            air_with_changes = AirBooking.objects.filter(
-                booking__in=traveller_bookings
-            ).filter(
-                bookingtransaction__transaction_type__in=change_transaction_types
-            ).values_list('booking_id', flat=True).distinct()
-            changed_booking_ids.update(air_with_changes)
+            # Get ContentTypes for booking components
+            air_ct = ContentType.objects.get_for_model(AirBooking)
+            accommodation_ct = ContentType.objects.get_for_model(AccommodationBooking)
+            car_ct = ContentType.objects.get_for_model(CarHireBooking)
 
-            # Check Accommodation bookings for change transactions
-            accommodation_with_changes = AccommodationBooking.objects.filter(
-                booking__in=traveller_bookings
-            ).filter(
-                bookingtransaction__transaction_type__in=change_transaction_types
-            ).values_list('booking_id', flat=True).distinct()
-            changed_booking_ids.update(accommodation_with_changes)
+            # Get Air booking component IDs that have change transactions
+            air_component_ids = BookingTransaction.objects.filter(
+                content_type=air_ct,
+                transaction_type__in=change_transaction_types
+            ).values_list('object_id', flat=True).distinct()
 
-            # Check Car Hire bookings for change transactions
-            car_with_changes = CarHireBooking.objects.filter(
-                booking__in=traveller_bookings
-            ).filter(
-                bookingtransaction__transaction_type__in=change_transaction_types
-            ).values_list('booking_id', flat=True).distinct()
-            changed_booking_ids.update(car_with_changes)
+            if air_component_ids:
+                air_booking_ids = AirBooking.objects.filter(
+                    id__in=air_component_ids,
+                    booking__in=traveller_bookings
+                ).values_list('booking_id', flat=True).distinct()
+                changed_booking_ids.update(air_booking_ids)
+
+            # Get Accommodation booking component IDs that have change transactions
+            accommodation_component_ids = BookingTransaction.objects.filter(
+                content_type=accommodation_ct,
+                transaction_type__in=change_transaction_types
+            ).values_list('object_id', flat=True).distinct()
+
+            if accommodation_component_ids:
+                accommodation_booking_ids = AccommodationBooking.objects.filter(
+                    id__in=accommodation_component_ids,
+                    booking__in=traveller_bookings
+                ).values_list('booking_id', flat=True).distinct()
+                changed_booking_ids.update(accommodation_booking_ids)
+
+            # Get Car Hire booking component IDs that have change transactions
+            car_component_ids = BookingTransaction.objects.filter(
+                content_type=car_ct,
+                transaction_type__in=change_transaction_types
+            ).values_list('object_id', flat=True).distinct()
+
+            if car_component_ids:
+                car_booking_ids = CarHireBooking.objects.filter(
+                    id__in=car_component_ids,
+                    booking__in=traveller_bookings
+                ).values_list('booking_id', flat=True).distinct()
+                changed_booking_ids.update(car_booking_ids)
 
             modification_count = len(changed_booking_ids)
 
@@ -2996,29 +3036,49 @@ class BookingViewSet(viewsets.ModelViewSet):
             # Get booking IDs that have change transactions through their components
             changed_booking_ids = set()
 
-            # Check Air bookings for change transactions
-            air_with_changes = AirBooking.objects.filter(
-                booking__in=org_bookings
-            ).filter(
-                bookingtransaction__transaction_type__in=change_transaction_types
-            ).values_list('booking_id', flat=True).distinct()
-            changed_booking_ids.update(air_with_changes)
+            # Get ContentTypes for booking components
+            air_ct = ContentType.objects.get_for_model(AirBooking)
+            accommodation_ct = ContentType.objects.get_for_model(AccommodationBooking)
+            car_ct = ContentType.objects.get_for_model(CarHireBooking)
 
-            # Check Accommodation bookings for change transactions
-            accommodation_with_changes = AccommodationBooking.objects.filter(
-                booking__in=org_bookings
-            ).filter(
-                bookingtransaction__transaction_type__in=change_transaction_types
-            ).values_list('booking_id', flat=True).distinct()
-            changed_booking_ids.update(accommodation_with_changes)
+            # Get Air booking component IDs that have change transactions
+            air_component_ids = BookingTransaction.objects.filter(
+                content_type=air_ct,
+                transaction_type__in=change_transaction_types
+            ).values_list('object_id', flat=True).distinct()
 
-            # Check Car Hire bookings for change transactions
-            car_with_changes = CarHireBooking.objects.filter(
-                booking__in=org_bookings
-            ).filter(
-                bookingtransaction__transaction_type__in=change_transaction_types
-            ).values_list('booking_id', flat=True).distinct()
-            changed_booking_ids.update(car_with_changes)
+            if air_component_ids:
+                air_booking_ids = AirBooking.objects.filter(
+                    id__in=air_component_ids,
+                    booking__in=org_bookings
+                ).values_list('booking_id', flat=True).distinct()
+                changed_booking_ids.update(air_booking_ids)
+
+            # Get Accommodation booking component IDs that have change transactions
+            accommodation_component_ids = BookingTransaction.objects.filter(
+                content_type=accommodation_ct,
+                transaction_type__in=change_transaction_types
+            ).values_list('object_id', flat=True).distinct()
+
+            if accommodation_component_ids:
+                accommodation_booking_ids = AccommodationBooking.objects.filter(
+                    id__in=accommodation_component_ids,
+                    booking__in=org_bookings
+                ).values_list('booking_id', flat=True).distinct()
+                changed_booking_ids.update(accommodation_booking_ids)
+
+            # Get Car Hire booking component IDs that have change transactions
+            car_component_ids = BookingTransaction.objects.filter(
+                content_type=car_ct,
+                transaction_type__in=change_transaction_types
+            ).values_list('object_id', flat=True).distinct()
+
+            if car_component_ids:
+                car_booking_ids = CarHireBooking.objects.filter(
+                    id__in=car_component_ids,
+                    booking__in=org_bookings
+                ).values_list('booking_id', flat=True).distinct()
+                changed_booking_ids.update(car_booking_ids)
 
             modification_count = len(changed_booking_ids)
 
@@ -3318,29 +3378,49 @@ class BookingViewSet(viewsets.ModelViewSet):
             # Get booking IDs that have change transactions through their components
             changed_booking_ids = set()
 
-            # Check Air bookings for change transactions
-            air_with_changes = AirBooking.objects.filter(
-                booking__in=supplier_bookings
-            ).filter(
-                bookingtransaction__transaction_type__in=change_transaction_types
-            ).values_list('booking_id', flat=True).distinct()
-            changed_booking_ids.update(air_with_changes)
+            # Get ContentTypes for booking components
+            air_ct = ContentType.objects.get_for_model(AirBooking)
+            accommodation_ct = ContentType.objects.get_for_model(AccommodationBooking)
+            car_ct = ContentType.objects.get_for_model(CarHireBooking)
 
-            # Check Accommodation bookings for change transactions
-            accommodation_with_changes = AccommodationBooking.objects.filter(
-                booking__in=supplier_bookings
-            ).filter(
-                bookingtransaction__transaction_type__in=change_transaction_types
-            ).values_list('booking_id', flat=True).distinct()
-            changed_booking_ids.update(accommodation_with_changes)
+            # Get Air booking component IDs that have change transactions
+            air_component_ids = BookingTransaction.objects.filter(
+                content_type=air_ct,
+                transaction_type__in=change_transaction_types
+            ).values_list('object_id', flat=True).distinct()
 
-            # Check Car Hire bookings for change transactions
-            car_with_changes = CarHireBooking.objects.filter(
-                booking__in=supplier_bookings
-            ).filter(
-                bookingtransaction__transaction_type__in=change_transaction_types
-            ).values_list('booking_id', flat=True).distinct()
-            changed_booking_ids.update(car_with_changes)
+            if air_component_ids:
+                air_booking_ids = AirBooking.objects.filter(
+                    id__in=air_component_ids,
+                    booking__in=supplier_bookings
+                ).values_list('booking_id', flat=True).distinct()
+                changed_booking_ids.update(air_booking_ids)
+
+            # Get Accommodation booking component IDs that have change transactions
+            accommodation_component_ids = BookingTransaction.objects.filter(
+                content_type=accommodation_ct,
+                transaction_type__in=change_transaction_types
+            ).values_list('object_id', flat=True).distinct()
+
+            if accommodation_component_ids:
+                accommodation_booking_ids = AccommodationBooking.objects.filter(
+                    id__in=accommodation_component_ids,
+                    booking__in=supplier_bookings
+                ).values_list('booking_id', flat=True).distinct()
+                changed_booking_ids.update(accommodation_booking_ids)
+
+            # Get Car Hire booking component IDs that have change transactions
+            car_component_ids = BookingTransaction.objects.filter(
+                content_type=car_ct,
+                transaction_type__in=change_transaction_types
+            ).values_list('object_id', flat=True).distinct()
+
+            if car_component_ids:
+                car_booking_ids = CarHireBooking.objects.filter(
+                    id__in=car_component_ids,
+                    booking__in=supplier_bookings
+                ).values_list('booking_id', flat=True).distinct()
+                changed_booking_ids.update(car_booking_ids)
 
             modification_count = len(changed_booking_ids)
 
