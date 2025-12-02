@@ -3469,7 +3469,7 @@ class BookingViewSet(viewsets.ModelViewSet):
                     booking__in=supplier_bookings,
                     rental_company=supplier_name
                 ).aggregate(
-                    total_days=Sum('rental_days')
+                    total_days=Sum('number_of_days')
                 )
                 nights_or_days = car_stats['total_days'] or 0
 
