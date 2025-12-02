@@ -2690,8 +2690,6 @@ class BookingViewSet(viewsets.ModelViewSet):
                 'total_service_fees': sum(c['service_fee_revenue'] for c in consultant_data),
                 'total_commissions': sum(c['commission_revenue'] for c in consultant_data),
                 'total_modifications': sum(c['modification_count'] for c in consultant_data),
-                'total_hotel_bookings': sum(c['hotel_booking_count'] for c in consultant_data),
-                'total_nights': sum(c['total_nights'] for c in consultant_data),
                 'total_online_bookings': sum(c['online_bookings'] for c in consultant_data),
                 'total_offline_bookings': sum(c['offline_bookings'] for c in consultant_data),
             }
@@ -2956,8 +2954,6 @@ class BookingViewSet(viewsets.ModelViewSet):
                 'total_service_fees': sum(c['service_fee_revenue'] for c in customer_data),
                 'total_commissions': sum(c['commission_revenue'] for c in customer_data),
                 'total_modifications': sum(c['modification_count'] for c in customer_data),
-                'total_hotel_bookings': sum(c['hotel_booking_count'] for c in customer_data),
-                'total_nights': sum(c['total_nights'] for c in customer_data),
                 'total_online_bookings': sum(c['online_bookings'] for c in customer_data),
                 'total_offline_bookings': sum(c['offline_bookings'] for c in customer_data),
             }
@@ -3222,8 +3218,6 @@ class BookingViewSet(viewsets.ModelViewSet):
                 'total_service_fees': sum(o['service_fee_revenue'] for o in organization_data),
                 'total_commissions': sum(o['commission_revenue'] for o in organization_data),
                 'total_modifications': sum(o['modification_count'] for o in organization_data),
-                'total_hotel_bookings': sum(o['hotel_booking_count'] for o in organization_data),
-                'total_nights': sum(o['total_nights'] for o in organization_data),
                 'total_online_bookings': sum(o['online_bookings'] for o in organization_data),
                 'total_offline_bookings': sum(o['offline_bookings'] for o in organization_data),
                 'total_unique_travellers': sum(o['unique_travellers'] for o in organization_data),
