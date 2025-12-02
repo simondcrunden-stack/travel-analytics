@@ -13,7 +13,7 @@ from apps.users.models import User
 from apps.bookings.models import (
     Traveller, Booking, AirBooking, AirSegment,
     AccommodationBooking, CarHireBooking, Invoice, ServiceFee, BookingTransaction,
-    PreferredAirline, PreferredHotel, PreferredCarHire, OtherProduct, BookingModification
+    PreferredAirline, PreferredHotel, PreferredCarHire, OtherProduct, BookingAuditLog
 )
 from apps.budgets.models import FiscalYear, Budget, BudgetAlert
 from apps.compliance.models import ComplianceViolation, TravelRiskAlert
@@ -3226,9 +3226,10 @@ class BookingViewSet(viewsets.ModelViewSet):
             yield_percentage = (total_revenue / data['total_booking_value'] * 100) if data['total_booking_value'] > 0 else 0
 
             # Modification count
-            modification_count = BookingModification.objects.filter(
-                booking__in=supplier_bookings
-            ).count()
+            modification_count = BookingAuditLog.objects.filter(
+                booking__in=supplier_bookings,
+                action__in=['BOOKING_MODIFIED', 'COMPONENT_MODIFIED', 'TRANSACTION_MODIFIED']
+            ).values('booking').distinct().count()
 
             # Online/offline split
             online_bookings = supplier_bookings.filter(
