@@ -75,6 +75,15 @@
           </button>
         </div>
 
+        <!-- Product Type Badge -->
+        <div v-if="localFilters.product_type" class="flex items-center gap-2 rounded-lg bg-sky-50 px-3 py-1.5 text-sm">
+          <MdiIcon :path="mdiPackageVariant" :size="16" class="text-sky-600" />
+          <span class="font-medium text-sky-900">{{ localFilters.product_type }}</span>
+          <button @click="clearProductType" class="text-sky-600 hover:text-sky-800">
+            <MdiIcon :path="mdiClose" :size="16" />
+          </button>
+        </div>
+
         <!-- Supplier Badge -->
         <div v-if="localFilters.supplier" class="flex items-center gap-2 rounded-lg bg-rose-50 px-3 py-1.5 text-sm">
           <MdiIcon :path="mdiDomain" :size="16" class="text-rose-600" />
@@ -181,7 +190,7 @@
 
           <!-- Date From -->
           <div v-if="showDateRange">
-            <label class="mb-2 block text-sm font-medium text-gray-700">Travel Date From</label>
+            <label class="mb-2 block text-sm font-medium text-gray-700">{{ dateLabel }} From</label>
             <input
               v-model="localFilters.dateFrom"
               type="date"
@@ -192,7 +201,7 @@
 
           <!-- Date To -->
           <div v-if="showDateRange">
-            <label class="mb-2 block text-sm font-medium text-gray-700">Travel Date To</label>
+            <label class="mb-2 block text-sm font-medium text-gray-700">{{ dateLabel }} To</label>
             <input
               v-model="localFilters.dateTo"
               type="date"
@@ -282,6 +291,25 @@
               @input="emitFilters"
             />
           </div>
+
+          <!-- Product Type Filter -->
+          <div v-if="showProductType">
+            <label class="mb-2 block text-sm font-medium text-gray-700">Product Type</label>
+            <select
+              v-model="localFilters.product_type"
+              class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              @change="emitFilters"
+            >
+              <option value="">All Products</option>
+              <option value="Air">Air</option>
+              <option value="Accommodation">Accommodation</option>
+              <option value="Car Hire">Car Hire</option>
+              <option value="Cruise">Cruise</option>
+              <option value="Rail">Rail</option>
+              <option value="Tour">Tour</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
         </div>
 
         <!-- Quick Date Presets -->
@@ -352,6 +380,7 @@ import {
   mdiDomain,
   mdiClose,
   mdiContentSave,
+  mdiPackageVariant,
 } from '@mdi/js'
 import api from '@/services/api'
 import { bookingService, userService } from '@/services/api'
@@ -392,6 +421,14 @@ const props = defineProps({
     type: String,
     default: 'Supplier name...',
   },
+  showProductType: {
+    type: Boolean,
+    default: false,
+  },
+  dateLabel: {
+    type: String,
+    default: 'Travel Date',
+  },
 })
 
 // Emits
@@ -422,6 +459,7 @@ const localFilters = reactive({
   organization: props.filters?.organization || '',
   status: props.filters?.status || '',
   supplier: props.filters?.supplier || '',
+  product_type: props.filters?.product_type || '',
 })
 
 // Computed
@@ -493,7 +531,8 @@ const hasActiveFilters = computed(() => {
     localFilters.travelAgent ||
     localFilters.organization ||
     localFilters.status ||
-    localFilters.supplier
+    localFilters.supplier ||
+    localFilters.product_type
   )
 })
 
@@ -655,6 +694,11 @@ const clearSupplier = () => {
   emitFilters()
 }
 
+const clearProductType = () => {
+  localFilters.product_type = ''
+  emitFilters()
+}
+
 const clearAllFilters = () => {
   localFilters.traveller = ''
   localFilters.travellers = []
@@ -668,6 +712,7 @@ const clearAllFilters = () => {
   localFilters.organization = ''
   localFilters.status = ''
   localFilters.supplier = ''
+  localFilters.product_type = ''
   emitFilters()
 }
 

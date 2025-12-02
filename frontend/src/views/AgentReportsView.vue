@@ -16,7 +16,14 @@
         <!-- Filters -->
         <div class="pb-6">
           <UniversalFilters
-            :available-filters="availableFilters"
+            :show-traveller="false"
+            :show-date-range="true"
+            :show-destinations="false"
+            :show-organization="true"
+            :show-status="false"
+            :show-supplier="false"
+            :show-product-type="true"
+            :date-label="'Booking Date'"
             :initial-filters="activeFilters"
             @filters-changed="handleFiltersChanged"
           />
@@ -132,12 +139,6 @@ import SupplierYieldAnalysis from '@/components/SupplierYieldAnalysis.vue'
 
 const activeTab = ref('organizations')
 
-const availableFilters = [
-  'organization',
-  'booking_date_range',
-  'product_type'
-]
-
 const activeFilters = ref({
   organization: null,
   booking_date_after: null,
@@ -146,6 +147,12 @@ const activeFilters = ref({
 })
 
 const handleFiltersChanged = (filters) => {
-  activeFilters.value = { ...filters }
+  // Map dateFrom/dateTo to booking_date_after/booking_date_before
+  activeFilters.value = {
+    organization: filters.organization || null,
+    booking_date_after: filters.dateFrom || null,
+    booking_date_before: filters.dateTo || null,
+    product_type: filters.product_type || null
+  }
 }
 </script>
