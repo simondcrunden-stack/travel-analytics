@@ -80,7 +80,7 @@
 
 <script setup>
 import { ref } from 'vue'
-import UniversalFilters from '@/components/UniversalFilters.vue'
+import UniversalFilters from '@/components/common/UniversalFilters.vue'
 import ConsultantYieldAnalysis from '@/components/ConsultantYieldAnalysis.vue'
 import CustomerYieldAnalysis from '@/components/CustomerYieldAnalysis.vue'
 
