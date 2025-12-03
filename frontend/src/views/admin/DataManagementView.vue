@@ -149,6 +149,7 @@
         />
         <ConsultantMerge
           v-else-if="activeTab === 'consultants'"
+          :selected-travel-agent="selectedTravelAgent"
           :selected-organization="selectedOrganization"
           @duplicates-updated="updateConsultantCount"
         />

@@ -4,7 +4,7 @@
     <div class="mb-6">
       <h2 class="text-xl font-semibold text-gray-900">Travel Consultant Merge</h2>
       <p class="mt-1 text-sm text-gray-600">
-        Find and standardize duplicate consultant name variations in the selected organization
+        Find and standardize duplicate consultant name variations across all customers for the selected travel agent
       </p>
     </div>
 
@@ -12,7 +12,7 @@
     <div class="mb-6 flex items-center gap-4">
       <button
         @click="loadDuplicates"
-        :disabled="loading || !selectedOrganization"
+        :disabled="loading || (!selectedTravelAgent && !selectedOrganization)"
         class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
       >
         <span class="mdi mdi-refresh mr-2"></span>
@@ -295,9 +295,13 @@ import { ref, computed } from 'vue'
 import api from '@/services/api'
 
 const props = defineProps({
+  selectedTravelAgent: {
+    type: String,
+    default: ''
+  },
   selectedOrganization: {
     type: String,
-    required: true
+    default: ''
   }
 })
 
@@ -336,8 +340,9 @@ const allVariationsInMerge = computed(() => {
 
 // Methods
 const loadDuplicates = async () => {
-  if (!props.selectedOrganization) {
-    error.value = 'Please select an organization first.'
+  // Require either travel agent or organization selection
+  if (!props.selectedTravelAgent && !props.selectedOrganization) {
+    error.value = 'Please select a travel agent or organization first.'
     return
   }
 
@@ -345,11 +350,19 @@ const loadDuplicates = async () => {
   error.value = null
 
   try {
+    const params = {
+      min_similarity: minSimilarity.value
+    }
+
+    // Prefer travel agent (consultants work across all customers)
+    if (props.selectedTravelAgent) {
+      params.travel_agent_id = props.selectedTravelAgent
+    } else if (props.selectedOrganization) {
+      params.organization_id = props.selectedOrganization
+    }
+
     const response = await api.get('/data-management/consultant-merge/find_duplicates/', {
-      params: {
-        min_similarity: minSimilarity.value,
-        organization_id: props.selectedOrganization
-      }
+      params
     })
 
     duplicateGroups.value = response.data.duplicate_groups || []
@@ -407,12 +420,20 @@ const confirmMerge = async () => {
       ? mergeOptions.value.customText
       : mergeOptions.value.chosenText
 
-    const response = await api.post('/data-management/consultant-merge/merge/', {
+    const mergeData = {
       primary_text: selectedGroup.value.primary.text,
       merge_texts: mergeSelection.value.map(m => m.text),
-      chosen_text: chosenText,
-      organization_id: props.selectedOrganization
-    })
+      chosen_text: chosenText
+    }
+
+    // Send travel agent ID if selected, otherwise organization ID
+    if (props.selectedTravelAgent) {
+      mergeData.travel_agent_id = props.selectedTravelAgent
+    } else if (props.selectedOrganization) {
+      mergeData.organization_id = props.selectedOrganization
+    }
+
+    const response = await api.post('/data-management/consultant-merge/merge/', mergeData)
 
     successMessage.value = `Successfully standardized consultant name across ${response.data.bookings_updated} booking(s).`
 

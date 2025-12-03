@@ -458,29 +458,39 @@ class ConsultantMergeViewSet(viewsets.ViewSet):
         Find similar consultant text entries in bookings
 
         Query params:
-        - organization_id or organization: Organization ID (required for org admins, optional for system admins)
+        - travel_agent_id: Travel Agent organization ID (searches across all their customers)
+        - organization_id: Single organization ID (fallback for non-agent users)
         - min_similarity: Minimum similarity score (0.0-1.0, default 0.7)
         """
+        travel_agent_id = request.query_params.get('travel_agent_id')
         org_id = request.query_params.get('organization_id') or request.query_params.get('organization')
         min_similarity = float(request.query_params.get('min_similarity', 0.7))
 
-        # Get organization context
-        if not org_id and request.user.user_type != 'ADMIN':
-            if hasattr(request.user, 'organization'):
-                org_id = request.user.organization.id
-            else:
-                return Response(
-                    {'error': 'Organization parameter required'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-        # Get distinct consultant text values from bookings
+        # Get bookings - consultants work across all organizations for a travel agent
         bookings_query = Booking.objects.filter(
             travel_consultant_text__isnull=False
         ).exclude(travel_consultant_text='')
 
-        if org_id:
+        if travel_agent_id:
+            # Search across the travel agent's organization AND all their customer organizations
+            from apps.organizations.models import Organization
+            bookings_query = bookings_query.filter(
+                Q(organization_id=travel_agent_id) |  # Agent's own bookings
+                Q(organization__travel_agent_id=travel_agent_id)  # Customer bookings
+            )
+        elif org_id:
+            # Fallback to single organization
             bookings_query = bookings_query.filter(organization_id=org_id)
+        elif request.user.user_type != 'ADMIN':
+            # For non-admins, use their organization context
+            if hasattr(request.user, 'organization'):
+                org_id = request.user.organization.id
+                bookings_query = bookings_query.filter(organization_id=org_id)
+            else:
+                return Response(
+                    {'error': 'Organization or travel agent parameter required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
         # Group by consultant text and count bookings
         consultant_texts = bookings_query.values('travel_consultant_text').annotate(
@@ -541,11 +551,13 @@ class ConsultantMergeViewSet(viewsets.ViewSet):
         - primary_text: The text to keep as standard
         - merge_texts: List of text variations to standardize
         - chosen_text: Optional custom text to use (overrides primary_text)
-        - organization_id: Organization context
+        - travel_agent_id: Travel agent context (searches across all their customers)
+        - organization_id: Single organization context (fallback)
         """
         primary_text = request.data.get('primary_text')
         merge_texts = request.data.get('merge_texts', [])
         chosen_text = request.data.get('chosen_text', '')
+        travel_agent_id = request.data.get('travel_agent_id')
         org_id = request.data.get('organization_id')
 
         if not primary_text or not merge_texts:
@@ -564,7 +576,14 @@ class ConsultantMergeViewSet(viewsets.ViewSet):
                     travel_consultant_text__in=merge_texts
                 )
 
-                if org_id:
+                # Apply same filtering logic as find_duplicates
+                if travel_agent_id:
+                    from apps.organizations.models import Organization
+                    bookings_to_update = bookings_to_update.filter(
+                        Q(organization_id=travel_agent_id) |
+                        Q(organization__travel_agent_id=travel_agent_id)
+                    )
+                elif org_id:
                     bookings_to_update = bookings_to_update.filter(organization_id=org_id)
 
                 # Track what we're changing
