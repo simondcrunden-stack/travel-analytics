@@ -47,10 +47,10 @@ class TravellerMergeViewSet(viewsets.ViewSet):
         Find potential duplicate travellers within an organization
 
         Query params:
-        - organization: Organization ID (required for org admins, optional for system admins)
+        - organization_id or organization: Organization ID (required for org admins, optional for system admins)
         - min_similarity: Minimum name similarity score (0.0-1.0, default 0.7)
         """
-        org_id = request.query_params.get('organization')
+        org_id = request.query_params.get('organization_id') or request.query_params.get('organization')
         min_similarity = float(request.query_params.get('min_similarity', 0.7))
 
         # Get organization context
