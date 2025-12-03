@@ -347,16 +347,18 @@ const displayedConsultants = computed(() => {
     // Flatten duplicate groups with group index and similarity
     const flattened = []
     duplicateGroups.value.forEach((group, groupIndex) => {
-      // Add primary
+      // Add primary - normalize 'text' field to 'name'
       flattened.push({
-        ...group.primary,
+        name: group.primary.text,
+        booking_count: group.primary.booking_count,
         groupIndex,
         similarity: 1.0
       })
-      // Add matches
+      // Add matches - normalize 'text' field to 'name'
       group.matches.forEach(match => {
         flattened.push({
-          ...match,
+          name: match.text,
+          booking_count: match.booking_count,
           groupIndex,
           similarity: match.similarity_score
         })
