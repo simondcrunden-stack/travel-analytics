@@ -363,8 +363,12 @@ const mergeOptions = ref({
 // Computed
 const mergeSelection = computed(() => {
   if (!selectedGroup.value || selectedGroupIndex.value === null) return []
-  const selectedIds = selectedMergeIds.value[selectedGroupIndex.value] || []
-  return selectedGroup.value.matches.filter(m => selectedIds.includes(m.id))
+  const selectedIds = selectedMergeIds.value[selectedGroupIndex.value]
+
+  // Ensure selectedIds is an array
+  const idsArray = Array.isArray(selectedIds) ? selectedIds : []
+
+  return selectedGroup.value.matches.filter(m => idsArray.includes(m.id))
 })
 
 const allRecordsInMerge = computed(() => {
