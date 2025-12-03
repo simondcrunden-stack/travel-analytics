@@ -612,12 +612,38 @@ class ConsultantMergeViewSet(viewsets.ViewSet):
                     summary=f"Standardized consultant text '{final_text}' across {updated_count} bookings (from {len(merge_texts)} variations)"
                 )
 
+                # Create standardization rules for each variation (auto-normalize future imports)
+                from apps.bookings.models import StandardizationRule
+                rules_created = 0
+                for merge_text in merge_texts:
+                    if merge_text != final_text:  # Don't create rule for text mapping to itself
+                        # Use get_or_create to avoid duplicates
+                        rule, created = StandardizationRule.objects.get_or_create(
+                            rule_type='CONSULTANT',
+                            source_text=merge_text,
+                            travel_agent_id=travel_agent_id if travel_agent_id else None,
+                            organization_id=org_id if (org_id and not travel_agent_id) else None,
+                            defaults={
+                                'target_text': final_text,
+                                'created_from_merge': merge_audit,
+                                'created_by': request.user,
+                                'is_active': True
+                            }
+                        )
+                        if created:
+                            rules_created += 1
+                        elif not created and rule.target_text != final_text:
+                            # Update existing rule if target has changed
+                            rule.target_text = final_text
+                            rule.save()
+
                 return Response({
                     'success': True,
                     'merged_count': len(merge_texts),
                     'bookings_updated': updated_count,
                     'final_text': final_text,
-                    'audit_id': str(merge_audit.id)
+                    'audit_id': str(merge_audit.id),
+                    'rules_created': rules_created
                 })
 
         except Exception as e:
@@ -650,6 +676,13 @@ class ConsultantMergeViewSet(viewsets.ViewSet):
                     Booking.objects.filter(id__in=booking_ids).update(travel_consultant_text=text)
                     restored_count += len(booking_ids)
 
+                # Deactivate standardization rules created from this merge
+                from apps.bookings.models import StandardizationRule
+                deactivated_rules = StandardizationRule.objects.filter(
+                    created_from_merge=merge_audit,
+                    is_active=True
+                ).update(is_active=False)
+
                 # Mark as undone
                 merge_audit.status = 'UNDONE'
                 merge_audit.undone_at = timezone.now()
@@ -672,3 +705,215 @@ class ConsultantMergeViewSet(viewsets.ViewSet):
                 {'error': f'Undo failed: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+class StandardizationRuleViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    ViewSet for viewing and managing standardization rules.
+
+    These rules are auto-created during merge operations and applied during data imports
+    to prevent duplicates from being created.
+
+    Endpoints:
+    - GET /data-management/standardization-rules/ - List all rules (filtered by context)
+    - GET /data-management/standardization-rules/{id}/ - Get specific rule
+    - PATCH /data-management/standardization-rules/{id}/ - Update rule (activate/deactivate)
+    - DELETE /data-management/standardization-rules/{id}/ - Delete rule
+    - POST /data-management/standardization-rules/bulk_activate/ - Activate multiple rules
+    - POST /data-management/standardization-rules/bulk_deactivate/ - Deactivate multiple rules
+    - POST /data-management/standardization-rules/bulk_delete/ - Delete multiple rules
+    """
+    from apps.bookings.models import StandardizationRule
+    queryset = StandardizationRule.objects.all()
+    serializer_class = None  # We'll create a simple serializer inline
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        """Filter rules by user's context"""
+        queryset = super().get_queryset()
+
+        # Filter by rule type
+        rule_type = self.request.query_params.get('rule_type')
+        if rule_type:
+            queryset = queryset.filter(rule_type=rule_type)
+
+        # Filter by active status
+        is_active = self.request.query_params.get('is_active')
+        if is_active is not None:
+            queryset = queryset.filter(is_active=is_active.lower() == 'true')
+
+        # Filter by travel agent
+        travel_agent_id = self.request.query_params.get('travel_agent_id')
+        if travel_agent_id:
+            queryset = queryset.filter(travel_agent_id=travel_agent_id)
+
+        # Filter by organization
+        org_id = self.request.query_params.get('organization_id')
+        if org_id:
+            queryset = queryset.filter(organization_id=org_id)
+
+        return queryset.select_related('travel_agent', 'organization', 'created_by', 'created_from_merge')
+
+    def list(self, request):
+        """List standardization rules with filtering"""
+        queryset = self.get_queryset()
+
+        # Serialize manually since we don't have a formal serializer
+        rules_data = []
+        for rule in queryset:
+            rules_data.append({
+                'id': str(rule.id),
+                'rule_type': rule.rule_type,
+                'rule_type_display': rule.get_rule_type_display(),
+                'source_text': rule.source_text,
+                'target_text': rule.target_text,
+                'travel_agent': {
+                    'id': str(rule.travel_agent.id),
+                    'name': rule.travel_agent.name
+                } if rule.travel_agent else None,
+                'organization': {
+                    'id': str(rule.organization.id),
+                    'name': rule.organization.name
+                } if rule.organization else None,
+                'is_active': rule.is_active,
+                'created_at': rule.created_at.isoformat(),
+                'created_by': rule.created_by.email if rule.created_by else None,
+                'application_count': rule.application_count,
+                'last_applied_at': rule.last_applied_at.isoformat() if rule.last_applied_at else None,
+                'created_from_merge': {
+                    'id': str(rule.created_from_merge.id),
+                    'summary': rule.created_from_merge.summary
+                } if rule.created_from_merge else None,
+            })
+
+        return Response({'results': rules_data})
+
+    def retrieve(self, request, pk=None):
+        """Get a specific standardization rule"""
+        try:
+            rule = self.get_queryset().get(id=pk)
+
+            return Response({
+                'id': str(rule.id),
+                'rule_type': rule.rule_type,
+                'rule_type_display': rule.get_rule_type_display(),
+                'source_text': rule.source_text,
+                'target_text': rule.target_text,
+                'travel_agent': {
+                    'id': str(rule.travel_agent.id),
+                    'name': rule.travel_agent.name
+                } if rule.travel_agent else None,
+                'organization': {
+                    'id': str(rule.organization.id),
+                    'name': rule.organization.name
+                } if rule.organization else None,
+                'is_active': rule.is_active,
+                'created_at': rule.created_at.isoformat(),
+                'created_by': rule.created_by.email if rule.created_by else None,
+                'application_count': rule.application_count,
+                'last_applied_at': rule.last_applied_at.isoformat() if rule.last_applied_at else None,
+                'created_from_merge': {
+                    'id': str(rule.created_from_merge.id),
+                    'summary': rule.created_from_merge.summary
+                } if rule.created_from_merge else None,
+            })
+        except self.queryset.model.DoesNotExist:
+            return Response(
+                {'error': 'Rule not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    def partial_update(self, request, pk=None):
+        """Update a standardization rule (typically to activate/deactivate)"""
+        try:
+            rule = self.get_queryset().get(id=pk)
+
+            # Only allow updating is_active and target_text
+            if 'is_active' in request.data:
+                rule.is_active = request.data['is_active']
+
+            if 'target_text' in request.data:
+                rule.target_text = request.data['target_text']
+
+            rule.save()
+
+            return Response({
+                'success': True,
+                'rule': {
+                    'id': str(rule.id),
+                    'is_active': rule.is_active,
+                    'target_text': rule.target_text
+                }
+            })
+        except self.queryset.model.DoesNotExist:
+            return Response(
+                {'error': 'Rule not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    def destroy(self, request, pk=None):
+        """Delete a standardization rule"""
+        try:
+            rule = self.get_queryset().get(id=pk)
+            rule.delete()
+
+            return Response({'success': True})
+        except self.queryset.model.DoesNotExist:
+            return Response(
+                {'error': 'Rule not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    @action(detail=False, methods=['post'])
+    def bulk_activate(self, request):
+        """Activate multiple rules"""
+        rule_ids = request.data.get('rule_ids', [])
+
+        if not rule_ids:
+            return Response(
+                {'error': 'rule_ids is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        updated = self.get_queryset().filter(id__in=rule_ids).update(is_active=True)
+
+        return Response({
+            'success': True,
+            'updated_count': updated
+        })
+
+    @action(detail=False, methods=['post'])
+    def bulk_deactivate(self, request):
+        """Deactivate multiple rules"""
+        rule_ids = request.data.get('rule_ids', [])
+
+        if not rule_ids:
+            return Response(
+                {'error': 'rule_ids is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        updated = self.get_queryset().filter(id__in=rule_ids).update(is_active=False)
+
+        return Response({
+            'success': True,
+            'updated_count': updated
+        })
+
+    @action(detail=False, methods=['post'])
+    def bulk_delete(self, request):
+        """Delete multiple rules"""
+        rule_ids = request.data.get('rule_ids', [])
+
+        if not rule_ids:
+            return Response(
+                {'error': 'rule_ids is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        deleted_count, _ = self.get_queryset().filter(id__in=rule_ids).delete()
+
+        return Response({
+            'success': True,
+            'deleted_count': deleted_count
+        })

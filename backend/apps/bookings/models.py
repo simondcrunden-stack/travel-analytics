@@ -2916,3 +2916,106 @@ class MergeAudit(models.Model):
 
     def __str__(self):
         return f"{self.get_merge_type_display()} merge by {self.performed_by} on {self.created_at.strftime('%Y-%m-%d')}"
+
+
+class StandardizationRule(models.Model):
+    """
+    Stores text standardization rules created from merge operations.
+    Auto-applied during data import to prevent duplicates.
+    """
+    RULE_TYPE_CHOICES = [
+        ('CONSULTANT', 'Travel Consultant'),
+        ('SERVICE_FEE', 'Service Fee'),
+        ('TRAVELLER', 'Traveller'),
+        ('ORGANIZATION', 'Organization'),
+    ]
+
+    rule_type = models.CharField(
+        max_length=20,
+        choices=RULE_TYPE_CHOICES,
+        db_index=True,
+        help_text='Type of entity this rule applies to'
+    )
+    source_text = models.CharField(
+        max_length=500,
+        help_text='The variation/incorrect text to standardize'
+    )
+    target_text = models.CharField(
+        max_length=500,
+        help_text='The standard/correct text to use'
+    )
+
+    # Context filters - rules apply within specific scope
+    travel_agent = models.ForeignKey(
+        'organizations.Organization',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='standardization_rules_agent',
+        help_text='Travel agent context (for consultant rules)'
+    )
+    organization = models.ForeignKey(
+        'organizations.Organization',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='standardization_rules_org',
+        help_text='Organization context (for other rules)'
+    )
+
+    # Audit trail
+    created_from_merge = models.ForeignKey(
+        MergeAudit,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='standardization_rules',
+        help_text='Merge operation that created this rule'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='created_standardization_rules'
+    )
+
+    # Status
+    is_active = models.BooleanField(
+        default=True,
+        help_text='Whether this rule is currently applied during imports'
+    )
+    last_applied_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text='Last time this rule was applied during import'
+    )
+    application_count = models.IntegerField(
+        default=0,
+        help_text='Number of times this rule has been applied'
+    )
+
+    class Meta:
+        db_table = 'standardization_rules'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['rule_type', 'is_active']),
+            models.Index(fields=['travel_agent', 'rule_type']),
+            models.Index(fields=['organization', 'rule_type']),
+            models.Index(fields=['source_text']),
+        ]
+        # Prevent duplicate rules for same source->target mapping
+        unique_together = [
+            ('rule_type', 'source_text', 'travel_agent'),
+            ('rule_type', 'source_text', 'organization'),
+        ]
+
+    def __str__(self):
+        context = self.travel_agent or self.organization or "Global"
+        return f"{self.get_rule_type_display()}: '{self.source_text}' → '{self.target_text}' ({context})"
+
+    def apply_to_text(self, text):
+        """Apply this rule to normalize text"""
+        if self.is_active and text == self.source_text:
+            return self.target_text
+        return text

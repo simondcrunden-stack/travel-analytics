@@ -13,7 +13,8 @@ from decimal import Decimal
 from .models import (
     Traveller, Booking, AirBooking, AirSegment,
     AccommodationBooking, CarHireBooking, Invoice, ServiceFee, BookingTransaction, BookingAuditLog,
-    PreferredAirline, PreferredHotel, PreferredCarHire, ProductTypeMapping, OtherProduct
+    PreferredAirline, PreferredHotel, PreferredCarHire, ProductTypeMapping, OtherProduct,
+    MergeAudit, StandardizationRule
 )
 
 
@@ -1998,3 +1999,340 @@ class OtherProductAdmin(admin.ModelAdmin):
                 obj.amount_base
             )
         return format_html('{} {}', obj.currency, amount_str)
+
+
+# ============================================================================
+# MERGE AUDIT ADMIN
+# ============================================================================
+
+@admin.register(MergeAudit)
+class MergeAuditAdmin(admin.ModelAdmin):
+    """
+    Admin interface for viewing merge audit records.
+    Read-only view of all data merge operations.
+    """
+
+    list_display = [
+        'created_at_display',
+        'merge_type_badge',
+        'summary_short',
+        'merged_count',
+        'status_badge',
+        'performed_by_display',
+    ]
+
+    list_filter = [
+        'merge_type',
+        'status',
+        'created_at',
+        'organization',
+    ]
+
+    search_fields = [
+        'summary',
+        'chosen_name',
+        'performed_by__email',
+        'undone_by__email',
+    ]
+
+    date_hierarchy = 'created_at'
+
+    readonly_fields = [
+        'id',
+        'merge_type',
+        'performed_by',
+        'organization',
+        'primary_content_type',
+        'primary_object_id',
+        'merged_record_ids',
+        'merged_records_snapshot',
+        'relationship_updates',
+        'chosen_name',
+        'summary',
+        'status',
+        'created_at',
+        'undone_at',
+        'undone_by',
+    ]
+
+    fieldsets = (
+        ('Merge Information', {
+            'fields': (
+                'merge_type',
+                'summary',
+                'chosen_name',
+                'merged_count',
+                'status',
+            )
+        }),
+        ('Primary Record', {
+            'fields': (
+                'primary_content_type',
+                'primary_object_id',
+            ),
+            'classes': ('collapse',),
+        }),
+        ('Merged Records', {
+            'fields': (
+                'merged_record_ids',
+                'merged_records_snapshot',
+                'relationship_updates',
+            ),
+            'classes': ('collapse',),
+        }),
+        ('Audit Trail', {
+            'fields': (
+                'performed_by',
+                'organization',
+                'created_at',
+                'undone_by',
+                'undone_at',
+            )
+        }),
+    )
+
+    # Make everything read-only
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        # Only superusers can delete merge audits
+        return request.user.is_superuser
+
+    @admin.display(description='Created', ordering='created_at')
+    def created_at_display(self, obj):
+        """Display timestamp in readable format"""
+        return obj.created_at.strftime('%Y-%m-%d %H:%M')
+
+    @admin.display(description='Type')
+    def merge_type_badge(self, obj):
+        """Display merge type with color-coded badge"""
+        colors = {
+            'TRAVELLER': '#4F46E5',  # Indigo
+            'CONSULTANT': '#2563EB',  # Blue
+            'ORGANIZATION': '#7C3AED',  # Purple
+            'SERVICE_FEE': '#059669',  # Green
+        }
+        color = colors.get(obj.merge_type, '#6B7280')
+
+        return format_html(
+            '<span style="background-color: {}; color: white; padding: 3px 8px; '
+            'border-radius: 3px; font-size: 11px; font-weight: bold;">{}</span>',
+            color,
+            obj.get_merge_type_display()
+        )
+
+    @admin.display(description='Summary')
+    def summary_short(self, obj):
+        """Display truncated summary"""
+        if len(obj.summary) > 100:
+            return obj.summary[:97] + '...'
+        return obj.summary
+
+    @admin.display(description='Records')
+    def merged_count(self, obj):
+        """Display count of merged records"""
+        return len(obj.merged_record_ids) if obj.merged_record_ids else 0
+
+    @admin.display(description='Status')
+    def status_badge(self, obj):
+        """Display status with color-coded badge"""
+        colors = {
+            'COMPLETED': '#10B981',  # Green
+            'UNDONE': '#F59E0B',  # Amber
+        }
+        color = colors.get(obj.status, '#6B7280')
+
+        return format_html(
+            '<span style="background-color: {}; color: white; padding: 3px 10px; '
+            'border-radius: 3px; font-size: 11px; font-weight: bold;">{}</span>',
+            color,
+            obj.status
+        )
+
+    @admin.display(description='Performed By')
+    def performed_by_display(self, obj):
+        """Display user with link"""
+        if obj.performed_by:
+            url = reverse('admin:users_user_change', args=[obj.performed_by.pk])
+            return format_html('<a href="{}">{}</a>', url, obj.performed_by.email)
+        return '-'
+
+
+# ============================================================================
+# STANDARDIZATION RULE ADMIN
+# ============================================================================
+
+@admin.register(StandardizationRule)
+class StandardizationRuleAdmin(admin.ModelAdmin):
+    """
+    Admin interface for managing standardization rules.
+    These rules are auto-applied during data imports to prevent duplicates.
+    """
+
+    list_display = [
+        'rule_type_badge',
+        'source_text_display',
+        'arrow',
+        'target_text_display',
+        'context_display',
+        'is_active_badge',
+        'application_count',
+        'created_at_display',
+    ]
+
+    list_filter = [
+        'rule_type',
+        'is_active',
+        'travel_agent',
+        'organization',
+        'created_at',
+    ]
+
+    search_fields = [
+        'source_text',
+        'target_text',
+        'travel_agent__name',
+        'organization__name',
+        'created_by__email',
+    ]
+
+    date_hierarchy = 'created_at'
+
+    readonly_fields = [
+        'created_from_merge',
+        'created_by',
+        'created_at',
+        'last_applied_at',
+        'application_count',
+    ]
+
+    fieldsets = (
+        ('Rule Definition', {
+            'fields': (
+                'rule_type',
+                'source_text',
+                'target_text',
+            )
+        }),
+        ('Context', {
+            'fields': (
+                'travel_agent',
+                'organization',
+            ),
+            'description': 'Define the scope where this rule applies. '
+                          'Use travel_agent for consultant rules, organization for others.'
+        }),
+        ('Status', {
+            'fields': (
+                'is_active',
+                'application_count',
+                'last_applied_at',
+            )
+        }),
+        ('Audit Trail', {
+            'fields': (
+                'created_from_merge',
+                'created_by',
+                'created_at',
+            ),
+            'classes': ('collapse',),
+        }),
+    )
+
+    @admin.display(description='Type')
+    def rule_type_badge(self, obj):
+        """Display rule type with color-coded badge"""
+        colors = {
+            'CONSULTANT': '#2563EB',  # Blue
+            'SERVICE_FEE': '#059669',  # Green
+            'TRAVELLER': '#4F46E5',  # Indigo
+            'ORGANIZATION': '#7C3AED',  # Purple
+        }
+        color = colors.get(obj.rule_type, '#6B7280')
+
+        return format_html(
+            '<span style="background-color: {}; color: white; padding: 3px 8px; '
+            'border-radius: 3px; font-size: 11px; font-weight: bold;">{}</span>',
+            color,
+            obj.get_rule_type_display()
+        )
+
+    @admin.display(description='Source')
+    def source_text_display(self, obj):
+        """Display source text"""
+        if len(obj.source_text) > 30:
+            return format_html(
+                '<span title="{}">{}</span>',
+                obj.source_text,
+                obj.source_text[:27] + '...'
+            )
+        return obj.source_text
+
+    @admin.display(description='')
+    def arrow(self, obj):
+        """Display arrow separator"""
+        return format_html('<span style="color: #9CA3AF;">→</span>')
+
+    @admin.display(description='Target')
+    def target_text_display(self, obj):
+        """Display target text"""
+        if len(obj.target_text) > 30:
+            return format_html(
+                '<strong title="{}">{}</strong>',
+                obj.target_text,
+                obj.target_text[:27] + '...'
+            )
+        return format_html('<strong>{}</strong>', obj.target_text)
+
+    @admin.display(description='Context')
+    def context_display(self, obj):
+        """Display context (travel agent or organization)"""
+        if obj.travel_agent:
+            return format_html(
+                '<span style="color: #2563EB;">{}</span>',
+                obj.travel_agent.name
+            )
+        elif obj.organization:
+            return format_html(
+                '<span style="color: #7C3AED;">{}</span>',
+                obj.organization.name
+            )
+        return format_html('<em style="color: #9CA3AF;">Global</em>')
+
+    @admin.display(description='Active')
+    def is_active_badge(self, obj):
+        """Display active status with badge"""
+        if obj.is_active:
+            return format_html(
+                '<span style="background-color: #10B981; color: white; padding: 3px 10px; '
+                'border-radius: 3px; font-size: 11px; font-weight: bold;">Active</span>'
+            )
+        return format_html(
+            '<span style="background-color: #6B7280; color: white; padding: 3px 10px; '
+            'border-radius: 3px; font-size: 11px; font-weight: bold;">Inactive</span>'
+        )
+
+    @admin.display(description='Created', ordering='created_at')
+    def created_at_display(self, obj):
+        """Display creation date"""
+        return obj.created_at.strftime('%Y-%m-%d')
+
+    # =============================================================================
+    # ACTIONS
+    # =============================================================================
+
+    @admin.action(description='Activate selected rules')
+    def activate_rules(self, request, queryset):
+        updated = queryset.update(is_active=True)
+        self.message_user(request, f'{updated} rule(s) activated.')
+
+    @admin.action(description='Deactivate selected rules')
+    def deactivate_rules(self, request, queryset):
+        updated = queryset.update(is_active=False)
+        self.message_user(request, f'{updated} rule(s) deactivated.')
+
+    actions = [activate_rules, deactivate_rules]
