@@ -982,13 +982,13 @@ class BookingTransactionInline(GenericTabularInline):
 
 @admin.register(Traveller)
 class TravellerAdmin(admin.ModelAdmin):
-    list_display = ['first_name', 'last_name', 'email', 'organization', 'employee_id', 'is_active']
+    list_display = ['name', 'email', 'organization', 'employee_id', 'is_active']
     list_filter = ['organization', 'is_active', 'department']
-    search_fields = ['first_name', 'last_name', 'email', 'employee_id']
-    
+    search_fields = ['name', 'email', 'employee_id']
+
     fieldsets = (
         ('Personal Information', {
-            'fields': ('first_name', 'last_name', 'email', 'user')
+            'fields': ('name', 'email', 'user')
         }),
         ('Organization', {
             'fields': ('organization', 'employee_id', 'department', 'cost_center')
