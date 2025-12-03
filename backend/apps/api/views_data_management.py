@@ -378,15 +378,50 @@ class TravellerMergeViewSet(viewsets.ViewSet):
             booking_count=Count('bookings')
         ).order_by('name')
 
+        # Get traveller IDs for audit lookup
+        traveller_ids = [str(t.id) for t in travellers]
+
+        # Get most recent merge audit for each traveller
+        from apps.bookings.models import MergeAudit
+        recent_merges = MergeAudit.objects.filter(
+            merge_type='TRAVELLER',
+            status='COMPLETED',
+            primary_object_id__in=traveller_ids
+        ).order_by('primary_object_id', '-created_at').distinct('primary_object_id')
+
+        # Build a dict of audit info by traveller ID
+        audit_map = {}
+        for audit in recent_merges:
+            # For travellers, we need to get the names of merged travellers from snapshot
+            merged_names = []
+            if audit.merged_records_snapshot:
+                for traveller_id, snapshot in audit.merged_records_snapshot.items():
+                    if 'name' in snapshot:
+                        merged_names.append(snapshot['name'])
+
+            audit_map[audit.primary_object_id] = {
+                'audit_id': str(audit.id),
+                'merged_at': audit.created_at.isoformat(),
+                'performed_by': audit.performed_by.get_full_name() if audit.performed_by else 'Unknown',
+                'merged_traveller_names': merged_names,
+                'chosen_name': audit.chosen_name
+            }
+
         results = []
         for traveller in travellers:
-            results.append({
+            traveller_data = {
                 'id': str(traveller.id),
                 'name': traveller.name,
                 'employee_id': traveller.employee_id,
                 'business_unit': traveller.department,  # department field maps to business_unit in UI
                 'booking_count': traveller.booking_count
-            })
+            }
+
+            # Add audit info if available
+            if str(traveller.id) in audit_map:
+                traveller_data['last_merge'] = audit_map[str(traveller.id)]
+
+            results.append(traveller_data)
 
         return Response({
             'travellers': results
