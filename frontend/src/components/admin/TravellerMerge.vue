@@ -4,51 +4,8 @@
     <div class="mb-6">
       <h2 class="text-xl font-semibold text-gray-900">Traveller Merge</h2>
       <p class="mt-1 text-sm text-gray-600">
-        Find and merge duplicate traveller records within your organization
+        Find and merge duplicate traveller records within the selected organization
       </p>
-    </div>
-
-    <!-- Organization/Agent Filters -->
-    <div class="mb-6 bg-gray-50 border border-gray-200 rounded-lg p-4">
-      <h3 class="text-sm font-medium text-gray-900 mb-3">Filter by Organization</h3>
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <!-- Travel Agent Selection (Global Admin only) -->
-        <div v-if="userType === 'ADMIN'">
-          <label class="block text-sm font-medium text-gray-700 mb-2">Travel Agent</label>
-          <select
-            v-model="selectedTravelAgent"
-            @change="onTravelAgentChange"
-            class="block w-full pl-3 pr-10 py-2 text-base border border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md bg-white"
-          >
-            <option value="">All Travel Agents</option>
-            <option
-              v-for="agent in travelAgents"
-              :key="agent.id"
-              :value="agent.id"
-            >
-              {{ agent.name }}
-            </option>
-          </select>
-        </div>
-
-        <!-- Organization Selection -->
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">Organization</label>
-          <select
-            v-model="selectedOrganization"
-            class="block w-full pl-3 pr-10 py-2 text-base border border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md bg-white"
-          >
-            <option value="">Select an organization</option>
-            <option
-              v-for="org in organizations"
-              :key="org.id"
-              :value="org.id"
-            >
-              {{ org.name }}
-            </option>
-          </select>
-        </div>
-      </div>
     </div>
 
     <!-- Controls -->
@@ -391,17 +348,17 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed } from 'vue'
 import api from '@/services/api'
 
-const emit = defineEmits(['duplicates-updated'])
+const props = defineProps({
+  selectedOrganization: {
+    type: String,
+    required: true
+  }
+})
 
-// User and organization state
-const userType = ref('')
-const travelAgents = ref([])
-const organizations = ref([])
-const selectedTravelAgent = ref('')
-const selectedOrganization = ref('')
+const emit = defineEmits(['duplicates-updated'])
 
 // State
 const duplicateGroups = ref([])
@@ -446,48 +403,8 @@ const availableEmployeeIds = computed(() => {
 })
 
 // Methods
-const loadUserInfo = async () => {
-  try {
-    const response = await api.get('/users/me/')
-    userType.value = response.data.user_type
-  } catch (err) {
-    console.error('Error loading user info:', err)
-  }
-}
-
-const loadTravelAgents = async () => {
-  try {
-    const response = await api.get('/organizations/', {
-      params: { org_type: 'AGENT' }
-    })
-    travelAgents.value = response.data.results || response.data || []
-  } catch (err) {
-    console.error('Error loading travel agents:', err)
-  }
-}
-
-const loadOrganizations = async () => {
-  try {
-    const params = {}
-    if (selectedTravelAgent.value) {
-      params.travel_agent = selectedTravelAgent.value
-      params.org_type = 'CUSTOMER'
-    }
-
-    const response = await api.get('/organizations/', { params })
-    organizations.value = response.data.results || response.data || []
-  } catch (err) {
-    console.error('Error loading organizations:', err)
-  }
-}
-
-const onTravelAgentChange = () => {
-  selectedOrganization.value = ''
-  loadOrganizations()
-}
-
 const loadDuplicates = async () => {
-  if (!selectedOrganization.value) {
+  if (!props.selectedOrganization) {
     error.value = 'Please select an organization first.'
     return
   }
@@ -499,7 +416,7 @@ const loadDuplicates = async () => {
     const response = await api.get('/data-management/traveller-merge/find_duplicates/', {
       params: {
         min_similarity: minSimilarity.value,
-        organization_id: selectedOrganization.value
+        organization_id: props.selectedOrganization
       }
     })
 
@@ -598,17 +515,4 @@ const formatDate = (dateString) => {
     day: 'numeric'
   })
 }
-
-// Load initial data on mount
-onMounted(async () => {
-  await loadUserInfo()
-
-  // Load travel agents if user is global admin
-  if (userType.value === 'ADMIN') {
-    await loadTravelAgents()
-  }
-
-  // Load organizations
-  await loadOrganizations()
-})
 </script>
