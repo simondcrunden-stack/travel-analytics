@@ -337,7 +337,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import axios from 'axios'
+import api from '@/services/api'
 
 const emit = defineEmits(['duplicates-updated'])
 
@@ -385,7 +385,7 @@ const loadDuplicates = async () => {
   error.value = null
 
   try {
-    const response = await axios.get('/api/data-management/traveller-merge/find_duplicates/', {
+    const response = await api.get('/data-management/traveller-merge/find_duplicates/', {
       params: {
         min_similarity: minSimilarity.value
       }
@@ -444,7 +444,7 @@ const confirmMerge = async () => {
       ? mergeOptions.value.customName
       : mergeOptions.value.chosenName
 
-    const response = await axios.post('/api/data-management/traveller-merge/merge/', {
+    const response = await api.post('/data-management/traveller-merge/merge/', {
       primary_id: selectedGroup.value.primary.id,
       merge_ids: mergeSelection.value.map(m => m.id),
       chosen_name: chosenName,
