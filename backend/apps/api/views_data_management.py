@@ -1314,15 +1314,50 @@ class OrganizationMergeViewSet(viewsets.ViewSet):
             booking_count=Count('bookings')
         ).order_by('name')
 
+        # Get organization IDs for audit lookup
+        org_ids = [str(o.id) for o in organizations]
+
+        # Get most recent merge audit for each organization
+        from apps.bookings.models import MergeAudit
+        recent_merges = MergeAudit.objects.filter(
+            merge_type='ORGANIZATION',
+            status='COMPLETED',
+            primary_object_id__in=org_ids
+        ).order_by('primary_object_id', '-created_at').distinct('primary_object_id')
+
+        # Build a dict of audit info by organization ID
+        audit_map = {}
+        for audit in recent_merges:
+            # For organizations, get names from snapshot
+            merged_names = []
+            if audit.merged_records_snapshot:
+                for org_id, snapshot in audit.merged_records_snapshot.items():
+                    if 'name' in snapshot:
+                        merged_names.append(snapshot['name'])
+
+            audit_map[audit.primary_object_id] = {
+                'audit_id': str(audit.id),
+                'merged_at': audit.created_at.isoformat(),
+                'performed_by': audit.performed_by.get_full_name() if audit.performed_by else 'Unknown',
+                'merged_org_names': merged_names,
+                'chosen_name': audit.chosen_name
+            }
+
         results = []
         for org in organizations:
-            results.append({
+            org_data = {
                 'id': str(org.id),
                 'name': org.name,
                 'code': org.code,
                 'traveller_count': org.traveller_count,
                 'booking_count': org.booking_count
-            })
+            }
+
+            # Add audit info if available
+            if str(org.id) in audit_map:
+                org_data['last_merge'] = audit_map[str(org.id)]
+
+            results.append(org_data)
 
         return Response({
             'organizations': results
@@ -1443,11 +1478,16 @@ class ServiceFeeMergeViewSet(viewsets.ViewSet):
         # Use chosen description if provided, otherwise use primary
         final_desc = chosen_desc if chosen_desc else primary_desc
 
+        # Build list of all descriptions to update - include primary if it differs from final
+        descs_to_update = list(merge_descs)
+        if primary_desc != final_desc:
+            descs_to_update.append(primary_desc)
+
         try:
             with transaction.atomic():
-                # Find all service fees with the merge descriptions
+                # Find all service fees with the descriptions to be merged
                 fees_to_update = ServiceFee.objects.filter(
-                    description__in=merge_descs
+                    description__in=descs_to_update
                 )
 
                 # Apply filtering
@@ -1461,7 +1501,7 @@ class ServiceFeeMergeViewSet(viewsets.ViewSet):
 
                 # Track what we're changing
                 snapshot = {}
-                for desc in merge_descs:
+                for desc in descs_to_update:
                     matching_fees = fees_to_update.filter(description=desc)
                     snapshot[desc] = {
                         'fee_count': matching_fees.count(),
@@ -1478,7 +1518,7 @@ class ServiceFeeMergeViewSet(viewsets.ViewSet):
                     organization_id=org_id if org_id else None,
                     primary_content_type=ContentType.objects.get_for_model(ServiceFee),
                     primary_object_id=primary_desc,
-                    merged_record_ids=merge_descs,
+                    merged_record_ids=descs_to_update,  # Include all descriptions that were updated
                     merged_records_snapshot=snapshot,
                     relationship_updates={'service_fees_updated': updated_count},
                     chosen_name=final_desc,
@@ -1556,6 +1596,43 @@ class ServiceFeeMergeViewSet(viewsets.ViewSet):
             count=Count('id')
         ).order_by('description')
 
+        # Get all descriptions for audit lookup
+        desc_list = [item['description'] for item in descriptions]
+
+        # Get most recent merge audit for each description
+        from apps.bookings.models import MergeAudit
+        recent_merges = MergeAudit.objects.filter(
+            merge_type='SERVICE_FEE',
+            status='COMPLETED',
+            chosen_name__in=desc_list
+        ).order_by('chosen_name', '-created_at').distinct('chosen_name')
+
+        # Build a dict of audit info by description
+        audit_map = {}
+        for audit in recent_merges:
+            audit_map[audit.chosen_name] = {
+                'audit_id': str(audit.id),
+                'merged_at': audit.created_at.isoformat(),
+                'performed_by': audit.performed_by.get_full_name() if audit.performed_by else 'Unknown',
+                'merged_items': audit.merged_record_ids,  # List of descriptions that were merged
+                'primary_text': audit.primary_object_id,
+                'chosen_name': audit.chosen_name
+            }
+
+        # Add audit info to descriptions
+        results = []
+        for item in descriptions:
+            desc_data = {
+                'description': item['description'],
+                'count': item['count']
+            }
+
+            # Add audit info if available
+            if item['description'] in audit_map:
+                desc_data['last_merge'] = audit_map[item['description']]
+
+            results.append(desc_data)
+
         return Response({
-            'descriptions': list(descriptions)
+            'descriptions': results
         })

@@ -124,6 +124,15 @@
               <th v-if="showingDuplicates" scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Similarity
               </th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Last Merged
+              </th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Merged Items
+              </th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody class="bg-white divide-y divide-gray-200">
@@ -156,6 +165,31 @@
                 <div class="text-sm text-gray-600">
                   {{ desc.similarity ? (desc.similarity * 100).toFixed(0) + '%' : '100%' }}
                 </div>
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap">
+                <div v-if="desc.last_merge" class="text-xs">
+                  <div class="text-gray-900">{{ formatMergeDate(desc.last_merge.merged_at) }}</div>
+                  <div class="text-gray-500">by {{ desc.last_merge.performed_by }}</div>
+                </div>
+                <div v-else class="text-xs text-gray-400">—</div>
+              </td>
+              <td class="px-6 py-4">
+                <div v-if="desc.last_merge" class="text-xs text-gray-700">
+                  <div class="max-w-xs">
+                    {{ formatMergedItems(desc.last_merge) }}
+                  </div>
+                </div>
+                <div v-else class="text-xs text-gray-400">—</div>
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap">
+                <button
+                  v-if="desc.last_merge"
+                  @click="undoMerge(desc.last_merge.audit_id)"
+                  class="inline-flex items-center px-2 py-1 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50"
+                >
+                  <span class="mdi mdi-undo-variant mr-1"></span>
+                  Undo
+                </button>
               </td>
             </tr>
           </tbody>
@@ -512,6 +546,78 @@ const confirmMerge = async () => {
   } catch (err) {
     console.error('Error merging descriptions:', err)
     error.value = err.response?.data?.error || 'Failed to merge descriptions'
+  }
+}
+
+// Format merge date/time
+const formatMergeDate = (dateString) => {
+  if (!dateString) return ''
+  const date = new Date(dateString)
+  const now = new Date()
+  const diffMs = now - date
+  const diffMins = Math.floor(diffMs / 60000)
+  const diffHours = Math.floor(diffMs / 3600000)
+  const diffDays = Math.floor(diffMs / 86400000)
+
+  if (diffMins < 60) {
+    return diffMins <= 1 ? 'Just now' : `${diffMins}m ago`
+  } else if (diffHours < 24) {
+    return `${diffHours}h ago`
+  } else if (diffDays < 7) {
+    return `${diffDays}d ago`
+  } else {
+    return date.toLocaleDateString('en-AU', {
+      month: 'short',
+      day: 'numeric',
+      year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+    })
+  }
+}
+
+// Format merged items display
+const formatMergedItems = (mergeInfo) => {
+  if (!mergeInfo) return ''
+
+  const { primary_text, merged_items, chosen_name } = mergeInfo
+
+  // Build list of all items that were merged
+  const allItems = [primary_text, ...merged_items].filter((item, index, self) =>
+    item && self.indexOf(item) === index // Remove duplicates
+  )
+
+  // Sort so the chosen name isn't always first
+  const sortedItems = allItems.sort()
+
+  // Truncate if too long
+  const maxLength = 60
+  const display = sortedItems.join(', ')
+  if (display.length > maxLength) {
+    return `${display.substring(0, maxLength)}... → ${chosen_name}`
+  }
+
+  return `${display} → ${chosen_name}`
+}
+
+// Undo a merge
+const undoMerge = async (auditId) => {
+  if (!confirm('Are you sure you want to undo this merge? This will restore the original service fee descriptions.')) {
+    return
+  }
+
+  try {
+    loading.value = true
+    await api.post(`/data-management/service-fee-merge/${auditId}/undo/`)
+
+    alert('Merge successfully undone!')
+
+    // Reload data
+    await loadAllDescriptions()
+    emit('duplicates-updated')
+  } catch (err) {
+    console.error('Error undoing merge:', err)
+    error.value = err.response?.data?.error || 'Failed to undo merge'
+  } finally {
+    loading.value = false
   }
 }
 </script>

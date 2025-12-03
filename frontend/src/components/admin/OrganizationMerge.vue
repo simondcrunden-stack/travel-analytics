@@ -128,6 +128,15 @@
               <th v-if="showingDuplicates" scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Similarity
               </th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Last Merged
+              </th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Merged Items
+              </th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody class="bg-white divide-y divide-gray-200">
@@ -166,6 +175,31 @@
                 <div class="text-sm text-gray-600">
                   {{ org.similarity ? (org.similarity * 100).toFixed(0) + '%' : '100%' }}
                 </div>
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap">
+                <div v-if="org.last_merge" class="text-xs">
+                  <div class="text-gray-900">{{ formatMergeDate(org.last_merge.merged_at) }}</div>
+                  <div class="text-gray-500">by {{ org.last_merge.performed_by }}</div>
+                </div>
+                <div v-else class="text-xs text-gray-400">—</div>
+              </td>
+              <td class="px-6 py-4">
+                <div v-if="org.last_merge" class="text-xs text-gray-700">
+                  <div class="max-w-xs">
+                    {{ formatMergedOrganizationItems(org.last_merge) }}
+                  </div>
+                </div>
+                <div v-else class="text-xs text-gray-400">—</div>
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap">
+                <button
+                  v-if="org.last_merge"
+                  @click="undoMerge(org.last_merge.audit_id)"
+                  class="inline-flex items-center px-2 py-1 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50"
+                >
+                  <span class="mdi mdi-undo-variant mr-1"></span>
+                  Undo
+                </button>
               </td>
             </tr>
           </tbody>
@@ -520,6 +554,68 @@ const confirmMerge = async () => {
   } catch (err) {
     console.error('Error merging organizations:', err)
     error.value = err.response?.data?.error || 'Failed to merge organizations'
+  }
+}
+
+// Format merge date/time
+const formatMergeDate = (dateString) => {
+  if (!dateString) return ''
+  const date = new Date(dateString)
+  const now = new Date()
+  const diffMs = now - date
+  const diffMins = Math.floor(diffMs / 60000)
+  const diffHours = Math.floor(diffMs / 3600000)
+  const diffDays = Math.floor(diffMs / 86400000)
+
+  if (diffMins < 60) {
+    return diffMins <= 1 ? 'Just now' : `${diffMins}m ago`
+  } else if (diffHours < 24) {
+    return `${diffHours}h ago`
+  } else if (diffDays < 7) {
+    return `${diffDays}d ago`
+  } else {
+    return date.toLocaleDateString('en-AU', {
+      month: 'short',
+      day: 'numeric',
+      year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+    })
+  }
+}
+
+// Format merged organization items display
+const formatMergedOrganizationItems = (mergeInfo) => {
+  if (!mergeInfo) return ''
+
+  const { merged_org_names, chosen_name } = mergeInfo
+
+  if (!merged_org_names || merged_org_names.length === 0) {
+    return `Merged → ${chosen_name}`
+  }
+
+  // Show the names that were merged
+  return `${merged_org_names.join(', ')} → ${chosen_name}`
+}
+
+// Undo a merge
+const undoMerge = async (auditId) => {
+  if (!confirm('Are you sure you want to undo this merge? This will restore the original organization records.')) {
+    return
+  }
+
+  try {
+    loading.value = true
+    await api.post(`/data-management/organization-merge/${auditId}/undo/`)
+
+    alert('Merge successfully undone!')
+
+    // Reload data
+    await loadAllOrganizations()
+    emit('duplicates-updated')
+  } catch (err) {
+    console.error('Error undoing merge:', err)
+    error.value = err.response?.data?.error || 'Failed to undo merge'
+  } finally {
+    loading.value = false
   }
 }
 </script>
