@@ -72,8 +72,10 @@ class Traveller(models.Model):
             models.Index(fields=['organization', 'last_name', 'first_name']),
             models.Index(fields=['organization', 'is_active']),
             models.Index(fields=['organizational_node']),
+            models.Index(fields=['employee_id']),  # Add index for employee_id lookups
         ]
-        unique_together = [['organization', 'employee_id']]
+        # Removed unique_together constraint to allow duplicate employee_ids for data import
+        # Duplicates can be merged using the Data Management merge functionality
     
     def __str__(self):
         return f"{self.first_name} {self.last_name}"
