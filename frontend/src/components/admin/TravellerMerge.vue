@@ -119,10 +119,7 @@
                 Name
               </th>
               <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Email
-              </th>
-              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Department
+                Business Unit
               </th>
               <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Bookings
@@ -154,17 +151,14 @@
               </td>
               <td class="px-6 py-4 whitespace-nowrap">
                 <div class="text-sm font-medium text-gray-900">
-                  {{ traveller.first_name }} {{ traveller.last_name }}
+                  {{ traveller.name }}
                 </div>
                 <div v-if="traveller.employee_id" class="text-xs text-gray-500">
                   ID: {{ traveller.employee_id }}
                 </div>
               </td>
               <td class="px-6 py-4 whitespace-nowrap">
-                <div class="text-sm text-gray-900">{{ traveller.email || '-' }}</div>
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap">
-                <div class="text-sm text-gray-900">{{ traveller.department || '-' }}</div>
+                <div class="text-sm text-gray-900">{{ traveller.business_unit || '-' }}</div>
               </td>
               <td class="px-6 py-4 whitespace-nowrap">
                 <div class="text-sm text-gray-900">{{ traveller.booking_count || 0 }}</div>
@@ -218,12 +212,11 @@
                 />
                 <div class="flex-1">
                   <div class="text-sm font-medium text-gray-900">
-                    {{ traveller.first_name }} {{ traveller.last_name }}
+                    {{ traveller.name }}
                   </div>
                   <div class="text-xs text-gray-600 mt-1">
-                    <span v-if="traveller.email">{{ traveller.email }}</span>
-                    <span v-if="traveller.department" class="ml-3">{{ traveller.department }}</span>
-                    <span class="ml-3">{{ traveller.booking_count || 0 }} bookings</span>
+                    <span v-if="traveller.business_unit">{{ traveller.business_unit }}</span>
+                    <span :class="traveller.business_unit ? 'ml-3' : ''">{{ traveller.booking_count || 0 }} bookings</span>
                   </div>
                 </div>
               </label>
@@ -235,7 +228,7 @@
             <h4 class="text-sm font-medium text-gray-900 mb-2">Records that will be merged:</h4>
             <div class="bg-gray-50 rounded-lg p-4 space-y-2">
               <div v-for="traveller in mergeTravellers" :key="traveller.id" class="text-sm">
-                <span class="text-gray-900 font-medium">{{ traveller.first_name }} {{ traveller.last_name }}</span>
+                <span class="text-gray-900 font-medium">{{ traveller.name }}</span>
                 <span class="text-gray-500 ml-2">({{ traveller.booking_count || 0 }} bookings will be reassigned)</span>
               </div>
             </div>
@@ -252,15 +245,15 @@
                 v-for="traveller in selectedTravellerData"
                 :key="'name-' + traveller.id"
                 class="flex items-center p-3 border-2 rounded cursor-pointer hover:bg-gray-50"
-                :class="selectedDisplayName === `${traveller.first_name} ${traveller.last_name}` ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200'"
+                :class="selectedDisplayName === traveller.name ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200'"
               >
                 <input
                   type="radio"
-                  :value="`${traveller.first_name} ${traveller.last_name}`"
+                  :value="traveller.name"
                   v-model="selectedDisplayName"
                   class="form-radio h-4 w-4 text-indigo-600 mr-3"
                 />
-                <span class="text-sm text-gray-900">{{ traveller.first_name }} {{ traveller.last_name }}</span>
+                <span class="text-sm text-gray-900">{{ traveller.name }}</span>
               </label>
             </div>
 
@@ -501,7 +494,7 @@ const openMergeModal = () => {
   // Pre-select first name as display name
   const firstTraveller = selectedTravellerData.value[0]
   if (firstTraveller) {
-    selectedDisplayName.value = `${firstTraveller.first_name} ${firstTraveller.last_name}`
+    selectedDisplayName.value = firstTraveller.name
   }
 
   customDisplayName.value = ''
