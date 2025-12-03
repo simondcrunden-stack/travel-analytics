@@ -83,7 +83,7 @@
           <label class="block text-sm font-medium text-gray-700 mb-2">
             Search and select descriptions to merge:
           </label>
-          <div class="relative">
+          <div class="relative" ref="searchContainer">
             <input
               v-model="descriptionSearchQuery"
               @input="filterDescriptions"
@@ -93,26 +93,28 @@
               class="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
             />
             <span class="absolute right-3 top-2.5 mdi mdi-magnify text-gray-400"></span>
-          </div>
 
-          <!-- Dropdown with filtered descriptions -->
-          <div v-if="showDescriptionDropdown && filteredDescriptions.length > 0" class="mt-1 max-h-60 overflow-y-auto border border-gray-300 rounded-md bg-white shadow-lg">
-            <label
-              v-for="desc in filteredDescriptions"
-              :key="desc.description"
-              class="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0"
-            >
-              <input
-                type="checkbox"
-                :value="desc.description"
-                v-model="manuallySelectedDescriptions"
-                class="form-checkbox h-4 w-4 text-indigo-600 rounded mr-3"
-              />
-              <div class="flex-1">
-                <span class="text-sm text-gray-900">{{ desc.description }}</span>
-                <span class="ml-2 text-xs text-gray-500">({{ desc.count }} fees)</span>
-              </div>
-            </label>
+            <!-- Dropdown with filtered descriptions -->
+            <div v-if="showDescriptionDropdown && filteredDescriptions.length > 0" class="absolute z-10 mt-1 w-full max-h-60 overflow-y-auto border border-gray-300 rounded-md bg-white shadow-lg">
+              <label
+                v-for="desc in filteredDescriptions"
+                :key="desc.description"
+                class="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                @click.stop
+              >
+                <input
+                  type="checkbox"
+                  :value="desc.description"
+                  v-model="manuallySelectedDescriptions"
+                  class="form-checkbox h-4 w-4 text-indigo-600 rounded mr-3"
+                  @click.stop
+                />
+                <div class="flex-1">
+                  <span class="text-sm text-gray-900">{{ desc.description }}</span>
+                  <span class="ml-2 text-xs text-gray-500">({{ desc.count }} fees)</span>
+                </div>
+              </label>
+            </div>
           </div>
         </div>
 
@@ -322,7 +324,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import api from '@/services/api'
 
 const props = defineProps({
@@ -359,6 +361,7 @@ const descriptionSearchQuery = ref('')
 const showDescriptionDropdown = ref(false)
 const manuallySelectedDescriptions = ref([])
 const isManualMerge = ref(false)
+const searchContainer = ref(null)
 
 // Computed
 const totalFeeCount = computed(() => {
@@ -557,13 +560,17 @@ const openManualMergeDialog = () => {
 
 // Close dropdown when clicking outside
 const handleClickOutside = (event) => {
-  if (!event.target.closest('.relative')) {
+  if (searchContainer.value && !searchContainer.value.contains(event.target)) {
     showDescriptionDropdown.value = false
   }
 }
 
-// Add event listener when component mounts
-if (typeof window !== 'undefined') {
-  window.addEventListener('click', handleClickOutside)
-}
+// Add/remove event listener on mount/unmount
+onMounted(() => {
+  document.addEventListener('click', handleClickOutside)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleClickOutside)
+})
 </script>
