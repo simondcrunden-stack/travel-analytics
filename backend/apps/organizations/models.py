@@ -227,6 +227,167 @@ class OrganizationalNode(MPTTModel):
     def __str__(self):
         return f"{self.name} ({self.code})"
 
+
+class Budget(models.Model):
+    """
+    Financial and carbon budgets for organizational nodes (cost centers/business units).
+
+    Each budget represents either a financial or carbon allocation for a specific
+    organizational node during a fiscal year. Budgets include warning and critical
+    thresholds to alert when spending/emissions approach limits.
+
+    Examples:
+        Financial budget: Sales-VIC cost center has $500,000 budget for FY2024
+        Carbon budget: Marketing division has 50 tonnes CO2 budget for FY2024
+    """
+
+    BUDGET_TYPE_CHOICES = [
+        ('FINANCIAL', 'Financial Budget'),
+        ('CARBON', 'Carbon Budget'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # Organization and cost center
+    organization = models.ForeignKey(
+        Organization,
+        on_delete=models.CASCADE,
+        related_name='budgets',
+        help_text="Organization this budget belongs to"
+    )
+    organizational_node = models.ForeignKey(
+        OrganizationalNode,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='budgets',
+        help_text="Organizational node (cost center, business unit, etc.) this budget applies to"
+    )
+
+    # Fallback for simple text-based business units (backward compatibility)
+    business_unit = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Business unit name (used if organizational_node is not set)"
+    )
+
+    # Budget period
+    fiscal_year = models.IntegerField(
+        help_text="Fiscal year for this budget (e.g., 2024, 2025)"
+    )
+
+    # Budget type and amount
+    budget_type = models.CharField(
+        max_length=20,
+        choices=BUDGET_TYPE_CHOICES,
+        help_text="Type of budget: financial (monetary) or carbon (CO2 tonnes)"
+    )
+    amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        help_text="Budget amount (currency for financial, tonnes for carbon)"
+    )
+
+    # For financial budgets - store currency (defaults to organization's base currency)
+    currency = models.CharField(
+        max_length=3,
+        blank=True,
+        help_text="Currency code (ISO 4217) for financial budgets"
+    )
+
+    # Threshold settings (as percentages)
+    warning_threshold = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=80.00,
+        help_text="Percentage at which to show warning alert (default 80%)"
+    )
+    critical_threshold = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=95.00,
+        help_text="Percentage at which to show critical alert (default 95%)"
+    )
+
+    # Status
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Whether this budget is currently active"
+    )
+
+    # Metadata
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+        'users.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_budgets',
+        help_text="User who created this budget"
+    )
+
+    class Meta:
+        db_table = 'budgets'
+        unique_together = [
+            ['organization', 'organizational_node', 'fiscal_year', 'budget_type'],
+            ['organization', 'business_unit', 'fiscal_year', 'budget_type'],
+        ]
+        indexes = [
+            models.Index(fields=['organization', 'fiscal_year'], name='budgets_org_fy_idx'),
+            models.Index(fields=['organizational_node', 'fiscal_year'], name='budgets_node_fy_idx'),
+            models.Index(fields=['fiscal_year', 'is_active'], name='budgets_fy_active_idx'),
+        ]
+        ordering = ['-fiscal_year', 'organizational_node__code', 'budget_type']
+        verbose_name = 'Budget'
+        verbose_name_plural = 'Budgets'
+
+    def __str__(self):
+        node_name = self.organizational_node.name if self.organizational_node else self.business_unit
+        budget_label = 'Financial' if self.budget_type == 'FINANCIAL' else 'Carbon'
+        return f"{node_name} - {budget_label} Budget FY{self.fiscal_year}"
+
+    def save(self, *args, **kwargs):
+        # Auto-set currency from organization if not specified
+        if self.budget_type == 'FINANCIAL' and not self.currency:
+            self.currency = self.organization.base_currency
+        super().save(*args, **kwargs)
+
+    def get_usage_percentage(self, current_usage):
+        """
+        Calculate percentage of budget used.
+
+        Args:
+            current_usage: Current spending/emissions amount
+
+        Returns:
+            Decimal: Percentage used (0-100+)
+        """
+        if self.amount == 0:
+            return 0
+        return (current_usage / self.amount) * 100
+
+    def get_status(self, current_usage):
+        """
+        Get budget status based on current usage.
+
+        Args:
+            current_usage: Current spending/emissions amount
+
+        Returns:
+            str: Status - 'OK', 'WARNING', 'CRITICAL', or 'EXCEEDED'
+        """
+        percentage = self.get_usage_percentage(current_usage)
+
+        if percentage >= 100:
+            return 'EXCEEDED'
+        elif percentage >= self.critical_threshold:
+            return 'CRITICAL'
+        elif percentage >= self.warning_threshold:
+            return 'WARNING'
+        else:
+            return 'OK'
+
     def get_full_path(self):
         """
         Get the full path from root to this node.
