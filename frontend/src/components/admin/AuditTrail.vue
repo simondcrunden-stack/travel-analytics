@@ -7,6 +7,74 @@
       </p>
     </div>
 
+    <!-- Search and Filters -->
+    <div class="mb-6 space-y-4">
+      <div class="flex flex-col sm:flex-row gap-4">
+        <!-- Search -->
+        <div class="flex-1">
+          <div class="relative">
+            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <span class="mdi mdi-magnify text-gray-400"></span>
+            </div>
+            <input
+              v-model="searchQuery"
+              type="text"
+              placeholder="Search by name or description..."
+              class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+              @input="debouncedSearch"
+            />
+          </div>
+        </div>
+
+        <!-- Merge Type Filter -->
+        <div class="sm:w-48">
+          <select
+            v-model="mergeTypeFilter"
+            @change="loadAudits"
+            class="block w-full pl-3 pr-10 py-2 text-base border border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md bg-white"
+          >
+            <option value="">All Types</option>
+            <option value="TRAVELLER">Travellers</option>
+            <option value="CONSULTANT">Consultants</option>
+            <option value="ORGANIZATION">Organizations</option>
+            <option value="SERVICE_FEE">Service Fees</option>
+          </select>
+        </div>
+
+        <!-- Status Filter -->
+        <div class="sm:w-40">
+          <select
+            v-model="statusFilter"
+            @change="loadAudits"
+            class="block w-full pl-3 pr-10 py-2 text-base border border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md bg-white"
+          >
+            <option value="">All Status</option>
+            <option value="COMPLETED">Completed</option>
+            <option value="UNDONE">Undone</option>
+          </select>
+        </div>
+
+        <!-- Clear Filters Button -->
+        <div>
+          <button
+            v-if="searchQuery || mergeTypeFilter || statusFilter"
+            @click="clearFilters"
+            class="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+          >
+            <span class="mdi mdi-filter-off mr-1"></span>
+            Clear
+          </button>
+        </div>
+      </div>
+
+      <!-- Results Count -->
+      <div v-if="!loading && audits.length > 0" class="flex items-center justify-between text-sm text-gray-600">
+        <span>
+          Showing <strong>{{ audits.length }}</strong> {{ audits.length === 1 ? 'result' : 'results' }}
+        </span>
+      </div>
+    </div>
+
     <!-- Loading State -->
     <div v-if="loading" class="text-center py-12">
       <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
@@ -90,17 +158,50 @@ import api from '@/services/api'
 
 const audits = ref([])
 const loading = ref(false)
+const searchQuery = ref('')
+const mergeTypeFilter = ref('')
+const statusFilter = ref('')
+
+let searchTimeout = null
 
 const loadAudits = async () => {
   loading.value = true
   try {
-    const response = await api.get('/data-management/merge-audit/')
+    const params = {}
+
+    if (searchQuery.value.trim()) {
+      params.search = searchQuery.value.trim()
+    }
+
+    if (mergeTypeFilter.value) {
+      params.merge_type = mergeTypeFilter.value
+    }
+
+    if (statusFilter.value) {
+      params.status = statusFilter.value
+    }
+
+    const response = await api.get('/data-management/merge-audit/', { params })
     audits.value = response.data.results || []
   } catch (err) {
     console.error('Error loading audit trail:', err)
   } finally {
     loading.value = false
   }
+}
+
+const debouncedSearch = () => {
+  clearTimeout(searchTimeout)
+  searchTimeout = setTimeout(() => {
+    loadAudits()
+  }, 500) // Wait 500ms after user stops typing
+}
+
+const clearFilters = () => {
+  searchQuery.value = ''
+  mergeTypeFilter.value = ''
+  statusFilter.value = ''
+  loadAudits()
 }
 
 const undoMerge = async (auditId) => {

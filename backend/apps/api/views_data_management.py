@@ -369,6 +369,11 @@ class MergeAuditViewSet(viewsets.ReadOnlyModelViewSet):
             if hasattr(self.request.user, 'organization'):
                 queryset = queryset.filter(organization=self.request.user.organization)
 
+        # Search by summary (names, description)
+        search = self.request.query_params.get('search')
+        if search:
+            queryset = queryset.filter(summary__icontains=search)
+
         # Filter by merge type if specified
         merge_type = self.request.query_params.get('merge_type')
         if merge_type:
