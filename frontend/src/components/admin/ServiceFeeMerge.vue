@@ -57,6 +57,109 @@
       <p class="mt-2 text-sm text-gray-600">All service fee descriptions appear to be unique.</p>
     </div>
 
+    <!-- Manual Merge Section -->
+    <div v-if="!loading" class="mb-8 bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+      <div class="bg-indigo-50 px-4 py-3 border-b border-indigo-200">
+        <div class="flex items-center justify-between">
+          <div>
+            <h3 class="text-sm font-medium text-indigo-900">Manual Merge Override</h3>
+            <p class="text-xs text-indigo-700 mt-1">
+              Manually select descriptions to merge that weren't automatically grouped
+            </p>
+          </div>
+          <button
+            @click="toggleManualMerge"
+            class="inline-flex items-center px-3 py-1.5 border border-indigo-300 text-xs font-medium rounded text-indigo-700 bg-white hover:bg-indigo-50"
+          >
+            <span class="mdi" :class="showManualMerge ? 'mdi-chevron-up' : 'mdi-chevron-down'"></span>
+            {{ showManualMerge ? 'Hide' : 'Show' }}
+          </button>
+        </div>
+      </div>
+
+      <div v-if="showManualMerge" class="p-4">
+        <!-- Search and Select Descriptions -->
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-2">
+            Search and select descriptions to merge:
+          </label>
+          <div class="relative">
+            <input
+              v-model="descriptionSearchQuery"
+              @input="filterDescriptions"
+              @focus="showDescriptionDropdown = true"
+              type="text"
+              placeholder="Type to search descriptions..."
+              class="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+            />
+            <span class="absolute right-3 top-2.5 mdi mdi-magnify text-gray-400"></span>
+          </div>
+
+          <!-- Dropdown with filtered descriptions -->
+          <div v-if="showDescriptionDropdown && filteredDescriptions.length > 0" class="mt-1 max-h-60 overflow-y-auto border border-gray-300 rounded-md bg-white shadow-lg">
+            <label
+              v-for="desc in filteredDescriptions"
+              :key="desc.description"
+              class="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+            >
+              <input
+                type="checkbox"
+                :value="desc.description"
+                v-model="manuallySelectedDescriptions"
+                class="form-checkbox h-4 w-4 text-indigo-600 rounded mr-3"
+              />
+              <div class="flex-1">
+                <span class="text-sm text-gray-900">{{ desc.description }}</span>
+                <span class="ml-2 text-xs text-gray-500">({{ desc.count }} fees)</span>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Selected Descriptions -->
+        <div v-if="manuallySelectedDescriptions.length > 0" class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-2">
+            Selected descriptions ({{ manuallySelectedDescriptions.length }}):
+          </label>
+          <div class="flex flex-wrap gap-2">
+            <span
+              v-for="desc in manuallySelectedDescriptions"
+              :key="desc"
+              class="inline-flex items-center px-3 py-1 rounded-full text-sm bg-indigo-100 text-indigo-800"
+            >
+              {{ desc }}
+              <button
+                @click="removeManualSelection(desc)"
+                class="ml-2 text-indigo-600 hover:text-indigo-800"
+              >
+                <span class="mdi mdi-close-circle text-sm"></span>
+              </button>
+            </span>
+          </div>
+        </div>
+
+        <!-- Merge Button -->
+        <div v-if="manuallySelectedDescriptions.length >= 2" class="flex items-center justify-between bg-gray-50 border border-gray-200 rounded p-3">
+          <p class="text-sm text-gray-700">
+            Ready to merge {{ manuallySelectedDescriptions.length }} descriptions
+          </p>
+          <button
+            @click="openManualMergeDialog"
+            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
+          >
+            <span class="mdi mdi-merge mr-2"></span>
+            Standardize Selected
+          </button>
+        </div>
+        <div v-else class="bg-yellow-50 border border-yellow-200 rounded p-3">
+          <p class="text-xs text-yellow-800">
+            <span class="mdi mdi-information"></span>
+            Select at least 2 descriptions to merge
+          </p>
+        </div>
+      </div>
+    </div>
+
     <!-- Duplicate Groups -->
     <div v-else class="space-y-6">
       <div
@@ -248,6 +351,15 @@ const mergeSelection = ref([])
 const selectedStandardDescription = ref('')
 const customDescription = ref('')
 
+// Manual merge state
+const showManualMerge = ref(false)
+const allDescriptions = ref([])
+const filteredDescriptions = ref([])
+const descriptionSearchQuery = ref('')
+const showDescriptionDropdown = ref(false)
+const manuallySelectedDescriptions = ref([])
+const isManualMerge = ref(false)
+
 // Computed
 const totalFeeCount = computed(() => {
   return mergeSelection.value.reduce((sum, desc) => sum + desc.count, 0)
@@ -325,10 +437,22 @@ const closeMergeDialog = () => {
 const confirmMerge = async () => {
   const chosenDescription = customDescription.value || selectedStandardDescription.value
 
-  const mergeData = {
-    primary_description: selectedGroup.value.primary.description,
-    merge_descriptions: mergeSelection.value.map(d => d.description),
-    chosen_description: customDescription.value
+  let mergeData
+
+  if (isManualMerge.value) {
+    // Manual merge - use manually selected descriptions
+    mergeData = {
+      primary_description: manuallySelectedDescriptions.value[0],
+      merge_descriptions: manuallySelectedDescriptions.value,
+      chosen_description: customDescription.value
+    }
+  } else {
+    // Auto merge - use group-based selection
+    mergeData = {
+      primary_description: selectedGroup.value.primary.description,
+      merge_descriptions: mergeSelection.value.map(d => d.description),
+      chosen_description: customDescription.value
+    }
   }
 
   if (props.selectedTravelAgent) {
@@ -345,10 +469,101 @@ const confirmMerge = async () => {
     // Show success message and reload
     alert(`Successfully standardized ${response.data.merged_count} description(s) across ${response.data.fees_updated} service fees. ${response.data.rules_created} standardization rule(s) created.`)
 
+    // Clear manual selections if it was a manual merge
+    if (isManualMerge.value) {
+      manuallySelectedDescriptions.value = []
+      descriptionSearchQuery.value = ''
+      isManualMerge.value = false
+    }
+
     loadDuplicates()
   } catch (err) {
     console.error('Error merging descriptions:', err)
     error.value = err.response?.data?.error || 'Failed to merge descriptions'
   }
+}
+
+// Manual merge methods
+const toggleManualMerge = async () => {
+  showManualMerge.value = !showManualMerge.value
+
+  if (showManualMerge.value && allDescriptions.value.length === 0) {
+    await loadAllDescriptions()
+  }
+}
+
+const loadAllDescriptions = async () => {
+  if (!props.selectedTravelAgent && !props.selectedOrganization) {
+    error.value = 'Please select a travel agent or organization first.'
+    return
+  }
+
+  try {
+    const params = {}
+
+    if (props.selectedTravelAgent) {
+      params.travel_agent_id = props.selectedTravelAgent
+    } else if (props.selectedOrganization) {
+      params.organization_id = props.selectedOrganization
+    }
+
+    const response = await api.get('/data-management/service-fee-merge/all_descriptions/', {
+      params
+    })
+
+    allDescriptions.value = response.data.descriptions
+    filteredDescriptions.value = allDescriptions.value
+  } catch (err) {
+    console.error('Error loading descriptions:', err)
+    error.value = err.response?.data?.error || 'Failed to load descriptions'
+  }
+}
+
+const filterDescriptions = () => {
+  const query = descriptionSearchQuery.value.toLowerCase()
+
+  if (!query) {
+    filteredDescriptions.value = allDescriptions.value
+  } else {
+    filteredDescriptions.value = allDescriptions.value.filter(desc =>
+      desc.description.toLowerCase().includes(query)
+    )
+  }
+
+  showDescriptionDropdown.value = true
+}
+
+const removeManualSelection = (description) => {
+  manuallySelectedDescriptions.value = manuallySelectedDescriptions.value.filter(d => d !== description)
+}
+
+const openManualMergeDialog = () => {
+  isManualMerge.value = true
+
+  // Build merge selection from manually selected descriptions
+  const selectedDescs = manuallySelectedDescriptions.value.map(desc => {
+    const found = allDescriptions.value.find(d => d.description === desc)
+    return found || { description: desc, count: 0 }
+  })
+
+  mergeSelection.value = selectedDescs
+
+  // Pre-select first description as standard
+  selectedStandardDescription.value = manuallySelectedDescriptions.value[0]
+  customDescription.value = ''
+
+  showMergeDialog.value = true
+}
+
+// Close dropdown when clicking outside
+const handleClickOutside = (event) => {
+  if (!event.target.closest('.relative')) {
+    showDescriptionDropdown.value = false
+  }
+}
+
+// Add event listener when component mounts
+if (typeof window !== 'undefined') {
+  window.addEventListener('click', handleClickOutside)
 }
 </script>

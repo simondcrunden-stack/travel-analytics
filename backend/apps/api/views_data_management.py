@@ -1299,3 +1299,40 @@ class ServiceFeeMergeViewSet(viewsets.ViewSet):
                 {'error': f'Merge failed: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+    @action(detail=False, methods=['get'])
+    def all_descriptions(self, request):
+        """
+        Get all unique service fee descriptions with counts.
+        Used for manual merge override feature.
+
+        Query params:
+        - organization_id: Organization ID to filter
+        - travel_agent_id: Travel agent ID to search across all customers
+        """
+        from apps.bookings.models import ServiceFee
+
+        org_id = request.query_params.get('organization_id')
+        travel_agent_id = request.query_params.get('travel_agent_id')
+
+        # Get service fees with descriptions
+        fees_query = ServiceFee.objects.filter(
+            description__isnull=False
+        ).exclude(description='')
+
+        if travel_agent_id:
+            fees_query = fees_query.filter(
+                Q(organization_id=travel_agent_id) |
+                Q(organization__travel_agent_id=travel_agent_id)
+            )
+        elif org_id:
+            fees_query = fees_query.filter(organization_id=org_id)
+
+        # Get unique descriptions with counts
+        descriptions = fees_query.values('description').annotate(
+            count=Count('id')
+        ).order_by('description')
+
+        return Response({
+            'descriptions': list(descriptions)
+        })
