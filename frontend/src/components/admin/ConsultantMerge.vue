@@ -500,6 +500,9 @@ const confirmMerge = async () => {
   merging.value = true
 
   try {
+    // Remember if we were in duplicate view mode
+    const wasShowingDuplicates = showingDuplicates.value
+
     // Determine primary and merge texts
     const primaryText = selectedConsultants.value[0]
     const mergeTexts = selectedConsultants.value.slice(1)
@@ -524,6 +527,11 @@ const confirmMerge = async () => {
     await loadAllConsultants()
     selectedConsultants.value = []
     closeMergeModal()
+
+    // If we were showing duplicates, refresh the duplicate view
+    if (wasShowingDuplicates) {
+      await findDuplicates()
+    }
 
     // Clear success message after 5 seconds
     setTimeout(() => {
