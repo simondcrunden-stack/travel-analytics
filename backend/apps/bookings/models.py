@@ -2782,3 +2782,135 @@ class PreferredCarHire(models.Model):
             return True  # No category specified, so it matches
 
         return self.car_category.upper() == category.upper()
+
+
+# ============================================================================
+# DATA MERGE AUDIT MODEL
+# ============================================================================
+
+class MergeAudit(models.Model):
+    """
+    Track all merge operations for audit trail and undo capability
+    
+    Supports merging of:
+    - Travellers (within organizations)
+    - Travel Consultants  
+    - Organizations
+    - Service Fees
+    
+    Provides:
+    - Complete audit trail
+    - Undo capability via data snapshots
+    - Relationship tracking
+    """
+    MERGE_TYPE_CHOICES = [
+        ('TRAVELLER', 'Traveller'),
+        ('CONSULTANT', 'Travel Consultant'),
+        ('ORGANIZATION', 'Organization'),
+        ('SERVICE_FEE', 'Service Fee'),
+    ]
+
+    STATUS_CHOICES = [
+        ('COMPLETED', 'Completed'),
+        ('UNDONE', 'Undone'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # What type of merge
+    merge_type = models.CharField(max_length=20, choices=MERGE_TYPE_CHOICES)
+
+    # Who performed the merge
+    performed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='performed_merges'
+    )
+
+    # Organization/Travel Agent context
+    organization = models.ForeignKey(
+        'organizations.Organization',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='merge_audits',
+        help_text="Organization context for this merge"
+    )
+
+    # The primary record (the one kept)
+    primary_content_type = models.ForeignKey(
+        ContentType,
+        on_delete=models.CASCADE,
+        related_name='primary_merges'
+    )
+    primary_object_id = models.CharField(max_length=255)
+    primary_object = GenericForeignKey('primary_content_type', 'primary_object_id')
+
+    # IDs of merged records (that were deleted)
+    merged_record_ids = models.JSONField(
+        default=list,
+        help_text="List of IDs of records that were merged into the primary"
+    )
+
+    # Data snapshot before merge (for undo)
+    merged_records_snapshot = models.JSONField(
+        default=dict,
+        encoder=DjangoJSONEncoder,
+        help_text="Full data of merged records before deletion"
+    )
+
+    # Relationship updates (what got reassigned)
+    relationship_updates = models.JSONField(
+        default=dict,
+        encoder=DjangoJSONEncoder,
+        help_text="Track which related records were updated (bookings, etc.)"
+    )
+
+    # Chosen values
+    chosen_name = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Name chosen/entered during merge"
+    )
+    chosen_employee_id = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Employee ID preserved during merge"
+    )
+
+    # Merge summary
+    summary = models.TextField(
+        blank=True,
+        help_text="Human-readable summary of the merge"
+    )
+
+    # Status
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='COMPLETED'
+    )
+
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    undone_at = models.DateTimeField(null=True, blank=True)
+    undone_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='undone_merges'
+    )
+
+    class Meta:
+        db_table = 'merge_audits'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['merge_type', 'status']),
+            models.Index(fields=['organization', 'created_at']),
+            models.Index(fields=['performed_by', 'created_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.get_merge_type_display()} merge by {self.performed_by} on {self.created_at.strftime('%Y-%m-%d')}"

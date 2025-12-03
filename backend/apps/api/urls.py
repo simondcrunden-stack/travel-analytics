@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from . import views
+from .views_data_management import TravellerMergeViewSet, MergeAuditViewSet
 
 # Create router and register viewsets
 router = DefaultRouter()
@@ -34,6 +35,10 @@ router.register(r'service-fees', views.ServiceFeeViewSet, basename='service-fee'
 
 # Compliance endpoints
 router.register(r'compliance-violations', views.ComplianceViolationViewSet, basename='compliance-violation')
+
+# Data Management endpoints
+router.register(r'data-management/traveller-merge', TravellerMergeViewSet, basename='traveller-merge')
+router.register(r'data-management/merge-audit', MergeAuditViewSet, basename='merge-audit')
 
 urlpatterns = [
     # JWT Authentication endpoints
