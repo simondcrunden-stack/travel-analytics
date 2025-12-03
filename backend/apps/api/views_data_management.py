@@ -1144,6 +1144,36 @@ class OrganizationMergeViewSet(viewsets.ViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
+    @action(detail=False, methods=['get'])
+    def all_organizations(self, request):
+        """
+        Get all organizations.
+        Used for table-based merge interface.
+        """
+        from apps.organizations.models import Organization
+
+        # Get all customer organizations (not travel agents)
+        organizations = Organization.objects.filter(
+            is_travel_agent=False
+        ).annotate(
+            traveller_count=Count('travellers'),
+            booking_count=Count('bookings')
+        ).order_by('name')
+
+        results = []
+        for org in organizations:
+            results.append({
+                'id': str(org.id),
+                'name': org.name,
+                'code': org.code,
+                'traveller_count': org.traveller_count,
+                'booking_count': org.booking_count
+            })
+
+        return Response({
+            'organizations': results
+        })
+
 
 class ServiceFeeMergeViewSet(viewsets.ViewSet):
     """
