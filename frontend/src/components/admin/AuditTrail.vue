@@ -86,7 +86,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import axios from 'axios'
+import api from '@/services/api'
 
 const audits = ref([])
 const loading = ref(false)
@@ -94,8 +94,8 @@ const loading = ref(false)
 const loadAudits = async () => {
   loading.value = true
   try {
-    const response = await axios.get('/api/data-management/merge-audit/')
-    audits.value = response.data.results
+    const response = await api.get('/data-management/merge-audit/')
+    audits.value = response.data.results || []
   } catch (err) {
     console.error('Error loading audit trail:', err)
   } finally {
@@ -109,7 +109,7 @@ const undoMerge = async (auditId) => {
   }
 
   try {
-    await axios.post(`/api/data-management/traveller-merge/${auditId}/undo/`)
+    await api.post(`/data-management/traveller-merge/${auditId}/undo/`)
     await loadAudits() // Reload the audit trail
     alert('Merge successfully undone!')
   } catch (err) {
