@@ -13,7 +13,6 @@ from difflib import SequenceMatcher
 import logging
 
 from apps.bookings.models import Traveller, Booking, MergeAudit
-from apps.organizations.models import TravelConsultant
 from .permissions import IsAdminUser
 
 logger = logging.getLogger(__name__)
