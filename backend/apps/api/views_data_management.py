@@ -353,6 +353,48 @@ class TravellerMergeViewSet(viewsets.ViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
+    @action(detail=False, methods=['get'])
+    def all_travellers(self, request):
+        """
+        Get all travellers for the specified organization.
+        Used for table-based merge interface.
+
+        Query params:
+        - organization_id: Organization ID (required)
+        """
+        org_id = request.query_params.get('organization_id')
+
+        if not org_id:
+            return Response(
+                {'error': 'organization_id parameter required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Get travellers for organization
+        travellers = Traveller.objects.filter(
+            organization_id=org_id,
+            is_active=True
+        ).annotate(
+            booking_count=Count('bookings')
+        ).order_by('last_name', 'first_name')
+
+        results = []
+        for traveller in travellers:
+            results.append({
+                'id': str(traveller.id),
+                'first_name': traveller.first_name,
+                'last_name': traveller.last_name,
+                'email': traveller.email,
+                'phone': traveller.phone,
+                'employee_id': traveller.employee_id,
+                'department': traveller.department,
+                'booking_count': traveller.booking_count
+            })
+
+        return Response({
+            'travellers': results
+        })
+
 
 class MergeAuditViewSet(viewsets.ReadOnlyModelViewSet):
     """
