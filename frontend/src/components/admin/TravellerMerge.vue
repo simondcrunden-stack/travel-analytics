@@ -410,7 +410,14 @@ const loadDuplicates = async () => {
     console.log('API Response:', response.data)
 
     duplicateGroups.value = response.data.duplicate_groups || []
-    selectedMergeIds.value = {}
+
+    // Initialize selectedMergeIds with empty arrays for each group to ensure reactivity
+    const initialSelectedIds = {}
+    duplicateGroups.value.forEach((group, index) => {
+      initialSelectedIds[index] = []
+    })
+    selectedMergeIds.value = initialSelectedIds
+
     emit('duplicates-updated', duplicateGroups.value.length)
   } catch (err) {
     console.error('Error loading duplicates:', err)
