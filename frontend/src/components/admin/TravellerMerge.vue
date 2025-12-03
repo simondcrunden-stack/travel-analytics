@@ -73,16 +73,28 @@
               </h3>
               <p class="text-xs text-gray-500 mt-1">
                 {{ group.matches.length + 1 }} similar records found
+                <span v-if="selectedMergeIds[index] && selectedMergeIds[index].length > 0" class="text-indigo-600 font-medium">
+                  • {{ selectedMergeIds[index].length }} selected for merge
+                </span>
               </p>
             </div>
             <button
-              @click="openMergeDialog(group)"
-              class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded text-white bg-indigo-600 hover:bg-indigo-700"
+              @click="openMergeDialog(group, index)"
+              :disabled="!selectedMergeIds[index] || selectedMergeIds[index].length === 0"
+              class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <span class="mdi mdi-merge mr-1"></span>
               Merge Records
             </button>
           </div>
+        </div>
+
+        <!-- Instruction -->
+        <div v-if="!selectedMergeIds[index] || selectedMergeIds[index].length === 0" class="px-4 py-2 bg-yellow-50 border-b border-yellow-100">
+          <p class="text-xs text-yellow-800">
+            <span class="mdi mdi-information"></span>
+            <strong>Step 1:</strong> Check the boxes next to the records you want to merge into the primary record below
+          </p>
         </div>
 
         <!-- Records -->
