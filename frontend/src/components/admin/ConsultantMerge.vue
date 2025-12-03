@@ -523,15 +523,40 @@ const confirmMerge = async () => {
 
     successMessage.value = `Successfully merged ${selectedConsultants.value.length} consultant names. ${response.data.bookings_updated} bookings updated.`
 
-    // Reload data
-    await loadAllConsultants()
-    selectedConsultants.value = []
+    // Close modal first
     closeMergeModal()
 
-    // If we were showing duplicates, refresh the duplicate view
-    if (wasShowingDuplicates) {
-      await findDuplicates()
+    // Clear selections
+    selectedConsultants.value = []
+
+    // Reload all consultants
+    loading.value = true
+    const params = {}
+    if (props.selectedTravelAgent) {
+      params.travel_agent_id = props.selectedTravelAgent
+    } else if (props.selectedOrganization) {
+      params.organization_id = props.selectedOrganization
     }
+
+    const consultantsResponse = await api.get('/data-management/consultant-merge/all_consultants/', { params })
+    allConsultants.value = consultantsResponse.data.consultants || []
+
+    // If we were showing duplicates, refresh them
+    if (wasShowingDuplicates) {
+      const duplicatesParams = {
+        ...params,
+        min_similarity: minSimilarity.value
+      }
+      const duplicatesResponse = await api.get('/data-management/consultant-merge/find_duplicates/', { duplicatesParams })
+      duplicateGroups.value = duplicatesResponse.data.duplicate_groups || []
+      showingDuplicates.value = true
+      emit('duplicates-updated', duplicateGroups.value.length)
+    } else {
+      showingDuplicates.value = false
+      duplicateGroups.value = []
+    }
+
+    loading.value = false
 
     // Clear success message after 5 seconds
     setTimeout(() => {
@@ -540,6 +565,7 @@ const confirmMerge = async () => {
   } catch (err) {
     console.error('Error merging consultants:', err)
     error.value = err.response?.data?.error || 'Failed to merge consultant names'
+    loading.value = false
   } finally {
     merging.value = false
   }
