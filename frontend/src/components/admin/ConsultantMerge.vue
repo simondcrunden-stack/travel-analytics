@@ -4,39 +4,59 @@
     <div class="mb-6">
       <h2 class="text-xl font-semibold text-gray-900">Travel Consultant Merge</h2>
       <p class="mt-1 text-sm text-gray-600">
-        Find and standardize duplicate consultant name variations across all customers for the selected travel agent
+        Select consultant names to merge and standardize across bookings
       </p>
     </div>
 
     <!-- Controls -->
-    <div class="mb-6 flex items-center gap-4">
-      <button
-        @click="loadDuplicates"
-        :disabled="loading || (!selectedTravelAgent && !selectedOrganization)"
-        class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
-      >
-        <span class="mdi mdi-refresh mr-2"></span>
-        {{ loading ? 'Searching...' : 'Find Duplicates' }}
-      </button>
+    <div class="mb-6 flex items-center justify-between">
+      <div class="flex items-center gap-4">
+        <button
+          @click="loadAllConsultants"
+          :disabled="loading || (!selectedTravelAgent && !selectedOrganization)"
+          class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+        >
+          <span class="mdi mdi-refresh mr-2"></span>
+          {{ loading ? 'Loading...' : 'Load Consultants' }}
+        </button>
 
-      <div class="flex items-center gap-2">
-        <label class="text-sm font-medium text-gray-700">Similarity Threshold:</label>
-        <input
-          v-model.number="minSimilarity"
-          type="range"
-          min="0.5"
-          max="1.0"
-          step="0.05"
-          class="w-32"
-        />
-        <span class="text-sm text-gray-600">{{ (minSimilarity * 100).toFixed(0) }}%</span>
+        <button
+          @click="findDuplicates"
+          :disabled="loading || allConsultants.length === 0"
+          class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+        >
+          <span class="mdi mdi-magnify mr-2"></span>
+          {{ showingDuplicates ? 'Show All' : 'Find Duplicates' }}
+        </button>
+
+        <div v-if="!showingDuplicates" class="flex items-center gap-2">
+          <label class="text-sm font-medium text-gray-700">Similarity:</label>
+          <input
+            v-model.number="minSimilarity"
+            type="range"
+            min="0.5"
+            max="1.0"
+            step="0.05"
+            class="w-32"
+          />
+          <span class="text-sm text-gray-600">{{ (minSimilarity * 100).toFixed(0) }}%</span>
+        </div>
       </div>
+
+      <button
+        v-if="selectedConsultants.length >= 2"
+        @click="openMergeModal"
+        class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+      >
+        <span class="mdi mdi-merge mr-2"></span>
+        Merge Selected ({{ selectedConsultants.length }})
+      </button>
     </div>
 
     <!-- Loading State -->
     <div v-if="loading" class="text-center py-12">
       <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-      <p class="mt-4 text-sm text-gray-600">Searching for duplicates...</p>
+      <p class="mt-4 text-sm text-gray-600">Loading consultants...</p>
     </div>
 
     <!-- Error State -->
@@ -44,191 +64,181 @@
       <div class="flex">
         <span class="mdi mdi-alert-circle text-red-400 text-xl"></span>
         <div class="ml-3">
-          <h3 class="text-sm font-medium text-red-800">Error loading duplicates</h3>
+          <h3 class="text-sm font-medium text-red-800">Error</h3>
           <p class="mt-1 text-sm text-red-700">{{ error }}</p>
         </div>
       </div>
     </div>
 
-    <!-- No Duplicates Found -->
-    <div v-else-if="duplicateGroups.length === 0 && !loading" class="text-center py-12">
-      <span class="mdi mdi-check-circle text-6xl text-green-500"></span>
-      <h3 class="mt-4 text-lg font-medium text-gray-900">No duplicates found</h3>
-      <p class="mt-2 text-sm text-gray-600">All consultant names appear to be unique.</p>
+    <!-- No Data State -->
+    <div v-else-if="allConsultants.length === 0 && !loading" class="text-center py-12">
+      <span class="mdi mdi-information-outline text-6xl text-gray-400"></span>
+      <h3 class="mt-4 text-lg font-medium text-gray-900">No consultants found</h3>
+      <p class="mt-2 text-sm text-gray-600">
+        {{ selectedTravelAgent || selectedOrganization ? 'Click "Load Consultants" to view consultant names.' : 'Please select a travel agent or organization first.' }}
+      </p>
     </div>
 
-    <!-- Duplicate Groups -->
-    <div v-else class="space-y-6">
-      <div
-        v-for="(group, index) in duplicateGroups"
-        :key="index"
-        class="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden"
-      >
-        <!-- Group Header -->
-        <div class="bg-gray-50 px-4 py-3 border-b border-gray-200">
-          <div class="flex items-center justify-between">
-            <div>
-              <h3 class="text-sm font-medium text-gray-900">
-                Potential Duplicate Group {{ index + 1 }}
-              </h3>
-              <p class="text-xs text-gray-500 mt-1">
-                {{ group.matches.length + 1 }} similar variations found
-                <span v-if="selectedMergeTexts[index] && selectedMergeTexts[index].length > 0" class="text-indigo-600 font-medium">
-                  • {{ selectedMergeTexts[index].length }} selected for merge
-                </span>
-              </p>
-            </div>
-            <button
-              @click="openMergeDialog(group, index)"
-              :disabled="!selectedMergeTexts[index] || selectedMergeTexts[index].length === 0"
-              class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <span class="mdi mdi-merge mr-1"></span>
-              Standardize Names
-            </button>
+    <!-- Consultants Table -->
+    <div v-else class="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+      <!-- Filter Info -->
+      <div v-if="showingDuplicates" class="bg-blue-50 border-b border-blue-200 px-4 py-3">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center">
+            <span class="mdi mdi-filter text-blue-600 mr-2"></span>
+            <span class="text-sm text-blue-900">
+              Showing {{ duplicateGroups.length }} similarity groups ({{ displayedConsultants.length }} consultants)
+            </span>
           </div>
-        </div>
-
-        <!-- Instruction -->
-        <div v-if="!selectedMergeTexts[index] || selectedMergeTexts[index].length === 0" class="px-4 py-2 bg-yellow-50 border-b border-yellow-100">
-          <p class="text-xs text-yellow-800">
-            <span class="mdi mdi-information"></span>
-            <strong>Step 1:</strong> Check the boxes next to the name variations you want to standardize
-          </p>
-        </div>
-
-        <!-- Name Variations -->
-        <div class="divide-y divide-gray-200">
-          <!-- Primary Variation -->
-          <div class="px-4 py-3 bg-blue-50">
-            <div class="flex items-start">
-              <input
-                type="radio"
-                :name="`group-${index}-primary`"
-                :checked="true"
-                disabled
-                class="mt-1 h-4 w-4 text-indigo-600 border-gray-300"
-              />
-              <div class="ml-3 flex-1">
-                <div class="flex items-center justify-between">
-                  <div>
-                    <p class="text-sm font-medium text-gray-900">
-                      {{ group.primary.text }}
-                      <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                        Primary
-                      </span>
-                    </p>
-                  </div>
-                  <div class="text-right">
-                    <p class="text-xs text-gray-500">{{ group.primary.booking_count }} bookings</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Matching Variations -->
-          <div
-            v-for="match in group.matches"
-            :key="match.text"
-            class="px-4 py-3 hover:bg-gray-50"
+          <button
+            @click="clearDuplicateFilter"
+            class="text-sm text-blue-700 hover:text-blue-900 underline"
           >
-            <div class="flex items-start">
-              <input
-                type="checkbox"
-                :value="match.text"
-                v-model="selectedMergeTexts[index]"
-                class="mt-1 h-4 w-4 text-indigo-600 border-gray-300 rounded"
-              />
-              <div class="ml-3 flex-1">
-                <div class="flex items-center justify-between">
-                  <div>
-                    <p class="text-sm font-medium text-gray-900">
-                      {{ match.text }}
-                      <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
-                        {{ (match.similarity_score * 100).toFixed(0) }}% similar
-                      </span>
-                    </p>
-                  </div>
-                  <div class="text-right">
-                    <p class="text-xs text-gray-500">{{ match.booking_count }} bookings</p>
-                  </div>
+            Clear Filter
+          </button>
+        </div>
+      </div>
+
+      <!-- Table -->
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th scope="col" class="w-12 px-6 py-3 text-left">
+                <input
+                  type="checkbox"
+                  :checked="allDisplayedSelected"
+                  @change="toggleSelectAll"
+                  class="form-checkbox h-4 w-4 text-indigo-600 rounded"
+                />
+              </th>
+              <th v-if="showingDuplicates" scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Group
+              </th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Consultant Name
+              </th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Bookings
+              </th>
+              <th v-if="showingDuplicates" scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Similarity
+              </th>
+            </tr>
+          </thead>
+          <tbody class="bg-white divide-y divide-gray-200">
+            <tr
+              v-for="consultant in displayedConsultants"
+              :key="consultant.name"
+              :class="getRowClass(consultant)"
+              class="hover:bg-gray-50"
+            >
+              <td class="px-6 py-4 whitespace-nowrap">
+                <input
+                  type="checkbox"
+                  :value="consultant.name"
+                  v-model="selectedConsultants"
+                  class="form-checkbox h-4 w-4 text-indigo-600 rounded"
+                />
+              </td>
+              <td v-if="showingDuplicates" class="px-6 py-4 whitespace-nowrap">
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium" :class="getGroupBadgeClass(consultant.groupIndex)">
+                  Group {{ consultant.groupIndex + 1 }}
+                </span>
+              </td>
+              <td class="px-6 py-4">
+                <div class="text-sm text-gray-900">{{ consultant.name }}</div>
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap">
+                <div class="text-sm text-gray-900">{{ consultant.booking_count }}</div>
+              </td>
+              <td v-if="showingDuplicates" class="px-6 py-4 whitespace-nowrap">
+                <div class="text-sm text-gray-600">
+                  {{ consultant.similarity ? (consultant.similarity * 100).toFixed(0) + '%' : '100%' }}
                 </div>
-              </div>
-            </div>
-          </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Table Footer -->
+      <div class="bg-gray-50 px-6 py-3 border-t border-gray-200">
+        <div class="text-sm text-gray-700">
+          Showing {{ displayedConsultants.length }} consultant{{ displayedConsultants.length !== 1 ? 's' : '' }}
+          <span v-if="selectedConsultants.length > 0" class="ml-4 font-medium text-indigo-600">
+            {{ selectedConsultants.length }} selected
+          </span>
         </div>
       </div>
     </div>
 
-    <!-- Merge Confirmation Dialog -->
-    <div
-      v-if="showMergeDialog"
-      class="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50"
-      @click.self="closeMergeDialog"
-    >
+    <!-- Merge Modal -->
+    <div v-if="showMergeModal" class="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
       <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-        <!-- Dialog Header -->
-        <div class="px-6 py-4 border-b border-gray-200">
-          <h3 class="text-lg font-medium text-gray-900">Standardize Consultant Names</h3>
-          <p class="mt-1 text-sm text-gray-600">
-            Review and confirm the standardization operation
-          </p>
+        <!-- Modal Header -->
+        <div class="bg-gray-50 px-6 py-4 border-b border-gray-200">
+          <h3 class="text-lg font-medium text-gray-900">Merge Consultant Names</h3>
         </div>
 
-        <!-- Dialog Content -->
-        <div class="px-6 py-4 space-y-4">
-          <!-- Primary Name -->
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Primary name (will be kept)</label>
-            <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <p class="font-medium text-gray-900">{{ selectedGroup?.primary.text }}</p>
-              <p class="text-sm text-gray-600 mt-1">{{ selectedGroup?.primary.booking_count }} bookings</p>
-            </div>
-          </div>
-
-          <!-- Variations to Standardize -->
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">
-              Variations to standardize ({{ mergeSelection.length }})
-            </label>
-            <div class="space-y-2">
-              <div
-                v-for="variation in mergeSelection"
-                :key="variation.text"
-                class="bg-gray-50 border border-gray-200 rounded-lg p-3"
-              >
-                <p class="text-sm font-medium text-gray-900">{{ variation.text }}</p>
-                <p class="text-xs text-gray-600">{{ variation.booking_count }} bookings will be updated</p>
+        <!-- Modal Body -->
+        <div class="px-6 py-4">
+          <!-- What's Being Merged -->
+          <div class="mb-6">
+            <h4 class="text-sm font-medium text-gray-900 mb-2">Consultant names to be merged:</h4>
+            <div class="bg-gray-50 rounded-lg p-4 space-y-2">
+              <div v-for="consultant in selectedConsultantData" :key="consultant.name" class="flex items-center justify-between text-sm">
+                <span class="text-gray-900">{{ consultant.name }}</span>
+                <span class="text-gray-500">({{ consultant.booking_count }} bookings)</span>
               </div>
             </div>
+            <p class="mt-2 text-sm text-gray-600">
+              Total: <strong>{{ totalSelectedBookings }}</strong> bookings will be updated
+            </p>
           </div>
 
           <!-- Standard Name Selection -->
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Choose standard name</label>
-            <select
-              v-model="mergeOptions.chosenText"
-              class="mt-1 block w-full pl-3 pr-10 py-2 text-base border border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md bg-white"
-            >
-              <option value="">Keep primary name</option>
-              <option
-                v-for="variation in allVariationsInMerge"
-                :key="variation.text"
-                :value="variation.text"
+          <div class="mb-6">
+            <h4 class="text-sm font-medium text-gray-900 mb-3">Choose standard name:</h4>
+            <div class="space-y-2 mb-4">
+              <label
+                v-for="consultant in selectedConsultantData"
+                :key="'name-' + consultant.name"
+                class="flex items-center p-3 border-2 rounded cursor-pointer hover:bg-gray-50"
+                :class="selectedStandardName === consultant.name ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200'"
               >
-                {{ variation.text }}
-              </option>
-              <option value="__custom__">Enter custom name...</option>
-            </select>
+                <input
+                  type="radio"
+                  :value="consultant.name"
+                  v-model="selectedStandardName"
+                  class="form-radio h-4 w-4 text-indigo-600 mr-3"
+                />
+                <span class="text-sm text-gray-900">{{ consultant.name }}</span>
+              </label>
+            </div>
 
-            <input
-              v-if="mergeOptions.chosenText === '__custom__'"
-              v-model="mergeOptions.customText"
-              type="text"
-              placeholder="Enter standard name"
-              class="mt-2 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-            />
+            <!-- Custom name option -->
+            <div class="border-2 rounded p-3" :class="customStandardName ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200'">
+              <label class="flex items-start cursor-pointer">
+                <input
+                  type="radio"
+                  value="__custom__"
+                  :checked="customStandardName !== ''"
+                  @change="selectedStandardName = ''"
+                  class="form-radio h-4 w-4 text-indigo-600 mr-3 mt-1"
+                />
+                <div class="flex-1">
+                  <span class="text-sm text-gray-900 font-medium">Use custom name</span>
+                  <input
+                    v-model="customStandardName"
+                    @focus="selectedStandardName = ''"
+                    type="text"
+                    placeholder="Enter custom name"
+                    class="mt-2 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                  />
+                </div>
+              </label>
+            </div>
           </div>
 
           <!-- Warning -->
@@ -237,8 +247,8 @@
               <span class="mdi mdi-alert text-yellow-400 text-xl"></span>
               <div class="ml-3">
                 <p class="text-sm text-yellow-800">
-                  <strong>Warning:</strong> This action will standardize {{ mergeSelection.length }} name variation(s).
-                  All bookings with these variations will be updated to use the standard name.
+                  <strong>Warning:</strong> This will standardize {{ selectedConsultants.length }} consultant name{{ selectedConsultants.length !== 1 ? 's' : '' }}.
+                  All bookings with these names will be updated to use the standard name.
                 </p>
                 <p class="text-sm text-yellow-700 mt-1">
                   You can undo this operation from the Audit Trail tab.
@@ -248,22 +258,22 @@
           </div>
         </div>
 
-        <!-- Dialog Footer -->
-        <div class="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end gap-3">
+        <!-- Modal Footer -->
+        <div class="bg-gray-50 px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
           <button
-            @click="closeMergeDialog"
+            @click="closeMergeModal"
             :disabled="merging"
-            class="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+            class="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
           >
             Cancel
           </button>
           <button
             @click="confirmMerge"
-            :disabled="merging || mergeSelection.length === 0"
-            class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+            :disabled="merging || (!selectedStandardName && !customStandardName)"
+            class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
           >
             <span v-if="merging" class="mdi mdi-loading mdi-spin mr-2"></span>
-            {{ merging ? 'Standardizing...' : 'Confirm Standardization' }}
+            {{ merging ? 'Merging...' : 'Confirm Merge' }}
           </button>
         </div>
       </div>
@@ -308,41 +318,109 @@ const props = defineProps({
 const emit = defineEmits(['duplicates-updated'])
 
 // State
-const duplicateGroups = ref([])
+const allConsultants = ref([])
 const loading = ref(false)
 const error = ref(null)
 const minSimilarity = ref(0.7)
-const selectedMergeTexts = ref({})
-const showMergeDialog = ref(false)
-const selectedGroup = ref(null)
-const selectedGroupIndex = ref(null)
+const selectedConsultants = ref([])
+const showingDuplicates = ref(false)
+const duplicateGroups = ref([])
+const showMergeModal = ref(false)
+const selectedStandardName = ref('')
+const customStandardName = ref('')
 const merging = ref(false)
 const successMessage = ref('')
 
-// Merge options
-const mergeOptions = ref({
-  chosenText: '',
-  customText: ''
-})
+// Color classes for group badges (6 colors cycling)
+const groupColors = [
+  { bg: 'bg-blue-100', text: 'text-blue-800', border: 'border-blue-200' },
+  { bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-200' },
+  { bg: 'bg-yellow-100', text: 'text-yellow-800', border: 'border-yellow-200' },
+  { bg: 'bg-purple-100', text: 'text-purple-800', border: 'border-purple-200' },
+  { bg: 'bg-pink-100', text: 'text-pink-800', border: 'border-pink-200' },
+  { bg: 'bg-indigo-100', text: 'text-indigo-800', border: 'border-indigo-200' }
+]
 
 // Computed
-const mergeSelection = computed(() => {
-  if (!selectedGroup.value || selectedGroupIndex.value === null) return []
-  const selectedTexts = selectedMergeTexts.value[selectedGroupIndex.value]
-  const textsArray = Array.isArray(selectedTexts) ? selectedTexts : []
-  return selectedGroup.value.matches.filter(m => textsArray.includes(m.text))
+const displayedConsultants = computed(() => {
+  if (showingDuplicates.value) {
+    // Flatten duplicate groups with group index and similarity
+    const flattened = []
+    duplicateGroups.value.forEach((group, groupIndex) => {
+      // Add primary
+      flattened.push({
+        ...group.primary,
+        groupIndex,
+        similarity: 1.0
+      })
+      // Add matches
+      group.matches.forEach(match => {
+        flattened.push({
+          ...match,
+          groupIndex,
+          similarity: match.similarity_score
+        })
+      })
+    })
+    return flattened
+  }
+  return allConsultants.value
 })
 
-const allVariationsInMerge = computed(() => {
-  if (!selectedGroup.value) return []
-  return [selectedGroup.value.primary, ...selectedGroup.value.matches]
+const allDisplayedSelected = computed(() => {
+  return displayedConsultants.value.length > 0 &&
+    displayedConsultants.value.every(consultant => selectedConsultants.value.includes(consultant.name))
+})
+
+const selectedConsultantData = computed(() => {
+  return allConsultants.value.filter(c => selectedConsultants.value.includes(c.name))
+})
+
+const totalSelectedBookings = computed(() => {
+  return selectedConsultantData.value.reduce((sum, c) => sum + c.booking_count, 0)
 })
 
 // Methods
-const loadDuplicates = async () => {
-  // Require either travel agent or organization selection
+const loadAllConsultants = async () => {
   if (!props.selectedTravelAgent && !props.selectedOrganization) {
     error.value = 'Please select a travel agent or organization first.'
+    return
+  }
+
+  loading.value = true
+  error.value = null
+  selectedConsultants.value = []
+  showingDuplicates.value = false
+
+  try {
+    const params = {}
+    if (props.selectedTravelAgent) {
+      params.travel_agent_id = props.selectedTravelAgent
+    } else if (props.selectedOrganization) {
+      params.organization_id = props.selectedOrganization
+    }
+
+    const response = await api.get('/data-management/consultant-merge/all_consultants/', { params })
+    allConsultants.value = response.data.consultants || []
+  } catch (err) {
+    console.error('Error loading consultants:', err)
+    allConsultants.value = []
+
+    if (err.response?.status === 403) {
+      error.value = 'Permission denied. You must be an admin to access this feature.'
+    } else if (err.response?.status === 401) {
+      error.value = 'Not authenticated. Please log in.'
+    } else {
+      error.value = err.response?.data?.error || err.message || 'Failed to load consultants'
+    }
+  } finally {
+    loading.value = false
+  }
+}
+
+const findDuplicates = async () => {
+  if (showingDuplicates.value) {
+    clearDuplicateFilter()
     return
   }
 
@@ -353,80 +431,85 @@ const loadDuplicates = async () => {
     const params = {
       min_similarity: minSimilarity.value
     }
-
-    // Prefer travel agent (consultants work across all customers)
     if (props.selectedTravelAgent) {
       params.travel_agent_id = props.selectedTravelAgent
     } else if (props.selectedOrganization) {
       params.organization_id = props.selectedOrganization
     }
 
-    const response = await api.get('/data-management/consultant-merge/find_duplicates/', {
-      params
-    })
-
+    const response = await api.get('/data-management/consultant-merge/find_duplicates/', { params })
     duplicateGroups.value = response.data.duplicate_groups || []
-
-    // Initialize selectedMergeTexts with empty arrays for each group
-    const initialSelectedTexts = {}
-    duplicateGroups.value.forEach((group, index) => {
-      initialSelectedTexts[index] = []
-    })
-    selectedMergeTexts.value = initialSelectedTexts
-
+    showingDuplicates.value = true
     emit('duplicates-updated', duplicateGroups.value.length)
   } catch (err) {
-    console.error('Error loading duplicates:', err)
-    duplicateGroups.value = []
-    emit('duplicates-updated', 0)
-
-    if (err.response?.status === 403) {
-      error.value = 'Permission denied. You must be an admin to access this feature.'
-    } else if (err.response?.status === 401) {
-      error.value = 'Not authenticated. Please log in.'
-    } else {
-      error.value = err.response?.data?.error || err.message || 'Failed to load duplicates'
-    }
+    console.error('Error finding duplicates:', err)
+    error.value = err.response?.data?.error || err.message || 'Failed to find duplicates'
   } finally {
     loading.value = false
   }
 }
 
-const openMergeDialog = (group, index) => {
-  selectedGroup.value = group
-  selectedGroupIndex.value = duplicateGroups.value.indexOf(group)
-  showMergeDialog.value = true
-  mergeOptions.value = {
-    chosenText: '',
-    customText: ''
+const clearDuplicateFilter = () => {
+  showingDuplicates.value = false
+  duplicateGroups.value = []
+  selectedConsultants.value = []
+  emit('duplicates-updated', 0)
+}
+
+const toggleSelectAll = () => {
+  if (allDisplayedSelected.value) {
+    selectedConsultants.value = []
+  } else {
+    selectedConsultants.value = displayedConsultants.value.map(c => c.name)
   }
 }
 
-const closeMergeDialog = () => {
-  showMergeDialog.value = false
-  selectedGroup.value = null
-  selectedGroupIndex.value = null
+const getRowClass = (consultant) => {
+  if (!showingDuplicates.value) return ''
+  const color = groupColors[consultant.groupIndex % groupColors.length]
+  return `border-l-4 ${color.border}`
+}
+
+const getGroupBadgeClass = (groupIndex) => {
+  const color = groupColors[groupIndex % groupColors.length]
+  return `${color.bg} ${color.text}`
+}
+
+const openMergeModal = () => {
+  // Pre-select first consultant as standard name
+  if (selectedConsultants.value.length > 0) {
+    selectedStandardName.value = selectedConsultants.value[0]
+  }
+  customStandardName.value = ''
+  showMergeModal.value = true
+}
+
+const closeMergeModal = () => {
+  showMergeModal.value = false
+  selectedStandardName.value = ''
+  customStandardName.value = ''
 }
 
 const confirmMerge = async () => {
-  if (mergeSelection.value.length === 0) {
+  const finalName = customStandardName.value || selectedStandardName.value
+
+  if (!finalName || selectedConsultants.value.length < 2) {
     return
   }
 
   merging.value = true
 
   try {
-    const chosenText = mergeOptions.value.chosenText === '__custom__'
-      ? mergeOptions.value.customText
-      : mergeOptions.value.chosenText
+    // Determine primary and merge texts
+    const primaryText = selectedConsultants.value[0]
+    const mergeTexts = selectedConsultants.value.slice(1)
 
     const mergeData = {
-      primary_text: selectedGroup.value.primary.text,
-      merge_texts: mergeSelection.value.map(m => m.text),
-      chosen_text: chosenText
+      primary_text: primaryText,
+      merge_texts: mergeTexts,
+      chosen_text: finalName
     }
 
-    // Send travel agent ID if selected, otherwise organization ID
     if (props.selectedTravelAgent) {
       mergeData.travel_agent_id = props.selectedTravelAgent
     } else if (props.selectedOrganization) {
@@ -435,21 +518,20 @@ const confirmMerge = async () => {
 
     const response = await api.post('/data-management/consultant-merge/merge/', mergeData)
 
-    successMessage.value = `Successfully standardized consultant name across ${response.data.bookings_updated} booking(s).`
+    successMessage.value = `Successfully merged ${selectedConsultants.value.length} consultant names. ${response.data.bookings_updated} bookings updated.`
 
-    // Remove the merged group from the list
-    duplicateGroups.value.splice(selectedGroupIndex.value, 1)
-    emit('duplicates-updated', duplicateGroups.value.length)
-
-    closeMergeDialog()
+    // Reload data
+    await loadAllConsultants()
+    selectedConsultants.value = []
+    closeMergeModal()
 
     // Clear success message after 5 seconds
     setTimeout(() => {
       successMessage.value = ''
     }, 5000)
   } catch (err) {
-    console.error('Error standardizing consultant names:', err)
-    error.value = err.response?.data?.error || 'Failed to standardize consultant names'
+    console.error('Error merging consultants:', err)
+    error.value = err.response?.data?.error || 'Failed to merge consultant names'
   } finally {
     merging.value = false
   }
