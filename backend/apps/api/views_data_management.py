@@ -536,6 +536,29 @@ class ConsultantMergeViewSet(viewsets.ViewSet):
             booking_count=Count('id')
         ).order_by('travel_consultant_text')
 
+        # Get all consultant names for audit lookup
+        consultant_names = [item['travel_consultant_text'] for item in consultant_texts]
+
+        # Get most recent merge audit for each consultant name
+        from apps.bookings.models import MergeAudit
+        recent_merges = MergeAudit.objects.filter(
+            merge_type='CONSULTANT',
+            status='COMPLETED',
+            chosen_name__in=consultant_names
+        ).order_by('chosen_name', '-created_at').distinct('chosen_name')
+
+        # Build a dict of audit info by consultant name
+        audit_map = {}
+        for audit in recent_merges:
+            audit_map[audit.chosen_name] = {
+                'audit_id': str(audit.id),
+                'merged_at': audit.created_at.isoformat(),
+                'performed_by': audit.performed_by.get_full_name() if audit.performed_by else 'Unknown',
+                'merged_items': audit.merged_record_ids,
+                'primary_text': audit.primary_object_id,
+                'chosen_name': audit.chosen_name
+            }
+
         # Find duplicates using fuzzy matching
         duplicate_groups = []
         processed_texts = set()
@@ -557,19 +580,28 @@ class ConsultantMergeViewSet(viewsets.ViewSet):
                 similarity = calculate_name_similarity(consultant_text, candidate_text)
 
                 if similarity >= min_similarity:
-                    matches.append({
+                    match_data = {
                         'text': candidate_text,
                         'booking_count': candidate['booking_count'],
                         'similarity_score': round(similarity, 2)
-                    })
+                    }
+                    # Add audit info if available
+                    if candidate_text in audit_map:
+                        match_data['last_merge'] = audit_map[candidate_text]
+                    matches.append(match_data)
                     processed_texts.add(candidate_text)
 
             if matches:
+                primary_data = {
+                    'text': consultant_text,
+                    'booking_count': item['booking_count']
+                }
+                # Add audit info if available
+                if consultant_text in audit_map:
+                    primary_data['last_merge'] = audit_map[consultant_text]
+
                 group = {
-                    'primary': {
-                        'text': consultant_text,
-                        'booking_count': item['booking_count']
-                    },
+                    'primary': primary_data,
                     'matches': sorted(matches, key=lambda x: x['similarity_score'], reverse=True)
                 }
                 duplicate_groups.append(group)
@@ -792,12 +824,41 @@ class ConsultantMergeViewSet(viewsets.ViewSet):
             booking_count=Count('id')
         ).order_by('travel_consultant_text')
 
+        # Get all consultant names for audit lookup
+        consultant_names = [item['travel_consultant_text'] for item in consultant_texts]
+
+        # Get most recent merge audit for each consultant name
+        from apps.bookings.models import MergeAudit
+        recent_merges = MergeAudit.objects.filter(
+            merge_type='CONSULTANT',
+            status='COMPLETED',
+            chosen_name__in=consultant_names
+        ).order_by('chosen_name', '-created_at').distinct('chosen_name')
+
+        # Build a dict of audit info by consultant name
+        audit_map = {}
+        for audit in recent_merges:
+            audit_map[audit.chosen_name] = {
+                'audit_id': str(audit.id),
+                'merged_at': audit.created_at.isoformat(),
+                'performed_by': audit.performed_by.get_full_name() if audit.performed_by else 'Unknown',
+                'merged_items': audit.merged_record_ids,  # List of names that were merged
+                'primary_text': audit.primary_object_id,
+                'chosen_name': audit.chosen_name
+            }
+
         results = []
         for item in consultant_texts:
-            results.append({
+            consultant_data = {
                 'name': item['travel_consultant_text'],
                 'booking_count': item['booking_count']
-            })
+            }
+
+            # Add audit info if available
+            if item['travel_consultant_text'] in audit_map:
+                consultant_data['last_merge'] = audit_map[item['travel_consultant_text']]
+
+            results.append(consultant_data)
 
         return Response({
             'consultants': results
