@@ -745,6 +745,59 @@ class ConsultantMergeViewSet(viewsets.ViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
+    @action(detail=False, methods=['get'])
+    def all_consultants(self, request):
+        """
+        Get all unique consultant names with booking counts.
+        Used for table-based merge interface.
+
+        Query params:
+        - travel_agent_id: Travel Agent organization ID (searches across all their customers)
+        - organization_id: Single organization ID (fallback)
+        """
+        travel_agent_id = request.query_params.get('travel_agent_id')
+        org_id = request.query_params.get('organization_id') or request.query_params.get('organization')
+
+        # Get bookings with consultant names
+        bookings_query = Booking.objects.filter(
+            travel_consultant_text__isnull=False
+        ).exclude(travel_consultant_text='')
+
+        if travel_agent_id:
+            # Search across the travel agent's organization AND all their customer organizations
+            from apps.organizations.models import Organization
+            bookings_query = bookings_query.filter(
+                Q(organization_id=travel_agent_id) |
+                Q(organization__travel_agent_id=travel_agent_id)
+            )
+        elif org_id:
+            bookings_query = bookings_query.filter(organization_id=org_id)
+        elif request.user.user_type != 'ADMIN':
+            if hasattr(request.user, 'organization'):
+                org_id = request.user.organization.id
+                bookings_query = bookings_query.filter(organization_id=org_id)
+            else:
+                return Response(
+                    {'error': 'Organization or travel agent parameter required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        # Group by consultant text and count bookings
+        consultant_texts = bookings_query.values('travel_consultant_text').annotate(
+            booking_count=Count('id')
+        ).order_by('travel_consultant_text')
+
+        results = []
+        for item in consultant_texts:
+            results.append({
+                'name': item['travel_consultant_text'],
+                'booking_count': item['booking_count']
+            })
+
+        return Response({
+            'consultants': results
+        })
+
 
 class StandardizationRuleViewSet(viewsets.ReadOnlyModelViewSet):
     """
