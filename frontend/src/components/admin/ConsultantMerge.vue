@@ -544,21 +544,17 @@ const confirmMerge = async () => {
     }
 
     // Reload all consultants
-    console.log('Fetching updated consultants...')
     const consultantsResponse = await api.get('/data-management/consultant-merge/all_consultants/', { params })
     allConsultants.value = consultantsResponse.data.consultants || []
-    console.log('Updated consultants:', allConsultants.value.length)
 
     // If we were showing duplicates, refresh them
     if (wasShowingDuplicates) {
-      console.log('Refreshing duplicate groups...')
       const duplicatesParams = {
         ...params,
         min_similarity: minSimilarity.value
       }
       const duplicatesResponse = await api.get('/data-management/consultant-merge/find_duplicates/', { params: duplicatesParams })
       duplicateGroups.value = duplicatesResponse.data.duplicate_groups || []
-      console.log('Updated duplicate groups:', duplicateGroups.value.length)
       showingDuplicates.value = true
       emit('duplicates-updated', duplicateGroups.value.length)
     } else {
@@ -568,7 +564,6 @@ const confirmMerge = async () => {
     }
 
     loading.value = false
-    console.log('Merge complete and data refreshed')
 
     // Clear success message after 5 seconds
     setTimeout(() => {

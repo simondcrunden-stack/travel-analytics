@@ -608,11 +608,16 @@ class ConsultantMergeViewSet(viewsets.ViewSet):
         # Use chosen text if provided, otherwise use primary
         final_text = chosen_text if chosen_text else primary_text
 
+        # Build list of all texts to update - include primary if it differs from final
+        texts_to_update = list(merge_texts)
+        if primary_text != final_text:
+            texts_to_update.append(primary_text)
+
         try:
             with transaction.atomic():
-                # Find all bookings with the merge texts
+                # Find all bookings with the texts to be merged
                 bookings_to_update = Booking.objects.filter(
-                    travel_consultant_text__in=merge_texts
+                    travel_consultant_text__in=texts_to_update
                 )
 
                 # Apply same filtering logic as find_duplicates
@@ -627,7 +632,7 @@ class ConsultantMergeViewSet(viewsets.ViewSet):
 
                 # Track what we're changing
                 snapshot = {}
-                for text in merge_texts:
+                for text in texts_to_update:
                     matching_bookings = bookings_to_update.filter(travel_consultant_text=text)
                     snapshot[text] = {
                         'booking_count': matching_bookings.count(),
@@ -644,7 +649,7 @@ class ConsultantMergeViewSet(viewsets.ViewSet):
                     organization_id=org_id if org_id else None,
                     primary_content_type=ContentType.objects.get_for_model(Booking),
                     primary_object_id=primary_text,  # Store primary text as ID
-                    merged_record_ids=merge_texts,
+                    merged_record_ids=texts_to_update,  # Include all texts that were updated
                     merged_records_snapshot=snapshot,
                     relationship_updates={'bookings_updated': updated_count},
                     chosen_name=final_text,
