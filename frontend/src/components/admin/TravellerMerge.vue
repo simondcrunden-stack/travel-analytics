@@ -391,12 +391,25 @@ const loadDuplicates = async () => {
       }
     })
 
-    duplicateGroups.value = response.data.duplicate_groups
+    console.log('API Response:', response.data)
+
+    duplicateGroups.value = response.data.duplicate_groups || []
     selectedMergeIds.value = {}
     emit('duplicates-updated', duplicateGroups.value.length)
   } catch (err) {
     console.error('Error loading duplicates:', err)
-    error.value = err.response?.data?.error || 'Failed to load duplicates'
+    console.error('Error response:', err.response)
+
+    duplicateGroups.value = []
+    emit('duplicates-updated', 0)
+
+    if (err.response?.status === 403) {
+      error.value = 'Permission denied. You must be an admin to access this feature.'
+    } else if (err.response?.status === 401) {
+      error.value = 'Not authenticated. Please log in.'
+    } else {
+      error.value = err.response?.data?.error || err.message || 'Failed to load duplicates'
+    }
   } finally {
     loading.value = false
   }
