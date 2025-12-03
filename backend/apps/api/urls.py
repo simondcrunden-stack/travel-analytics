@@ -3,7 +3,10 @@ from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from . import views
-from .views_data_management import TravellerMergeViewSet, ConsultantMergeViewSet, MergeAuditViewSet, StandardizationRuleViewSet
+from .views_data_management import (
+    TravellerMergeViewSet, ConsultantMergeViewSet, OrganizationMergeViewSet,
+    ServiceFeeMergeViewSet, MergeAuditViewSet, StandardizationRuleViewSet
+)
 
 # Create router and register viewsets
 router = DefaultRouter()
@@ -39,6 +42,8 @@ router.register(r'compliance-violations', views.ComplianceViolationViewSet, base
 # Data Management endpoints
 router.register(r'data-management/traveller-merge', TravellerMergeViewSet, basename='traveller-merge')
 router.register(r'data-management/consultant-merge', ConsultantMergeViewSet, basename='consultant-merge')
+router.register(r'data-management/organization-merge', OrganizationMergeViewSet, basename='organization-merge')
+router.register(r'data-management/service-fee-merge', ServiceFeeMergeViewSet, basename='service-fee-merge')
 router.register(r'data-management/merge-audit', MergeAuditViewSet, basename='merge-audit')
 router.register(r'data-management/standardization-rules', StandardizationRuleViewSet, basename='standardization-rule')
 

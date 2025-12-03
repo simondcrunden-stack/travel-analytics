@@ -160,6 +160,7 @@
         />
         <ServiceFeeMerge
           v-else-if="activeTab === 'servicefees'"
+          :selected-travel-agent="selectedTravelAgent"
           :selected-organization="selectedOrganization"
           @duplicates-updated="updateServiceFeeCount"
         />

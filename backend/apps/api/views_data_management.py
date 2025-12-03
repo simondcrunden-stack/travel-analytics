@@ -917,3 +917,385 @@ class StandardizationRuleViewSet(viewsets.ReadOnlyModelViewSet):
             'success': True,
             'deleted_count': deleted_count
         })
+
+
+class OrganizationMergeViewSet(viewsets.ViewSet):
+    """
+    API endpoints for finding and merging duplicate organizations.
+    Merges duplicate Organization records and reassigns all related data.
+    """
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    @action(detail=False, methods=['get'])
+    def find_duplicates(self, request):
+        """
+        Find potential duplicate organizations
+
+        Query params:
+        - min_similarity: Minimum similarity score (0.0-1.0, default 0.7)
+        """
+        from apps.organizations.models import Organization
+
+        min_similarity = float(request.query_params.get('min_similarity', 0.7))
+
+        # Get all organizations (exclude travel agents if needed)
+        organizations = Organization.objects.filter(
+            is_travel_agent=False  # Only look at customer organizations
+        ).order_by('name')
+
+        duplicates = []
+        processed_ids = set()
+
+        for org in organizations:
+            if org.id in processed_ids:
+                continue
+
+            # Find similar organizations
+            similar_orgs = []
+            for other_org in organizations:
+                if other_org.id == org.id or other_org.id in processed_ids:
+                    continue
+
+                similarity = calculate_name_similarity(org.name, other_org.name)
+                if similarity >= min_similarity:
+                    # Get counts of related data
+                    similar_orgs.append({
+                        'id': str(other_org.id),
+                        'name': other_org.name,
+                        'code': other_org.code,
+                        'traveller_count': other_org.travellers.count(),
+                        'booking_count': other_org.bookings.count(),
+                        'budget_count': other_org.budgets.count() if hasattr(other_org, 'budgets') else 0,
+                        'similarity': round(similarity, 2)
+                    })
+                    processed_ids.add(other_org.id)
+
+            if similar_orgs:
+                # Add the primary org
+                primary_data = {
+                    'id': str(org.id),
+                    'name': org.name,
+                    'code': org.code,
+                    'traveller_count': org.travellers.count(),
+                    'booking_count': org.bookings.count(),
+                    'budget_count': org.budgets.count() if hasattr(org, 'budgets') else 0,
+                    'similarity': 1.0
+                }
+
+                duplicates.append({
+                    'primary': primary_data,
+                    'similar': similar_orgs,
+                    'total_records': len(similar_orgs) + 1
+                })
+                processed_ids.add(org.id)
+
+        return Response({'duplicates': duplicates})
+
+    @action(detail=False, methods=['post'])
+    def merge(self, request):
+        """
+        Merge organizations by reassigning all related data to the primary organization
+
+        Request body:
+        - primary_id: ID of the organization to keep
+        - merge_ids: List of organization IDs to merge into primary
+        - chosen_name: Optional custom name for the primary organization
+        """
+        from apps.organizations.models import Organization
+
+        primary_id = request.data.get('primary_id')
+        merge_ids = request.data.get('merge_ids', [])
+        chosen_name = request.data.get('chosen_name', '')
+
+        if not primary_id or not merge_ids:
+            return Response(
+                {'error': 'primary_id and merge_ids are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            with transaction.atomic():
+                # Get the primary organization
+                primary_org = Organization.objects.get(id=primary_id)
+
+                # Update name if chosen_name provided
+                original_name = primary_org.name
+                if chosen_name and chosen_name != primary_org.name:
+                    primary_org.name = chosen_name
+                    primary_org.save()
+
+                # Track what we're merging
+                snapshot = {}
+                total_reassigned = {
+                    'travellers': 0,
+                    'bookings': 0,
+                    'budgets': 0,
+                    'invoices': 0,
+                    'service_fees': 0
+                }
+
+                # Process each organization to merge
+                for merge_id in merge_ids:
+                    merge_org = Organization.objects.get(id=merge_id)
+
+                    # Store snapshot
+                    snapshot[str(merge_id)] = {
+                        'name': merge_org.name,
+                        'code': merge_org.code,
+                        'traveller_count': merge_org.travellers.count(),
+                        'booking_count': merge_org.bookings.count(),
+                    }
+
+                    # Reassign all related records to primary organization
+                    travellers_updated = merge_org.travellers.all().update(organization=primary_org)
+                    total_reassigned['travellers'] += travellers_updated
+
+                    bookings_updated = merge_org.bookings.all().update(organization=primary_org)
+                    total_reassigned['bookings'] += bookings_updated
+
+                    # Reassign budgets if they exist
+                    if hasattr(merge_org, 'budgets'):
+                        budgets_updated = merge_org.budgets.all().update(organization=primary_org)
+                        total_reassigned['budgets'] += budgets_updated
+
+                    # Reassign invoices if they exist
+                    if hasattr(merge_org, 'invoices'):
+                        invoices_updated = merge_org.invoices.all().update(organization=primary_org)
+                        total_reassigned['invoices'] += invoices_updated
+
+                    # Reassign service fees
+                    from apps.bookings.models import ServiceFee
+                    service_fees_updated = ServiceFee.objects.filter(organization=merge_org).update(organization=primary_org)
+                    total_reassigned['service_fees'] += service_fees_updated
+
+                    # Delete the merged organization
+                    merge_org.delete()
+
+                # Create audit record
+                merge_audit = MergeAudit.objects.create(
+                    merge_type='ORGANIZATION',
+                    performed_by=request.user,
+                    organization=primary_org,
+                    primary_content_type=ContentType.objects.get_for_model(Organization),
+                    primary_object_id=str(primary_org.id),
+                    merged_record_ids=merge_ids,
+                    merged_records_snapshot=snapshot,
+                    relationship_updates=total_reassigned,
+                    chosen_name=chosen_name if chosen_name else primary_org.name,
+                    summary=f"Merged {len(merge_ids)} organization(s) into '{primary_org.name}'"
+                )
+
+                return Response({
+                    'success': True,
+                    'merged_count': len(merge_ids),
+                    'reassigned': total_reassigned,
+                    'primary_name': primary_org.name,
+                    'audit_id': str(merge_audit.id)
+                })
+
+        except Organization.DoesNotExist:
+            return Response(
+                {'error': 'Organization not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            logger.error(f"Error merging organizations: {str(e)}")
+            return Response(
+                {'error': f'Merge failed: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class ServiceFeeMergeViewSet(viewsets.ViewSet):
+    """
+    API endpoints for finding and merging duplicate service fee descriptions.
+    Similar to ConsultantMerge - standardizes text fields.
+    """
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    @action(detail=False, methods=['get'])
+    def find_duplicates(self, request):
+        """
+        Find similar service fee description entries
+
+        Query params:
+        - organization_id: Organization ID to filter
+        - travel_agent_id: Travel agent ID to search across all customers
+        - min_similarity: Minimum similarity score (0.0-1.0, default 0.7)
+        """
+        from apps.bookings.models import ServiceFee
+
+        org_id = request.query_params.get('organization_id')
+        travel_agent_id = request.query_params.get('travel_agent_id')
+        min_similarity = float(request.query_params.get('min_similarity', 0.7))
+
+        # Get service fees with descriptions
+        fees_query = ServiceFee.objects.filter(
+            description__isnull=False
+        ).exclude(description='')
+
+        if travel_agent_id:
+            fees_query = fees_query.filter(
+                Q(organization_id=travel_agent_id) |
+                Q(organization__travel_agent_id=travel_agent_id)
+            )
+        elif org_id:
+            fees_query = fees_query.filter(organization_id=org_id)
+
+        # Get unique descriptions with counts
+        descriptions = fees_query.values('description').annotate(
+            count=Count('id')
+        ).order_by('-count')
+
+        # Group similar descriptions
+        duplicates = []
+        processed_descriptions = set()
+
+        for desc_data in descriptions:
+            description = desc_data['description']
+
+            if description in processed_descriptions:
+                continue
+
+            # Find similar descriptions
+            similar_descs = []
+            for other_desc_data in descriptions:
+                other_desc = other_desc_data['description']
+
+                if other_desc == description or other_desc in processed_descriptions:
+                    continue
+
+                similarity = calculate_name_similarity(description, other_desc)
+                if similarity >= min_similarity:
+                    similar_descs.append({
+                        'description': other_desc,
+                        'count': other_desc_data['count'],
+                        'similarity': round(similarity, 2)
+                    })
+                    processed_descriptions.add(other_desc)
+
+            if similar_descs:
+                # Add the primary description
+                primary_data = {
+                    'description': description,
+                    'count': desc_data['count'],
+                    'similarity': 1.0
+                }
+
+                duplicates.append({
+                    'primary': primary_data,
+                    'similar': similar_descs,
+                    'total_records': sum([d['count'] for d in similar_descs]) + desc_data['count']
+                })
+                processed_descriptions.add(description)
+
+        return Response({'duplicates': duplicates})
+
+    @action(detail=False, methods=['post'])
+    def merge(self, request):
+        """
+        Merge service fee descriptions by standardizing the text
+
+        Request body:
+        - primary_description: The description to keep as standard
+        - merge_descriptions: List of description variations to standardize
+        - chosen_description: Optional custom description to use
+        - organization_id: Organization context
+        - travel_agent_id: Travel agent context
+        """
+        from apps.bookings.models import ServiceFee, StandardizationRule
+
+        primary_desc = request.data.get('primary_description')
+        merge_descs = request.data.get('merge_descriptions', [])
+        chosen_desc = request.data.get('chosen_description', '')
+        org_id = request.data.get('organization_id')
+        travel_agent_id = request.data.get('travel_agent_id')
+
+        if not primary_desc or not merge_descs:
+            return Response(
+                {'error': 'primary_description and merge_descriptions are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Use chosen description if provided, otherwise use primary
+        final_desc = chosen_desc if chosen_desc else primary_desc
+
+        try:
+            with transaction.atomic():
+                # Find all service fees with the merge descriptions
+                fees_to_update = ServiceFee.objects.filter(
+                    description__in=merge_descs
+                )
+
+                # Apply filtering
+                if travel_agent_id:
+                    fees_to_update = fees_to_update.filter(
+                        Q(organization_id=travel_agent_id) |
+                        Q(organization__travel_agent_id=travel_agent_id)
+                    )
+                elif org_id:
+                    fees_to_update = fees_to_update.filter(organization_id=org_id)
+
+                # Track what we're changing
+                snapshot = {}
+                for desc in merge_descs:
+                    matching_fees = fees_to_update.filter(description=desc)
+                    snapshot[desc] = {
+                        'fee_count': matching_fees.count(),
+                        'fee_ids': [str(f.id) for f in matching_fees[:100]]  # Sample
+                    }
+
+                # Update all service fees
+                updated_count = fees_to_update.update(description=final_desc)
+
+                # Create audit record
+                merge_audit = MergeAudit.objects.create(
+                    merge_type='SERVICE_FEE',
+                    performed_by=request.user,
+                    organization_id=org_id if org_id else None,
+                    primary_content_type=ContentType.objects.get_for_model(ServiceFee),
+                    primary_object_id=primary_desc,
+                    merged_record_ids=merge_descs,
+                    merged_records_snapshot=snapshot,
+                    relationship_updates={'service_fees_updated': updated_count},
+                    chosen_name=final_desc,
+                    summary=f"Standardized service fee description '{final_desc}' across {updated_count} fees (from {len(merge_descs)} variations)"
+                )
+
+                # Create standardization rules for each variation
+                rules_created = 0
+                for merge_desc in merge_descs:
+                    if merge_desc != final_desc:
+                        rule, created = StandardizationRule.objects.get_or_create(
+                            rule_type='SERVICE_FEE',
+                            source_text=merge_desc,
+                            travel_agent_id=travel_agent_id if travel_agent_id else None,
+                            organization_id=org_id if (org_id and not travel_agent_id) else None,
+                            defaults={
+                                'target_text': final_desc,
+                                'created_from_merge': merge_audit,
+                                'created_by': request.user,
+                                'is_active': True
+                            }
+                        )
+                        if created:
+                            rules_created += 1
+                        elif not created and rule.target_text != final_desc:
+                            rule.target_text = final_desc
+                            rule.save()
+
+                return Response({
+                    'success': True,
+                    'merged_count': len(merge_descs),
+                    'fees_updated': updated_count,
+                    'final_description': final_desc,
+                    'audit_id': str(merge_audit.id),
+                    'rules_created': rules_created
+                })
+
+        except Exception as e:
+            logger.error(f"Error merging service fee descriptions: {str(e)}")
+            return Response(
+                {'error': f'Merge failed: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
