@@ -48,7 +48,7 @@ class Migration(migrations.Migration):
         # Step 4: Remove old index
         migrations.RemoveIndex(
             model_name='traveller',
-            name='travellers_organiz_aa00ce_idx',  # organization + last_name + first_name index
+            name='travellers_organiz_df7b3e_idx',  # organization + last_name + first_name index
         ),
 
         # Step 5: Remove first_name and last_name fields
