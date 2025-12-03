@@ -444,3 +444,212 @@ class MergeAuditViewSet(viewsets.ReadOnlyModelViewSet):
                 {'error': 'Merge audit record not found'},
                 status=status.HTTP_404_NOT_FOUND
             )
+
+
+class ConsultantMergeViewSet(viewsets.ViewSet):
+    """
+    API endpoints for finding and merging duplicate consultant text entries
+    """
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    @action(detail=False, methods=['get'])
+    def find_duplicates(self, request):
+        """
+        Find similar consultant text entries in bookings
+
+        Query params:
+        - organization_id or organization: Organization ID (required for org admins, optional for system admins)
+        - min_similarity: Minimum similarity score (0.0-1.0, default 0.7)
+        """
+        org_id = request.query_params.get('organization_id') or request.query_params.get('organization')
+        min_similarity = float(request.query_params.get('min_similarity', 0.7))
+
+        # Get organization context
+        if not org_id and request.user.user_type != 'ADMIN':
+            if hasattr(request.user, 'organization'):
+                org_id = request.user.organization.id
+            else:
+                return Response(
+                    {'error': 'Organization parameter required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        # Get distinct consultant text values from bookings
+        bookings_query = Booking.objects.filter(
+            travel_consultant_text__isnull=False
+        ).exclude(travel_consultant_text='')
+
+        if org_id:
+            bookings_query = bookings_query.filter(organization_id=org_id)
+
+        # Group by consultant text and count bookings
+        consultant_texts = bookings_query.values('travel_consultant_text').annotate(
+            booking_count=Count('id')
+        ).order_by('travel_consultant_text')
+
+        # Find duplicates using fuzzy matching
+        duplicate_groups = []
+        processed_texts = set()
+
+        for item in consultant_texts:
+            consultant_text = item['travel_consultant_text']
+
+            if consultant_text in processed_texts:
+                continue
+
+            # Find similar consultant names
+            matches = []
+            for candidate in consultant_texts:
+                candidate_text = candidate['travel_consultant_text']
+
+                if candidate_text in processed_texts or candidate_text == consultant_text:
+                    continue
+
+                similarity = calculate_name_similarity(consultant_text, candidate_text)
+
+                if similarity >= min_similarity:
+                    matches.append({
+                        'text': candidate_text,
+                        'booking_count': candidate['booking_count'],
+                        'similarity_score': round(similarity, 2)
+                    })
+                    processed_texts.add(candidate_text)
+
+            if matches:
+                group = {
+                    'primary': {
+                        'text': consultant_text,
+                        'booking_count': item['booking_count']
+                    },
+                    'matches': sorted(matches, key=lambda x: x['similarity_score'], reverse=True)
+                }
+                duplicate_groups.append(group)
+                processed_texts.add(consultant_text)
+
+        return Response({
+            'duplicate_groups': duplicate_groups,
+            'total_groups': len(duplicate_groups),
+            'min_similarity': min_similarity
+        })
+
+    @action(detail=False, methods=['post'])
+    def merge(self, request):
+        """
+        Merge consultant text entries by standardizing the text across bookings
+
+        Request body:
+        - primary_text: The text to keep as standard
+        - merge_texts: List of text variations to standardize
+        - chosen_text: Optional custom text to use (overrides primary_text)
+        - organization_id: Organization context
+        """
+        primary_text = request.data.get('primary_text')
+        merge_texts = request.data.get('merge_texts', [])
+        chosen_text = request.data.get('chosen_text', '')
+        org_id = request.data.get('organization_id')
+
+        if not primary_text or not merge_texts:
+            return Response(
+                {'error': 'primary_text and merge_texts are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Use chosen text if provided, otherwise use primary
+        final_text = chosen_text if chosen_text else primary_text
+
+        try:
+            with transaction.atomic():
+                # Find all bookings with the merge texts
+                bookings_to_update = Booking.objects.filter(
+                    travel_consultant_text__in=merge_texts
+                )
+
+                if org_id:
+                    bookings_to_update = bookings_to_update.filter(organization_id=org_id)
+
+                # Track what we're changing
+                snapshot = {}
+                for text in merge_texts:
+                    matching_bookings = bookings_to_update.filter(travel_consultant_text=text)
+                    snapshot[text] = {
+                        'booking_count': matching_bookings.count(),
+                        'booking_ids': [str(b.id) for b in matching_bookings[:100]]  # Sample
+                    }
+
+                # Update all bookings
+                updated_count = bookings_to_update.update(travel_consultant_text=final_text)
+
+                # Create audit record
+                merge_audit = MergeAudit.objects.create(
+                    merge_type='CONSULTANT',
+                    performed_by=request.user,
+                    organization_id=org_id if org_id else None,
+                    primary_content_type=ContentType.objects.get_for_model(Booking),
+                    primary_object_id=primary_text,  # Store primary text as ID
+                    merged_record_ids=merge_texts,
+                    merged_records_snapshot=snapshot,
+                    relationship_updates={'bookings_updated': updated_count},
+                    chosen_name=final_text,
+                    summary=f"Standardized consultant text '{final_text}' across {updated_count} bookings (from {len(merge_texts)} variations)"
+                )
+
+                return Response({
+                    'success': True,
+                    'merged_count': len(merge_texts),
+                    'bookings_updated': updated_count,
+                    'final_text': final_text,
+                    'audit_id': str(merge_audit.id)
+                })
+
+        except Exception as e:
+            logger.error(f"Error merging consultant texts: {str(e)}")
+            return Response(
+                {'error': f'Merge failed: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @action(detail=True, methods=['post'])
+    def undo(self, request, pk=None):
+        """
+        Undo a consultant text merge operation
+        """
+        try:
+            with transaction.atomic():
+                merge_audit = MergeAudit.objects.get(id=pk, merge_type='CONSULTANT')
+
+                if merge_audit.status == 'UNDONE':
+                    return Response(
+                        {'error': 'This merge has already been undone'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+                # Restore original consultant texts
+                restored_count = 0
+                for text, data in merge_audit.merged_records_snapshot.items():
+                    booking_ids = data.get('booking_ids', [])
+                    # Restore bookings back to their original text
+                    Booking.objects.filter(id__in=booking_ids).update(travel_consultant_text=text)
+                    restored_count += len(booking_ids)
+
+                # Mark as undone
+                merge_audit.status = 'UNDONE'
+                merge_audit.undone_at = timezone.now()
+                merge_audit.undone_by = request.user
+                merge_audit.save()
+
+                return Response({
+                    'success': True,
+                    'restored_count': restored_count
+                })
+
+        except MergeAudit.DoesNotExist:
+            return Response(
+                {'error': 'Merge audit record not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            logger.error(f"Error undoing consultant merge: {str(e)}")
+            return Response(
+                {'error': f'Undo failed: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
