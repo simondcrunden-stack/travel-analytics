@@ -135,6 +135,21 @@ const router = createRouter({
           }
         },
         {
+          path: '/admin/data-management',
+          name: 'DataManagement',
+          component: () => import('@/views/admin/DataManagementView.vue'),
+          meta: {
+            requiresAuth: true,
+            requiresAdmin: true,
+            title: 'Data Management',
+            breadcrumbs: [
+              { label: 'Dashboard', path: '/' },
+              { label: 'Admin', path: '/admin' },
+              { label: 'Data Management', path: '/admin/data-management' }
+            ]
+          }
+        },
+        {
           path: '/organization-structure',
           name: 'OrganizationStructure',
           component: () => import('@/views/OrganizationStructureView.vue'),

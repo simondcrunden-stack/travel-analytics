@@ -175,11 +175,18 @@ const baseMenuItems = [
 // Admin-only menu items
 const adminMenuItems = [
   {
+    name: 'Data Management',
+    path: '/admin/data-management',
+    icon: 'mdi-database-cog',
+    badge: null,
+    adminOnly: true
+  },
+  {
     name: 'Organization Structure',
     path: '/organization-structure',
     icon: 'mdi-office-building-cog',
-    badge: 'Admin',
-    badgeClass: 'bg-purple-600 text-white'
+    badge: null,
+    adminOnly: true
   }
 ]
 
