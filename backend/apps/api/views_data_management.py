@@ -385,7 +385,6 @@ class TravellerMergeViewSet(viewsets.ViewSet):
                 'first_name': traveller.first_name,
                 'last_name': traveller.last_name,
                 'email': traveller.email,
-                'phone': traveller.phone,
                 'employee_id': traveller.employee_id,
                 'department': traveller.department,
                 'booking_count': traveller.booking_count

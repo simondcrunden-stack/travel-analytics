@@ -122,7 +122,7 @@
                 Email
               </th>
               <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Phone
+                Department
               </th>
               <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Bookings
@@ -164,7 +164,7 @@
                 <div class="text-sm text-gray-900">{{ traveller.email || '-' }}</div>
               </td>
               <td class="px-6 py-4 whitespace-nowrap">
-                <div class="text-sm text-gray-900">{{ traveller.phone || '-' }}</div>
+                <div class="text-sm text-gray-900">{{ traveller.department || '-' }}</div>
               </td>
               <td class="px-6 py-4 whitespace-nowrap">
                 <div class="text-sm text-gray-900">{{ traveller.booking_count || 0 }}</div>
@@ -222,7 +222,7 @@
                   </div>
                   <div class="text-xs text-gray-600 mt-1">
                     <span v-if="traveller.email">{{ traveller.email }}</span>
-                    <span v-if="traveller.phone" class="ml-3">{{ traveller.phone }}</span>
+                    <span v-if="traveller.department" class="ml-3">{{ traveller.department }}</span>
                     <span class="ml-3">{{ traveller.booking_count || 0 }} bookings</span>
                   </div>
                 </div>
