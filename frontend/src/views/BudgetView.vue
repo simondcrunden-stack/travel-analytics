@@ -7,15 +7,29 @@
         <p class="mt-1 text-sm text-gray-500">Track spending against allocated budgets</p>
       </div>
 
-      <!-- Fiscal Year Selector -->
-      <select
-        v-model="selectedFiscalYear"
-        class="px-4 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-      >
-        <option v-for="fy in fiscalYears" :key="fy.id" :value="fy.year_label">
-          {{ fy.year_label }}
-        </option>
-      </select>
+      <div class="flex items-center gap-4">
+        <!-- Fiscal Year Selector -->
+        <select
+          v-model="selectedFiscalYear"
+          class="px-4 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        >
+          <option v-for="fy in fiscalYears" :key="fy.id" :value="fy.year_label">
+            {{ fy.year_label }}
+          </option>
+        </select>
+
+        <!-- Create Budget Button (Admin only) -->
+        <button
+          v-if="isAdmin"
+          @click="openCreateModal"
+          class="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+          </svg>
+          Create Budget
+        </button>
+      </div>
     </div>
 
     <!-- Universal Filters -->
@@ -193,6 +207,9 @@
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Status
                 </th>
+                <th v-if="isAdmin" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
@@ -235,6 +252,14 @@
                   <span :class="getStatusBadgeClass(budget.status)">
                     {{ budget.status }}
                   </span>
+                </td>
+                <td v-if="isAdmin" class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                  <button
+                    @click="openEditModal(budget)"
+                    class="text-blue-600 hover:text-blue-900 transition-colors"
+                  >
+                    Edit
+                  </button>
                 </td>
               </tr>
             </tbody>
@@ -280,13 +305,23 @@
         </div>
       </div>
     </div>
+
+    <!-- Budget Modal -->
+    <BudgetModal
+      :is-open="showBudgetModal"
+      :budget="selectedBudget"
+      @close="closeBudgetModal"
+      @saved="handleBudgetSaved"
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import api from '@/services/api'
+import { useAuthStore } from '@/stores/auth'
 import UniversalFilters from '@/components/common/UniversalFilters.vue'
+import BudgetModal from '@/components/budget/BudgetModal.vue'
 import { transformFiltersForBackend } from '@/utils/filterTransformer'
 import {
   mdiCurrencyUsd,
@@ -296,12 +331,22 @@ import {
   mdiAlertCircle,
 } from '@mdi/js'
 
+// Stores
+const authStore = useAuthStore()
+
+// Computed
+const isAdmin = computed(() => authStore.userType === 'ADMIN')
+
 // State
 const loading = ref(true)
 const error = ref(null)
 const budgets = ref([])
 const fiscalYears = ref([])
 const selectedFiscalYear = ref('')
+
+// Modal state
+const showBudgetModal = ref(false)
+const selectedBudget = ref(null)
 
 // Universal filters from UniversalFilters component
 const universalFilters = ref({})
@@ -493,6 +538,33 @@ const clearFilters = () => {
     status: '',
     search: '',
   }
+}
+
+// Modal methods
+const openCreateModal = () => {
+  selectedBudget.value = null
+  showBudgetModal.value = true
+}
+
+const openEditModal = async (budget) => {
+  try {
+    // Fetch full budget details from API
+    const response = await api.get(`/budgets/${budget.id}/`)
+    selectedBudget.value = response.data
+    showBudgetModal.value = true
+  } catch (err) {
+    console.error('Error loading budget details:', err)
+    error.value = 'Failed to load budget details'
+  }
+}
+
+const closeBudgetModal = () => {
+  showBudgetModal.value = false
+  selectedBudget.value = null
+}
+
+const handleBudgetSaved = async () => {
+  await fetchBudgets()
 }
 
 // Watchers for view-specific filters
