@@ -547,7 +547,7 @@ const confirmMerge = async () => {
         ...params,
         min_similarity: minSimilarity.value
       }
-      const duplicatesResponse = await api.get('/data-management/consultant-merge/find_duplicates/', { duplicatesParams })
+      const duplicatesResponse = await api.get('/data-management/consultant-merge/find_duplicates/', { params: duplicatesParams })
       duplicateGroups.value = duplicatesResponse.data.duplicate_groups || []
       showingDuplicates.value = true
       emit('duplicates-updated', duplicateGroups.value.length)
