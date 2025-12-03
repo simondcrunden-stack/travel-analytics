@@ -25,8 +25,7 @@ class Traveller(models.Model):
     )
     
     # Personal info
-    first_name = models.CharField(max_length=100)
-    last_name = models.CharField(max_length=100)
+    name = models.CharField(max_length=200, help_text="Full name of the traveller")
     email = models.EmailField(blank=True)
     
     # Link to user account (if traveller has login access)
@@ -69,16 +68,16 @@ class Traveller(models.Model):
     class Meta:
         db_table = 'travellers'
         indexes = [
-            models.Index(fields=['organization', 'last_name', 'first_name']),
+            models.Index(fields=['organization', 'name']),
             models.Index(fields=['organization', 'is_active']),
             models.Index(fields=['organizational_node']),
             models.Index(fields=['employee_id']),  # Add index for employee_id lookups
         ]
         # Removed unique_together constraint to allow duplicate employee_ids for data import
         # Duplicates can be merged using the Data Management merge functionality
-    
+
     def __str__(self):
-        return f"{self.first_name} {self.last_name}"
+        return self.name
 
 
 class Booking(models.Model):

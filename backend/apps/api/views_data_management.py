@@ -376,16 +376,13 @@ class TravellerMergeViewSet(viewsets.ViewSet):
             is_active=True
         ).annotate(
             booking_count=Count('bookings')
-        ).order_by('last_name', 'first_name')
+        ).order_by('name')
 
         results = []
         for traveller in travellers:
-            # Concatenate first_name and last_name to create name
-            full_name = f"{traveller.first_name} {traveller.last_name}".strip()
-
             results.append({
                 'id': str(traveller.id),
-                'name': full_name,
+                'name': traveller.name,
                 'employee_id': traveller.employee_id,
                 'business_unit': traveller.department,  # department field maps to business_unit in UI
                 'booking_count': traveller.booking_count
