@@ -3537,9 +3537,10 @@ class BookingViewSet(viewsets.ModelViewSet):
 # BUDGET VIEWSETS
 # ============================================================================
 
-class FiscalYearViewSet(viewsets.ReadOnlyModelViewSet):
+class FiscalYearViewSet(viewsets.ModelViewSet):
     """
     API endpoint for fiscal years.
+    Supports full CRUD operations for admin users.
     """
     serializer_class = FiscalYearSerializer
     permission_classes = [IsAuthenticated]
@@ -3561,29 +3562,110 @@ class FiscalYearViewSet(viewsets.ReadOnlyModelViewSet):
                 organization=user.organization
             ).order_by('-start_date')
 
+    def create(self, request, *args, **kwargs):
+        """Create a new fiscal year (admin only)"""
+        if request.user.user_type != 'ADMIN':
+            return Response(
+                {'error': 'Only administrators can create fiscal years'},
+                status=status.HTTP_403_FORBIDDEN
+            )
 
-class BudgetViewSet(viewsets.ReadOnlyModelViewSet):
+        # If setting as current, unset any existing current FY for this organization
+        if request.data.get('is_current'):
+            org_id = request.data.get('organization')
+            if org_id:
+                FiscalYear.objects.filter(
+                    organization_id=org_id,
+                    is_current=True
+                ).update(is_current=False)
+
+        return super().create(request, *args, **kwargs)
+
+    def update(self, request, *args, **kwargs):
+        """Update a fiscal year (admin only)"""
+        if request.user.user_type != 'ADMIN':
+            return Response(
+                {'error': 'Only administrators can update fiscal years'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # If setting as current, unset any existing current FY for this organization
+        if request.data.get('is_current'):
+            instance = self.get_object()
+            FiscalYear.objects.filter(
+                organization=instance.organization,
+                is_current=True
+            ).exclude(id=instance.id).update(is_current=False)
+
+        return super().update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        """Delete a fiscal year (admin only)"""
+        if request.user.user_type != 'ADMIN':
+            return Response(
+                {'error': 'Only administrators can delete fiscal years'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        return super().destroy(request, *args, **kwargs)
+
+
+class BudgetViewSet(viewsets.ModelViewSet):
     """
     API endpoint for budgets with spend tracking.
+    Supports full CRUD operations for admin users.
     """
     serializer_class = BudgetSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    filterset_fields = ['organization', 'fiscal_year', 'cost_center', 'is_active']
-    search_fields = ['cost_center', 'cost_center_name']
+    filterset_fields = ['organization', 'fiscal_year', 'cost_center', 'organizational_node', 'is_active']
+    search_fields = ['cost_center', 'cost_center_name', 'organizational_node__name', 'organizational_node__code']
 
     def get_queryset(self):
         user = self.request.user
 
+        queryset = Budget.objects.select_related('organization', 'fiscal_year', 'organizational_node')
+
         if user.user_type == 'ADMIN':
-            return Budget.objects.all()
+            return queryset.all()
         elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
-            return Budget.objects.filter(
+            return queryset.filter(
                 Q(organization=user.organization) |
                 Q(organization__travel_agent=user.organization)
             )
         else:
-            return Budget.objects.filter(organization=user.organization)
+            return queryset.filter(organization=user.organization)
+
+    def create(self, request, *args, **kwargs):
+        """Create a new budget (admin only)"""
+        if request.user.user_type != 'ADMIN':
+            return Response(
+                {'error': 'Only administrators can create budgets'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Auto-set created_by if not provided
+        if 'created_by' not in request.data:
+            request.data['created_by'] = request.user.id
+
+        return super().create(request, *args, **kwargs)
+
+    def update(self, request, *args, **kwargs):
+        """Update a budget (admin only)"""
+        if request.user.user_type != 'ADMIN':
+            return Response(
+                {'error': 'Only administrators can update budgets'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        return super().update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        """Delete a budget (admin only)"""
+        if request.user.user_type != 'ADMIN':
+            return Response(
+                {'error': 'Only administrators can delete budgets'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        return super().destroy(request, *args, **kwargs)
 
     @action(detail=False, methods=['get'])
     def budget_summary(self, request):
