@@ -4,39 +4,59 @@
     <div class="mb-6">
       <h2 class="text-xl font-semibold text-gray-900">Service Fee Description Merge</h2>
       <p class="mt-1 text-sm text-gray-600">
-        Find and standardize duplicate service fee description variations
+        Select descriptions to merge and standardize across service fees
       </p>
     </div>
 
     <!-- Controls -->
-    <div class="mb-6 flex items-center gap-4">
-      <button
-        @click="loadDuplicates"
-        :disabled="loading || (!selectedTravelAgent && !selectedOrganization)"
-        class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
-      >
-        <span class="mdi mdi-refresh mr-2"></span>
-        {{ loading ? 'Searching...' : 'Find Duplicates' }}
-      </button>
+    <div class="mb-6 flex items-center justify-between">
+      <div class="flex items-center gap-4">
+        <button
+          @click="loadAllDescriptions"
+          :disabled="loading || (!selectedTravelAgent && !selectedOrganization)"
+          class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+        >
+          <span class="mdi mdi-refresh mr-2"></span>
+          {{ loading ? 'Loading...' : 'Load Descriptions' }}
+        </button>
 
-      <div class="flex items-center gap-2">
-        <label class="text-sm font-medium text-gray-700">Similarity Threshold:</label>
-        <input
-          v-model.number="minSimilarity"
-          type="range"
-          min="0.5"
-          max="1.0"
-          step="0.05"
-          class="w-32"
-        />
-        <span class="text-sm text-gray-600">{{ (minSimilarity * 100).toFixed(0) }}%</span>
+        <button
+          @click="findDuplicates"
+          :disabled="loading || allDescriptions.length === 0"
+          class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+        >
+          <span class="mdi mdi-magnify mr-2"></span>
+          {{ showingDuplicates ? 'Show All' : 'Find Duplicates' }}
+        </button>
+
+        <div v-if="!showingDuplicates" class="flex items-center gap-2">
+          <label class="text-sm font-medium text-gray-700">Similarity:</label>
+          <input
+            v-model.number="minSimilarity"
+            type="range"
+            min="0.5"
+            max="1.0"
+            step="0.05"
+            class="w-32"
+          />
+          <span class="text-sm text-gray-600">{{ (minSimilarity * 100).toFixed(0) }}%</span>
+        </div>
       </div>
+
+      <button
+        v-if="selectedDescriptions.length >= 2"
+        @click="openMergeModal"
+        class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+      >
+        <span class="mdi mdi-merge mr-2"></span>
+        Merge Selected ({{ selectedDescriptions.length }})
+      </button>
     </div>
 
     <!-- Loading State -->
     <div v-if="loading" class="text-center py-12">
       <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-      <p class="mt-4 text-sm text-gray-600">Searching for duplicates...</p>
+      <p class="mt-4 text-sm text-gray-600">Loading descriptions...</p>
     </div>
 
     <!-- Error State -->
@@ -44,278 +64,217 @@
       <div class="flex">
         <span class="mdi mdi-alert-circle text-red-400 text-xl"></span>
         <div class="ml-3">
-          <h3 class="text-sm font-medium text-red-800">Error loading duplicates</h3>
+          <h3 class="text-sm font-medium text-red-800">Error</h3>
           <p class="mt-1 text-sm text-red-700">{{ error }}</p>
         </div>
       </div>
     </div>
 
-    <!-- No Duplicates Found -->
-    <div v-else-if="duplicateGroups.length === 0 && !loading" class="text-center py-12">
-      <span class="mdi mdi-check-circle text-6xl text-green-500"></span>
-      <h3 class="mt-4 text-lg font-medium text-gray-900">No duplicates found</h3>
-      <p class="mt-2 text-sm text-gray-600">All service fee descriptions appear to be unique.</p>
+    <!-- No Data State -->
+    <div v-else-if="allDescriptions.length === 0 && !loading" class="text-center py-12">
+      <span class="mdi mdi-information-outline text-6xl text-gray-400"></span>
+      <h3 class="mt-4 text-lg font-medium text-gray-900">No descriptions found</h3>
+      <p class="mt-2 text-sm text-gray-600">
+        {{ selectedTravelAgent || selectedOrganization ? 'Click "Load Descriptions" to view service fee descriptions.' : 'Please select a travel agent or organization first.' }}
+      </p>
     </div>
 
-    <!-- Manual Merge Section -->
-    <div v-if="!loading" class="mb-8 bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
-      <div class="bg-indigo-50 px-4 py-3 border-b border-indigo-200">
+    <!-- Descriptions Table -->
+    <div v-else class="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+      <!-- Filter Info -->
+      <div v-if="showingDuplicates" class="bg-blue-50 border-b border-blue-200 px-4 py-3">
         <div class="flex items-center justify-between">
-          <div>
-            <h3 class="text-sm font-medium text-indigo-900">Manual Merge Override</h3>
-            <p class="text-xs text-indigo-700 mt-1">
-              Manually select descriptions to merge that weren't automatically grouped
-            </p>
+          <div class="flex items-center">
+            <span class="mdi mdi-filter text-blue-600 mr-2"></span>
+            <span class="text-sm text-blue-900">
+              Showing {{ duplicateGroups.length }} similarity groups ({{ displayedDescriptions.length }} descriptions)
+            </span>
           </div>
           <button
-            @click="toggleManualMerge"
-            class="inline-flex items-center px-3 py-1.5 border border-indigo-300 text-xs font-medium rounded text-indigo-700 bg-white hover:bg-indigo-50"
+            @click="clearDuplicateFilter"
+            class="text-sm text-blue-700 hover:text-blue-900 underline"
           >
-            <span class="mdi" :class="showManualMerge ? 'mdi-chevron-up' : 'mdi-chevron-down'"></span>
-            {{ showManualMerge ? 'Hide' : 'Show' }}
+            Clear Filter
           </button>
         </div>
       </div>
 
-      <div v-if="showManualMerge" class="p-4">
-        <!-- Search and Select Descriptions -->
-        <div class="mb-4">
-          <label class="block text-sm font-medium text-gray-700 mb-2">
-            Search and select descriptions to merge:
-          </label>
-          <div class="relative" ref="searchContainer">
-            <input
-              v-model="descriptionSearchQuery"
-              @input="filterDescriptions"
-              @focus="showDescriptionDropdown = true"
-              type="text"
-              placeholder="Type to search descriptions..."
-              class="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-            />
-            <span class="absolute right-3 top-2.5 mdi mdi-magnify text-gray-400"></span>
-
-            <!-- Dropdown with filtered descriptions -->
-            <div v-if="showDescriptionDropdown && filteredDescriptions.length > 0" class="absolute z-10 mt-1 w-full max-h-60 overflow-y-auto border border-gray-300 rounded-md bg-white shadow-lg">
-              <label
-                v-for="desc in filteredDescriptions"
-                :key="desc.description"
-                class="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0"
-                @click.stop
-              >
+      <!-- Table -->
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th scope="col" class="w-12 px-6 py-3 text-left">
+                <input
+                  type="checkbox"
+                  :checked="allDisplayedSelected"
+                  @change="toggleSelectAll"
+                  class="form-checkbox h-4 w-4 text-indigo-600 rounded"
+                />
+              </th>
+              <th v-if="showingDuplicates" scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Group
+              </th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Description
+              </th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Fees Count
+              </th>
+              <th v-if="showingDuplicates" scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Similarity
+              </th>
+            </tr>
+          </thead>
+          <tbody class="bg-white divide-y divide-gray-200">
+            <tr
+              v-for="desc in displayedDescriptions"
+              :key="desc.description"
+              :class="getRowClass(desc)"
+              class="hover:bg-gray-50"
+            >
+              <td class="px-6 py-4 whitespace-nowrap">
                 <input
                   type="checkbox"
                   :value="desc.description"
-                  v-model="manuallySelectedDescriptions"
-                  class="form-checkbox h-4 w-4 text-indigo-600 rounded mr-3"
-                  @click.stop
+                  v-model="selectedDescriptions"
+                  class="form-checkbox h-4 w-4 text-indigo-600 rounded"
+                />
+              </td>
+              <td v-if="showingDuplicates" class="px-6 py-4 whitespace-nowrap">
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium" :class="getGroupBadgeClass(desc.groupIndex)">
+                  Group {{ desc.groupIndex + 1 }}
+                </span>
+              </td>
+              <td class="px-6 py-4">
+                <div class="text-sm text-gray-900">{{ desc.description }}</div>
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap">
+                <div class="text-sm text-gray-900">{{ desc.count }}</div>
+              </td>
+              <td v-if="showingDuplicates" class="px-6 py-4 whitespace-nowrap">
+                <div class="text-sm text-gray-600">
+                  {{ desc.similarity ? (desc.similarity * 100).toFixed(0) + '%' : '100%' }}
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Table Footer -->
+      <div class="bg-gray-50 px-6 py-3 border-t border-gray-200">
+        <div class="text-sm text-gray-700">
+          Showing {{ displayedDescriptions.length }} description{{ displayedDescriptions.length !== 1 ? 's' : '' }}
+          <span v-if="selectedDescriptions.length > 0" class="ml-4 font-medium text-indigo-600">
+            {{ selectedDescriptions.length }} selected
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Merge Modal -->
+    <div v-if="showMergeModal" class="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
+      <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+        <!-- Modal Header -->
+        <div class="bg-gray-50 px-6 py-4 border-b border-gray-200">
+          <h3 class="text-lg font-medium text-gray-900">Merge Service Fee Descriptions</h3>
+        </div>
+
+        <!-- Modal Body -->
+        <div class="px-6 py-4">
+          <!-- What's Being Merged -->
+          <div class="mb-6">
+            <h4 class="text-sm font-medium text-gray-900 mb-2">Descriptions to be merged:</h4>
+            <div class="bg-gray-50 rounded-lg p-4 space-y-2">
+              <div v-for="desc in selectedDescriptionData" :key="desc.description" class="flex items-center justify-between text-sm">
+                <span class="text-gray-900">{{ desc.description }}</span>
+                <span class="text-gray-500">({{ desc.count }} fees)</span>
+              </div>
+            </div>
+            <p class="mt-2 text-sm text-gray-600">
+              Total: <strong>{{ totalSelectedFees }}</strong> service fees will be updated
+            </p>
+          </div>
+
+          <!-- Standard Description Selection -->
+          <div class="mb-6">
+            <h4 class="text-sm font-medium text-gray-900 mb-3">Choose standard description:</h4>
+
+            <!-- Radio options for existing descriptions -->
+            <div class="space-y-2 mb-4">
+              <label
+                v-for="desc in selectedDescriptionData"
+                :key="desc.description"
+                class="flex items-center p-3 border-2 rounded cursor-pointer hover:bg-gray-50"
+                :class="selectedStandardDescription === desc.description ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200'"
+              >
+                <input
+                  type="radio"
+                  :value="desc.description"
+                  v-model="selectedStandardDescription"
+                  class="form-radio h-4 w-4 text-indigo-600 mr-3"
+                />
+                <span class="text-sm text-gray-900">{{ desc.description }}</span>
+              </label>
+            </div>
+
+            <!-- Custom description option -->
+            <div class="border-2 rounded p-3" :class="customDescription ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200'">
+              <label class="flex items-start cursor-pointer">
+                <input
+                  type="radio"
+                  value=""
+                  v-model="selectedStandardDescription"
+                  @change="focusCustomInput"
+                  class="form-radio h-4 w-4 text-indigo-600 mr-3 mt-1"
                 />
                 <div class="flex-1">
-                  <span class="text-sm text-gray-900">{{ desc.description }}</span>
-                  <span class="ml-2 text-xs text-gray-500">({{ desc.count }} fees)</span>
+                  <span class="text-sm font-medium text-gray-900 block mb-2">Use custom description</span>
+                  <input
+                    ref="customDescriptionInput"
+                    v-model="customDescription"
+                    @focus="selectedStandardDescription = ''"
+                    type="text"
+                    placeholder="Enter new standardized description..."
+                    class="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                  />
                 </div>
               </label>
             </div>
           </div>
-        </div>
 
-        <!-- Selected Descriptions -->
-        <div v-if="manuallySelectedDescriptions.length > 0" class="mb-4">
-          <label class="block text-sm font-medium text-gray-700 mb-2">
-            Selected descriptions ({{ manuallySelectedDescriptions.length }}):
-          </label>
-          <div class="flex flex-wrap gap-2">
-            <span
-              v-for="desc in manuallySelectedDescriptions"
-              :key="desc"
-              class="inline-flex items-center px-3 py-1 rounded-full text-sm bg-indigo-100 text-indigo-800"
-            >
-              {{ desc }}
-              <button
-                @click="removeManualSelection(desc)"
-                class="ml-2 text-indigo-600 hover:text-indigo-800"
-              >
-                <span class="mdi mdi-close-circle text-sm"></span>
-              </button>
-            </span>
+          <!-- Merge Explanation -->
+          <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div class="flex">
+              <span class="mdi mdi-information text-blue-600 text-xl mr-3"></span>
+              <div class="text-sm text-blue-900">
+                <p class="font-medium mb-1">What happens when you merge:</p>
+                <ul class="list-disc list-inside space-y-1 text-blue-800">
+                  <li>All {{ totalSelectedFees }} service fees will be updated to use the chosen description</li>
+                  <li>Standardization rules will be created automatically for future imports</li>
+                  <li>An audit record will be created for tracking</li>
+                </ul>
+              </div>
+            </div>
           </div>
         </div>
 
-        <!-- Merge Button -->
-        <div v-if="manuallySelectedDescriptions.length >= 2" class="flex items-center justify-between bg-gray-50 border border-gray-200 rounded p-3">
-          <p class="text-sm text-gray-700">
-            Ready to merge {{ manuallySelectedDescriptions.length }} descriptions
-          </p>
+        <!-- Modal Footer -->
+        <div class="bg-gray-50 px-6 py-4 border-t border-gray-200 flex items-center justify-end gap-3">
           <button
-            @click="openManualMergeDialog"
-            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
-          >
-            <span class="mdi mdi-merge mr-2"></span>
-            Standardize Selected
-          </button>
-        </div>
-        <div v-else class="bg-yellow-50 border border-yellow-200 rounded p-3">
-          <p class="text-xs text-yellow-800">
-            <span class="mdi mdi-information"></span>
-            Select at least 2 descriptions to merge
-          </p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Duplicate Groups -->
-    <div v-else class="space-y-6">
-      <div
-        v-for="(group, index) in duplicateGroups"
-        :key="index"
-        class="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden"
-      >
-        <!-- Group Header -->
-        <div class="bg-gray-50 px-4 py-3 border-b border-gray-200">
-          <div class="flex items-center justify-between">
-            <div>
-              <h3 class="text-sm font-medium text-gray-900">
-                Potential Duplicate Group {{ index + 1 }}
-              </h3>
-              <p class="text-xs text-gray-500 mt-1">
-                {{ group.similar.length + 1 }} similar variations found
-                <span v-if="selectedMergeDescriptions[index] && selectedMergeDescriptions[index].length > 0" class="text-indigo-600 font-medium">
-                  • {{ selectedMergeDescriptions[index].length }} selected for merge
-                </span>
-              </p>
-            </div>
-            <button
-              @click="openMergeDialog(group, index)"
-              :disabled="!selectedMergeDescriptions[index] || selectedMergeDescriptions[index].length === 0"
-              class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <span class="mdi mdi-merge mr-1"></span>
-              Standardize Descriptions
-            </button>
-          </div>
-        </div>
-
-        <!-- Instruction -->
-        <div v-if="!selectedMergeDescriptions[index] || selectedMergeDescriptions[index].length === 0" class="px-4 py-2 bg-yellow-50 border-b border-yellow-100">
-          <p class="text-xs text-yellow-800">
-            <span class="mdi mdi-information"></span>
-            <strong>Step 1:</strong> Check the boxes next to the description variations you want to standardize
-          </p>
-        </div>
-
-        <!-- Description Variations -->
-        <div class="p-4">
-          <div class="space-y-2">
-            <!-- Primary Description -->
-            <label class="flex items-center p-3 border-2 border-indigo-500 bg-indigo-50 rounded cursor-pointer">
-              <input
-                type="checkbox"
-                :value="group.primary.description"
-                v-model="selectedMergeDescriptions[index]"
-                class="form-checkbox h-4 w-4 text-indigo-600 rounded"
-              />
-              <div class="ml-3 flex-1">
-                <span class="font-semibold text-gray-900">{{ group.primary.description }}</span>
-                <span class="ml-2 text-xs text-gray-500">({{ group.primary.count }} fees)</span>
-                <span class="ml-2 px-2 py-0.5 bg-indigo-100 text-indigo-800 text-xs rounded-full">Primary</span>
-              </div>
-            </label>
-
-            <!-- Similar Descriptions -->
-            <label
-              v-for="desc in group.similar"
-              :key="desc.description"
-              class="flex items-center p-3 border border-gray-300 rounded cursor-pointer hover:bg-gray-50"
-            >
-              <input
-                type="checkbox"
-                :value="desc.description"
-                v-model="selectedMergeDescriptions[index]"
-                class="form-checkbox h-4 w-4 text-indigo-600 rounded"
-              />
-              <div class="ml-3 flex-1">
-                <span class="font-medium text-gray-900">{{ desc.description }}</span>
-                <span class="ml-2 text-xs text-gray-500">({{ desc.count }} fees)</span>
-                <span class="ml-2 px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-full">
-                  {{ (desc.similarity * 100).toFixed(0) }}% match
-                </span>
-              </div>
-            </label>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Merge Dialog -->
-    <div v-if="showMergeDialog" class="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
-      <div class="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4">
-        <div class="px-6 py-4 border-b border-gray-200">
-          <h3 class="text-lg font-medium text-gray-900">Standardize Service Fee Descriptions</h3>
-        </div>
-
-        <div class="px-6 py-4">
-          <p class="text-sm text-gray-600 mb-4">
-            You are about to standardize {{ mergeSelection.length }} description variation(s) across
-            <strong>{{ totalFeeCount }}</strong> service fees.
-          </p>
-
-          <div class="space-y-3 mb-4">
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-2">
-                Choose the standard description:
-              </label>
-              <div class="space-y-2">
-                <label
-                  v-for="desc in mergeSelection"
-                  :key="desc.description"
-                  class="flex items-center p-2 border rounded cursor-pointer hover:bg-gray-50"
-                  :class="selectedStandardDescription === desc.description ? 'border-indigo-500 bg-indigo-50' : 'border-gray-300'"
-                >
-                  <input
-                    type="radio"
-                    :value="desc.description"
-                    v-model="selectedStandardDescription"
-                    class="form-radio h-4 w-4 text-indigo-600"
-                  />
-                  <span class="ml-2 text-sm">{{ desc.description }}</span>
-                  <span class="ml-auto text-xs text-gray-500">({{ desc.count }} fees)</span>
-                </label>
-              </div>
-            </div>
-
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-2">
-                Or enter a custom description:
-              </label>
-              <input
-                v-model="customDescription"
-                type="text"
-                placeholder="Enter custom description..."
-                class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-              />
-            </div>
-          </div>
-
-          <div class="bg-yellow-50 border border-yellow-200 rounded p-3">
-            <p class="text-xs text-yellow-800">
-              <span class="mdi mdi-alert"></span>
-              This action will update all service fee records with the selected variations to use the standard description.
-            </p>
-          </div>
-        </div>
-
-        <div class="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end gap-2">
-          <button
-            @click="closeMergeDialog"
-            class="px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+            @click="closeMergeModal"
+            class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
           >
             Cancel
           </button>
           <button
             @click="confirmMerge"
-            :disabled="!selectedStandardDescription && !customDescription"
-            class="px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
+            :disabled="!canMerge"
+            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
           >
-            Standardize Descriptions
+            <span class="mdi mdi-check mr-2"></span>
+            Confirm Merge
           </button>
         </div>
       </div>
@@ -324,7 +283,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed } from 'vue'
 import api from '@/services/api'
 
 const props = defineProps({
@@ -344,32 +303,63 @@ const emit = defineEmits(['duplicates-updated'])
 const minSimilarity = ref(0.7)
 const loading = ref(false)
 const error = ref('')
+const allDescriptions = ref([])
 const duplicateGroups = ref([])
-const selectedMergeDescriptions = ref({})
-const showMergeDialog = ref(false)
-const selectedGroup = ref(null)
-const selectedGroupIndex = ref(null)
-const mergeSelection = ref([])
+const showingDuplicates = ref(false)
+const selectedDescriptions = ref([])
+const showMergeModal = ref(false)
 const selectedStandardDescription = ref('')
 const customDescription = ref('')
-
-// Manual merge state
-const showManualMerge = ref(false)
-const allDescriptions = ref([])
-const filteredDescriptions = ref([])
-const descriptionSearchQuery = ref('')
-const showDescriptionDropdown = ref(false)
-const manuallySelectedDescriptions = ref([])
-const isManualMerge = ref(false)
-const searchContainer = ref(null)
+const customDescriptionInput = ref(null)
 
 // Computed
-const totalFeeCount = computed(() => {
-  return mergeSelection.value.reduce((sum, desc) => sum + desc.count, 0)
+const displayedDescriptions = computed(() => {
+  if (showingDuplicates.value) {
+    // Flatten duplicate groups with group info
+    const result = []
+    duplicateGroups.value.forEach((group, groupIndex) => {
+      // Add primary
+      result.push({
+        ...group.primary,
+        groupIndex,
+        similarity: 1.0
+      })
+      // Add similar descriptions
+      group.similar.forEach(desc => {
+        result.push({
+          ...desc,
+          groupIndex
+        })
+      })
+    })
+    return result
+  } else {
+    return allDescriptions.value
+  }
+})
+
+const allDisplayedSelected = computed(() => {
+  return displayedDescriptions.value.length > 0 &&
+         displayedDescriptions.value.every(desc => selectedDescriptions.value.includes(desc.description))
+})
+
+const selectedDescriptionData = computed(() => {
+  return selectedDescriptions.value.map(desc => {
+    const found = allDescriptions.value.find(d => d.description === desc)
+    return found || { description: desc, count: 0 }
+  })
+})
+
+const totalSelectedFees = computed(() => {
+  return selectedDescriptionData.value.reduce((sum, desc) => sum + desc.count, 0)
+})
+
+const canMerge = computed(() => {
+  return customDescription.value.trim() !== '' || selectedStandardDescription.value !== ''
 })
 
 // Methods
-const loadDuplicates = async () => {
+const loadAllDescriptions = async () => {
   if (!props.selectedTravelAgent && !props.selectedOrganization) {
     error.value = 'Please select a travel agent or organization first.'
     return
@@ -377,85 +367,127 @@ const loadDuplicates = async () => {
 
   loading.value = true
   error.value = ''
-
-  const params = {
-    min_similarity: minSimilarity.value
-  }
-
-  if (props.selectedTravelAgent) {
-    params.travel_agent_id = props.selectedTravelAgent
-  } else if (props.selectedOrganization) {
-    params.organization_id = props.selectedOrganization
-  }
+  showingDuplicates.value = false
+  selectedDescriptions.value = []
 
   try {
-    const response = await api.get('/data-management/service-fee-merge/find_duplicates/', {
-      params
-    })
+    const params = {}
+    if (props.selectedTravelAgent) {
+      params.travel_agent_id = props.selectedTravelAgent
+    } else if (props.selectedOrganization) {
+      params.organization_id = props.selectedOrganization
+    }
 
-    duplicateGroups.value = response.data.duplicates
-    emit('duplicates-updated', duplicateGroups.value.length)
-
-    // Initialize selected merge descriptions
-    selectedMergeDescriptions.value = {}
-    duplicateGroups.value.forEach((group, index) => {
-      selectedMergeDescriptions.value[index] = []
-    })
+    const response = await api.get('/data-management/service-fee-merge/all_descriptions/', { params })
+    allDescriptions.value = response.data.descriptions
   } catch (err) {
-    console.error('Error loading duplicates:', err)
-    error.value = err.response?.data?.error || 'Failed to load duplicate descriptions'
-    emit('duplicates-updated', 0)
+    console.error('Error loading descriptions:', err)
+    error.value = err.response?.data?.error || 'Failed to load descriptions'
   } finally {
     loading.value = false
   }
 }
 
-const openMergeDialog = (group, index) => {
-  selectedGroup.value = group
-  selectedGroupIndex.value = index
+const findDuplicates = async () => {
+  if (showingDuplicates.value) {
+    // Clear filter
+    clearDuplicateFilter()
+    return
+  }
 
-  // Build merge selection from checked items
-  const selectedDescs = selectedMergeDescriptions.value[index] || []
-  mergeSelection.value = [
-    { description: group.primary.description, count: group.primary.count },
-    ...group.similar.filter(d => selectedDescs.includes(d.description))
-  ]
+  loading.value = true
+  error.value = ''
 
-  // Pre-select primary as standard
-  selectedStandardDescription.value = group.primary.description
-  customDescription.value = ''
+  try {
+    const params = { min_similarity: minSimilarity.value }
+    if (props.selectedTravelAgent) {
+      params.travel_agent_id = props.selectedTravelAgent
+    } else if (props.selectedOrganization) {
+      params.organization_id = props.selectedOrganization
+    }
 
-  showMergeDialog.value = true
+    const response = await api.get('/data-management/service-fee-merge/find_duplicates/', { params })
+    duplicateGroups.value = response.data.duplicates
+    showingDuplicates.value = true
+  } catch (err) {
+    console.error('Error finding duplicates:', err)
+    error.value = err.response?.data?.error || 'Failed to find duplicates'
+  } finally {
+    loading.value = false
+  }
 }
 
-const closeMergeDialog = () => {
-  showMergeDialog.value = false
-  selectedGroup.value = null
-  selectedGroupIndex.value = null
-  mergeSelection.value = []
+const clearDuplicateFilter = () => {
+  showingDuplicates.value = false
+  duplicateGroups.value = []
+}
+
+const toggleSelectAll = () => {
+  if (allDisplayedSelected.value) {
+    selectedDescriptions.value = []
+  } else {
+    selectedDescriptions.value = displayedDescriptions.value.map(d => d.description)
+  }
+}
+
+const getRowClass = (desc) => {
+  if (!showingDuplicates.value) return ''
+
+  // Alternating colors for different groups
+  const colors = [
+    'bg-blue-50',
+    'bg-green-50',
+    'bg-yellow-50',
+    'bg-purple-50',
+    'bg-pink-50',
+    'bg-indigo-50'
+  ]
+  return colors[desc.groupIndex % colors.length]
+}
+
+const getGroupBadgeClass = (groupIndex) => {
+  const colors = [
+    'bg-blue-100 text-blue-800',
+    'bg-green-100 text-green-800',
+    'bg-yellow-100 text-yellow-800',
+    'bg-purple-100 text-purple-800',
+    'bg-pink-100 text-pink-800',
+    'bg-indigo-100 text-indigo-800'
+  ]
+  return colors[groupIndex % colors.length]
+}
+
+const openMergeModal = () => {
+  // Pre-select first description
+  selectedStandardDescription.value = selectedDescriptions.value[0]
+  customDescription.value = ''
+  showMergeModal.value = true
+}
+
+const closeMergeModal = () => {
+  showMergeModal.value = false
   selectedStandardDescription.value = ''
   customDescription.value = ''
 }
 
+const focusCustomInput = () => {
+  setTimeout(() => {
+    customDescriptionInput.value?.focus()
+  }, 100)
+}
+
 const confirmMerge = async () => {
-  const chosenDescription = customDescription.value || selectedStandardDescription.value
+  const finalDescription = customDescription.value.trim() || selectedStandardDescription.value
 
-  let mergeData
+  if (!finalDescription) {
+    error.value = 'Please select or enter a standard description'
+    return
+  }
 
-  if (isManualMerge.value) {
-    // Manual merge - use manually selected descriptions
-    mergeData = {
-      primary_description: manuallySelectedDescriptions.value[0],
-      merge_descriptions: manuallySelectedDescriptions.value,
-      chosen_description: customDescription.value
-    }
-  } else {
-    // Auto merge - use group-based selection
-    mergeData = {
-      primary_description: selectedGroup.value.primary.description,
-      merge_descriptions: mergeSelection.value.map(d => d.description),
-      chosen_description: customDescription.value
-    }
+  const mergeData = {
+    primary_description: selectedDescriptions.value[0],
+    merge_descriptions: selectedDescriptions.value,
+    chosen_description: customDescription.value.trim()
   }
 
   if (props.selectedTravelAgent) {
@@ -467,110 +499,19 @@ const confirmMerge = async () => {
   try {
     const response = await api.post('/data-management/service-fee-merge/merge/', mergeData)
 
-    closeMergeDialog()
+    closeMergeModal()
 
-    // Show success message and reload
+    // Show success message
     alert(`Successfully standardized ${response.data.merged_count} description(s) across ${response.data.fees_updated} service fees. ${response.data.rules_created} standardization rule(s) created.`)
 
-    // Clear manual selections if it was a manual merge
-    if (isManualMerge.value) {
-      manuallySelectedDescriptions.value = []
-      descriptionSearchQuery.value = ''
-      isManualMerge.value = false
-    }
+    // Clear selections and reload
+    selectedDescriptions.value = []
+    await loadAllDescriptions()
 
-    loadDuplicates()
+    emit('duplicates-updated')
   } catch (err) {
     console.error('Error merging descriptions:', err)
     error.value = err.response?.data?.error || 'Failed to merge descriptions'
   }
 }
-
-// Manual merge methods
-const toggleManualMerge = async () => {
-  showManualMerge.value = !showManualMerge.value
-
-  if (showManualMerge.value && allDescriptions.value.length === 0) {
-    await loadAllDescriptions()
-  }
-}
-
-const loadAllDescriptions = async () => {
-  if (!props.selectedTravelAgent && !props.selectedOrganization) {
-    error.value = 'Please select a travel agent or organization first.'
-    return
-  }
-
-  try {
-    const params = {}
-
-    if (props.selectedTravelAgent) {
-      params.travel_agent_id = props.selectedTravelAgent
-    } else if (props.selectedOrganization) {
-      params.organization_id = props.selectedOrganization
-    }
-
-    const response = await api.get('/data-management/service-fee-merge/all_descriptions/', {
-      params
-    })
-
-    allDescriptions.value = response.data.descriptions
-    filteredDescriptions.value = allDescriptions.value
-  } catch (err) {
-    console.error('Error loading descriptions:', err)
-    error.value = err.response?.data?.error || 'Failed to load descriptions'
-  }
-}
-
-const filterDescriptions = () => {
-  const query = descriptionSearchQuery.value.toLowerCase()
-
-  if (!query) {
-    filteredDescriptions.value = allDescriptions.value
-  } else {
-    filteredDescriptions.value = allDescriptions.value.filter(desc =>
-      desc.description.toLowerCase().includes(query)
-    )
-  }
-
-  showDescriptionDropdown.value = true
-}
-
-const removeManualSelection = (description) => {
-  manuallySelectedDescriptions.value = manuallySelectedDescriptions.value.filter(d => d !== description)
-}
-
-const openManualMergeDialog = () => {
-  isManualMerge.value = true
-
-  // Build merge selection from manually selected descriptions
-  const selectedDescs = manuallySelectedDescriptions.value.map(desc => {
-    const found = allDescriptions.value.find(d => d.description === desc)
-    return found || { description: desc, count: 0 }
-  })
-
-  mergeSelection.value = selectedDescs
-
-  // Pre-select first description as standard
-  selectedStandardDescription.value = manuallySelectedDescriptions.value[0]
-  customDescription.value = ''
-
-  showMergeDialog.value = true
-}
-
-// Close dropdown when clicking outside
-const handleClickOutside = (event) => {
-  if (searchContainer.value && !searchContainer.value.contains(event.target)) {
-    showDescriptionDropdown.value = false
-  }
-}
-
-// Add/remove event listener on mount/unmount
-onMounted(() => {
-  document.addEventListener('click', handleClickOutside)
-})
-
-onUnmounted(() => {
-  document.removeEventListener('click', handleClickOutside)
-})
 </script>
