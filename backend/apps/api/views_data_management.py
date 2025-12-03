@@ -726,7 +726,7 @@ class StandardizationRuleViewSet(viewsets.ReadOnlyModelViewSet):
     from apps.bookings.models import StandardizationRule
     queryset = StandardizationRule.objects.all()
     serializer_class = None  # We'll create a simple serializer inline
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         """Filter rules by user's context"""
