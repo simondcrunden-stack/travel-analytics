@@ -35,7 +35,7 @@ def fix_carbon_budget_tonnes(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('budgets', '0005_budget_carbon_budget_safe'),
+        ('budgets', '0006_budget_carbon_budget'),
     ]
 
     operations = [
