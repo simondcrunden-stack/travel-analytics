@@ -168,7 +168,15 @@ class Budget(models.Model):
         if self.organizational_node:
             return self.organizational_node.code
         return self.cost_center
-    
+
+    def save(self, *args, **kwargs):
+        """Auto-populate deprecated cost_center fields from organizational_node"""
+        if self.organizational_node:
+            # Sync deprecated fields with organizational_node for backward compatibility
+            self.cost_center = self.organizational_node.code or ''
+            self.cost_center_name = self.organizational_node.name or ''
+        super().save(*args, **kwargs)
+
     def get_total_spent(self):
         """Calculate total spent against this budget"""
         from django.db.models import Sum
