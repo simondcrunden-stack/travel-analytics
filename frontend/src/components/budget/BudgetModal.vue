@@ -423,8 +423,8 @@ const handleSubmit = async () => {
     error.value = null
 
     const payload = {
-      organization_id: formData.value.organization,
-      fiscal_year_id: formData.value.fiscal_year,
+      organization: formData.value.organization,
+      fiscal_year: formData.value.fiscal_year,
       total_budget: formData.value.total_budget,
       currency: formData.value.currency,
       air_budget: formData.value.air_budget || 0,
@@ -434,14 +434,16 @@ const handleSubmit = async () => {
       carbon_budget: formData.value.carbon_budget || 0,
       warning_threshold: formData.value.warning_threshold,
       critical_threshold: formData.value.critical_threshold,
-      notes: formData.value.notes,
+      notes: formData.value.notes || '',
       is_active: formData.value.is_active
     }
 
-    // Add organizational_node_id if selected
+    // Add organizational_node if selected
     if (formData.value.organizational_node) {
-      payload.organizational_node_id = formData.value.organizational_node
+      payload.organizational_node = formData.value.organizational_node
     }
+
+    console.log('Sending budget payload:', payload)
 
     if (isEditMode.value) {
       await api.put(`/budgets/${props.budget.id}/`, payload)
@@ -453,7 +455,26 @@ const handleSubmit = async () => {
     handleClose()
   } catch (err) {
     console.error('Error saving budget:', err)
-    error.value = err.response?.data?.error || 'Failed to save budget. Please try again.'
+    console.error('Error response:', err.response?.data)
+
+    // Format error message
+    if (err.response?.data) {
+      const errors = err.response.data
+      if (typeof errors === 'object') {
+        // DRF validation errors are usually in format: { field: ["error message"] }
+        const errorMessages = Object.entries(errors)
+          .map(([field, messages]) => {
+            const msgArray = Array.isArray(messages) ? messages : [messages]
+            return `${field}: ${msgArray.join(', ')}`
+          })
+          .join('\n')
+        error.value = errorMessages || 'Failed to save budget. Please check the form.'
+      } else {
+        error.value = errors.toString()
+      }
+    } else {
+      error.value = 'Failed to save budget. Please try again.'
+    }
   } finally {
     saving.value = false
   }
