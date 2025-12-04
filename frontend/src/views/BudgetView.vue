@@ -53,6 +53,17 @@
       <p class="text-red-800">{{ error }}</p>
     </div>
 
+    <!-- Organization Selection Required (Admin only) -->
+    <div v-else-if="!shouldShowContent" class="bg-blue-50 border border-blue-200 rounded-xl p-8 text-center">
+      <svg class="w-16 h-16 text-blue-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+      </svg>
+      <h3 class="text-lg font-semibold text-gray-900 mb-2">Select an Organization</h3>
+      <p class="text-gray-600 max-w-md mx-auto">
+        Please select an organization from the filters above to view and manage budgets.
+      </p>
+    </div>
+
     <!-- Main Content -->
     <div v-else class="space-y-6">
       <!-- Summary Cards -->
@@ -66,7 +77,9 @@
               </p>
             </div>
             <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
-              <svg class="w-6 h-6 text-blue-600" :d="mdiCurrencyUsd" />
+              <svg class="w-6 h-6 text-blue-600" viewBox="0 0 24 24">
+                <path fill="currentColor" :d="mdiCurrencyUsd" />
+              </svg>
             </div>
           </div>
         </div>
@@ -80,7 +93,9 @@
               </p>
             </div>
             <div class="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
-              <svg class="w-6 h-6 text-purple-600" :d="mdiChartLine" />
+              <svg class="w-6 h-6 text-purple-600" viewBox="0 0 24 24">
+                <path fill="currentColor" :d="mdiChartLine" />
+              </svg>
             </div>
           </div>
         </div>
@@ -94,7 +109,9 @@
               </p>
             </div>
             <div class="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
-              <svg class="w-6 h-6 text-green-600" :d="mdiWallet" />
+              <svg class="w-6 h-6 text-green-600" viewBox="0 0 24 24">
+                <path fill="currentColor" :d="mdiWallet" />
+              </svg>
             </div>
           </div>
         </div>
@@ -108,7 +125,9 @@
               </p>
             </div>
             <div class="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center">
-              <svg class="w-6 h-6 text-orange-600" :d="mdiPercent" />
+              <svg class="w-6 h-6 text-orange-600" viewBox="0 0 24 24">
+                <path fill="currentColor" :d="mdiPercent" />
+              </svg>
             </div>
           </div>
         </div>
@@ -117,7 +136,9 @@
       <!-- Active Alerts -->
       <div v-if="activeAlerts.length > 0" class="bg-red-50 border border-red-200 rounded-xl p-6">
         <div class="flex items-center gap-2 mb-4">
-          <svg class="w-6 h-6 text-red-600" :d="mdiAlertCircle" />
+          <svg class="w-6 h-6 text-red-600" viewBox="0 0 24 24">
+            <path fill="currentColor" :d="mdiAlertCircle" />
+          </svg>
           <h2 class="text-lg font-semibold text-red-900">Budget Alerts</h2>
           <span class="ml-auto px-3 py-1 bg-red-600 text-white text-sm font-medium rounded-full">
             {{ activeAlerts.length }}
@@ -161,13 +182,13 @@
             </select>
           </div>
 
-          <!-- Cost Centre Search -->
+          <!-- Business Unit Search -->
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Search Cost Centre</label>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Search Business Unit</label>
             <input
               type="text"
               v-model="viewFilters.search"
-              placeholder="Search cost centres..."
+              placeholder="Search business units..."
               class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             />
           </div>
@@ -179,7 +200,7 @@
         <!-- Table Header -->
         <div class="p-6 border-b border-gray-200">
           <h2 class="text-lg font-semibold text-gray-900">Budget Records</h2>
-          <p class="text-sm text-gray-600 mt-1">{{ filteredBudgets.length }} cost centres found</p>
+          <p class="text-sm text-gray-600 mt-1">{{ filteredBudgets.length }} business units found</p>
         </div>
 
         <div class="overflow-x-auto">
@@ -187,7 +208,7 @@
             <thead class="bg-gray-50">
               <tr>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Cost Centre
+                  Business Unit
                 </th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Organization
@@ -213,8 +234,35 @@
               </tr>
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
+              <!-- Empty State -->
+              <tr v-if="filteredBudgets.length === 0">
+                <td :colspan="isAdmin ? 7 : 6" class="px-6 py-12">
+                  <div class="text-center">
+                    <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                    </svg>
+                    <h3 class="text-lg font-semibold text-gray-900 mb-2">No Budgets Found</h3>
+                    <p class="text-gray-600 mb-4">
+                      {{ viewFilters.search || viewFilters.status ? 'No budgets match your current filters.' : 'No budgets have been created yet.' }}
+                    </p>
+                    <button
+                      v-if="isAdmin && !viewFilters.search && !viewFilters.status"
+                      @click="openCreateModal"
+                      class="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                      </svg>
+                      Create First Budget
+                    </button>
+                  </div>
+                </td>
+              </tr>
+
+              <!-- Budget Rows -->
               <tr
                 v-for="budget in paginatedBudgets"
+                v-else
                 :key="budget.id"
                 class="hover:bg-gray-50 transition-colors"
               >
@@ -336,6 +384,17 @@ const authStore = useAuthStore()
 
 // Computed
 const isAdmin = computed(() => authStore.userType === 'ADMIN')
+
+// Check if organization is selected (required for admins)
+const selectedOrganization = computed(() => universalFilters.value?.organization || null)
+const shouldShowContent = computed(() => {
+  // For admins, organization must be selected
+  if (isAdmin.value) {
+    return !!selectedOrganization.value
+  }
+  // For non-admins, always show content
+  return true
+})
 
 // State
 const loading = ref(true)
