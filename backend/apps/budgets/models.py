@@ -179,27 +179,43 @@ class Budget(models.Model):
 
     def get_total_spent(self):
         """Calculate total spent against this budget"""
-        from django.db.models import Sum
+        from django.db.models import Sum, Q
         from apps.bookings.models import Booking
-        
+
+        # Build filter based on organizational_node or cost_center
+        if self.organizational_node:
+            # Match by organizational_node (preferred)
+            traveller_filter = Q(traveller__organizational_node=self.organizational_node)
+        else:
+            # Fall back to cost_center for backward compatibility
+            traveller_filter = Q(traveller__cost_center=self.cost_center)
+
         bookings = Booking.objects.filter(
+            traveller_filter,
             organization=self.organization,
-            traveller__cost_center=self.cost_center,
             travel_date__gte=self.fiscal_year.start_date,
             travel_date__lte=self.fiscal_year.end_date,
             status='CONFIRMED'
         ).aggregate(total=Sum('total_amount'))
-        
+
         return bookings['total'] or Decimal('0.00')
-    
+
     def get_spent_by_category(self):
         """Calculate spent amount by booking category"""
-        from django.db.models import Sum
+        from django.db.models import Sum, Q
         from apps.bookings.models import Booking
-        
+
+        # Build filter based on organizational_node or cost_center
+        if self.organizational_node:
+            # Match by organizational_node (preferred)
+            traveller_filter = Q(traveller__organizational_node=self.organizational_node)
+        else:
+            # Fall back to cost_center for backward compatibility
+            traveller_filter = Q(traveller__cost_center=self.cost_center)
+
         base_query = Booking.objects.filter(
+            traveller_filter,
             organization=self.organization,
-            traveller__cost_center=self.cost_center,
             travel_date__gte=self.fiscal_year.start_date,
             travel_date__lte=self.fiscal_year.end_date,
             status='CONFIRMED'
