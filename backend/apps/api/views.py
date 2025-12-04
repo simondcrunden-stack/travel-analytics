@@ -3642,12 +3642,11 @@ class BudgetViewSet(viewsets.ModelViewSet):
                 {'error': 'Only administrators can create budgets'},
                 status=status.HTTP_403_FORBIDDEN
             )
-
-        # Auto-set created_by if not provided
-        if 'created_by' not in request.data:
-            request.data['created_by'] = request.user.id
-
         return super().create(request, *args, **kwargs)
+
+    def perform_create(self, serializer):
+        """Auto-set created_by on budget creation"""
+        serializer.save(created_by=self.request.user)
 
     def update(self, request, *args, **kwargs):
         """Update a budget (admin only)"""
