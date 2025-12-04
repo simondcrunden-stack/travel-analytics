@@ -472,6 +472,7 @@ const fetchBudgets = async () => {
     const budgetsData = response.data.results || []
 
     console.log('✅ [BudgetView] Loaded budgets:', budgetsData.length)
+    console.log('First budget data:', budgetsData[0])
 
     // Transform backend data to frontend format
     budgets.value = budgetsData.map(budget => ({

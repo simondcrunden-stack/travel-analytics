@@ -756,7 +756,7 @@ class FiscalYearSerializer(serializers.ModelSerializer):
 class BudgetSerializer(serializers.ModelSerializer):
     organization_name = serializers.CharField(source='organization.name', read_only=True)
     fiscal_year_label = serializers.CharField(source='fiscal_year.year_label', read_only=True)
-    organizational_node_name = serializers.CharField(source='organizational_node.name', read_only=True, allow_null=True)
+    organizational_node_name = serializers.SerializerMethodField()
     budget_status = serializers.SerializerMethodField()
 
     class Meta:
@@ -771,6 +771,10 @@ class BudgetSerializer(serializers.ModelSerializer):
             'budget_status', 'is_active', 'notes', 'created_by', 'created_at'
         ]
         read_only_fields = ['created_by', 'created_at']
+
+    def get_organizational_node_name(self, obj):
+        """Get organizational node name, handling null values"""
+        return obj.organizational_node.name if obj.organizational_node else None
 
     def get_budget_status(self, obj):
         """Get current budget utilization"""
