@@ -184,8 +184,11 @@ class Budget(models.Model):
 
         # Build filter based on organizational_node or cost_center
         if self.organizational_node:
-            # Match by organizational_node (preferred)
+            # Match by organizational_node OR cost_center (for travellers not yet migrated)
             traveller_filter = Q(traveller__organizational_node=self.organizational_node)
+            # Also match travellers with cost_center matching the org node's code
+            if self.organizational_node.code:
+                traveller_filter |= Q(traveller__cost_center=self.organizational_node.code)
         else:
             # Fall back to cost_center for backward compatibility
             traveller_filter = Q(traveller__cost_center=self.cost_center)
@@ -207,8 +210,11 @@ class Budget(models.Model):
 
         # Build filter based on organizational_node or cost_center
         if self.organizational_node:
-            # Match by organizational_node (preferred)
+            # Match by organizational_node OR cost_center (for travellers not yet migrated)
             traveller_filter = Q(traveller__organizational_node=self.organizational_node)
+            # Also match travellers with cost_center matching the org node's code
+            if self.organizational_node.code:
+                traveller_filter |= Q(traveller__cost_center=self.organizational_node.code)
         else:
             # Fall back to cost_center for backward compatibility
             traveller_filter = Q(traveller__cost_center=self.cost_center)
@@ -220,7 +226,7 @@ class Budget(models.Model):
             travel_date__lte=self.fiscal_year.end_date,
             status='CONFIRMED'
         )
-        
+
         return {
             'air': base_query.filter(booking_type='AIR').aggregate(
                 total=Sum('total_amount'))['total'] or Decimal('0.00'),
