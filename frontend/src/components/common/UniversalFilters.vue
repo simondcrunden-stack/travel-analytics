@@ -367,6 +367,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import MdiIcon from '@/components/common/MdiIcon.vue'
 import {
   mdiTune,
@@ -386,6 +387,8 @@ import api from '@/services/api'
 import { bookingService, userService } from '@/services/api'
 import MultiSelect from './MultiSelect.vue'
 import { useAuthStore } from '@/stores/auth'
+
+const route = useRoute()
 
 // Props
 const props = defineProps({
@@ -446,21 +449,27 @@ const isSaving = ref(false)
 const homeCountry = ref('AU')
 const authStore = useAuthStore()
 
-const localFilters = reactive({
-  traveller: props.filters?.traveller || '',
-  travellers: props.filters?.travellers || [],
-  dateFrom: props.filters?.dateFrom || '',
-  dateTo: props.filters?.dateTo || '',
-  destinationPreset: props.filters?.destinationPreset || '',
-  country: props.filters?.country || '',
-  countries: props.filters?.countries || [],
-  city: props.filters?.city || '',
-  travelAgent: props.filters?.travelAgent || '',
-  organization: props.filters?.organization || '',
-  status: props.filters?.status || '',
-  supplier: props.filters?.supplier || '',
-  product_type: props.filters?.product_type || '',
-})
+// Initialize filters from URL query params
+const initFiltersFromURL = () => {
+  const query = route.query
+  return {
+    traveller: query.traveller || '',
+    travellers: query.travellers ? query.travellers.split(',') : [],
+    dateFrom: query.travel_date__gte || '',
+    dateTo: query.travel_date__lte || '',
+    destinationPreset: query.destination_preset || '',
+    country: query.country || '',
+    countries: query.countries ? query.countries.split(',') : [],
+    city: query.city || '',
+    travelAgent: query.travel_agent || '',
+    organization: query.organization || '',
+    status: query.status || '',
+    supplier: query.supplier || '',
+    product_type: query.booking_type || '',
+  }
+}
+
+const localFilters = reactive(initFiltersFromURL())
 
 // Computed
 const formattedDateRange = computed(() => {
