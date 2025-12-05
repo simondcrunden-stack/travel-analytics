@@ -3931,31 +3931,105 @@ class BudgetViewSet(viewsets.ModelViewSet):
                 'error': 'Organization not found'
             }, status=404)
 
-        # Get bookings for this organization in the fiscal year
-        if user.user_type == 'ADMIN':
-            bookings_qs = Booking.objects.all()
-        elif user.user_type in ['AGENT_ADMIN', 'AGENT_USER']:
-            bookings_qs = Booking.objects.filter(
-                Q(organization=user.organization) |
-                Q(organization__travel_agent=user.organization)
-            )
-        else:
-            bookings_qs = Booking.objects.filter(organization=user.organization)
+        # Get cost_center or organizational_node filter from budgets
+        # If filtering by specific cost center/node, aggregate only those line items
+        cost_center_filter = request.query_params.get('cost_center')
+        organizational_node_id = request.query_params.get('organizational_node')
 
-        if organization_id:
-            bookings_qs = bookings_qs.filter(organization_id=organization_id)
+        # Build line item filters for cost center (with backward compatibility)
+        line_item_filter = Q()
+        if organizational_node_id:
+            from apps.organizations.models import OrganizationalNode
+            try:
+                org_node = OrganizationalNode.objects.get(id=organizational_node_id)
+                line_item_filter |= Q(organizational_node=org_node)
+                if org_node.code:
+                    line_item_filter |= Q(cost_center=org_node.code)
+                # Backward compatibility: also check traveller's cost center
+                line_item_filter |= Q(booking__traveller__organizational_node=org_node)
+                if org_node.code:
+                    line_item_filter |= Q(booking__traveller__cost_center=org_node.code)
+            except OrganizationalNode.DoesNotExist:
+                pass
+        elif cost_center_filter:
+            line_item_filter |= Q(cost_center=cost_center_filter)
+            line_item_filter |= Q(booking__traveller__cost_center=cost_center_filter)
 
-        # Filter bookings by fiscal year
-        bookings_qs = bookings_qs.filter(
-            travel_date__gte=fy_start,
-            travel_date__lte=fy_end
+        # Build base booking filters (organization and fiscal year)
+        booking_filter = Q(
+            booking__travel_date__gte=fy_start,
+            booking__travel_date__lte=fy_end,
+            booking__status='CONFIRMED'
         )
+        if organization_id:
+            booking_filter &= Q(booking__organization_id=organization_id)
 
-        # Calculate monthly spending
+        # Calculate monthly spending from line items
+        from apps.bookings.models import AirBooking, AccommodationBooking, CarHireBooking, ServiceFee
+        from django.db.models import F, ExpressionWrapper, DecimalField
+
         monthly_spend = defaultdict(Decimal)
-        for booking in bookings_qs:
-            month_key = booking.travel_date.strftime('%Y-%m')
-            monthly_spend[month_key] += booking.total_amount or Decimal('0')
+
+        # Air bookings
+        air_bookings = AirBooking.objects.filter(booking_filter)
+        if line_item_filter:
+            air_bookings = air_bookings.filter(line_item_filter)
+        for air in air_bookings.select_related('booking'):
+            if air.booking.travel_date:
+                month_key = air.booking.travel_date.strftime('%Y-%m')
+                monthly_spend[month_key] += air.total_fare or Decimal('0')
+
+        # Accommodation bookings (calculate: nightly_rate * number_of_nights)
+        accommodation_bookings = AccommodationBooking.objects.filter(booking_filter)
+        if line_item_filter:
+            accommodation_bookings = accommodation_bookings.filter(line_item_filter)
+        for accom in accommodation_bookings.select_related('booking'):
+            if accom.booking.travel_date:
+                month_key = accom.booking.travel_date.strftime('%Y-%m')
+                amount = (accom.nightly_rate or Decimal('0')) * (accom.number_of_nights or 0)
+                monthly_spend[month_key] += amount
+
+        # Car hire bookings (calculate: daily_rate * number_of_days)
+        car_bookings = CarHireBooking.objects.filter(booking_filter)
+        if line_item_filter:
+            car_bookings = car_bookings.filter(line_item_filter)
+        for car in car_bookings.select_related('booking'):
+            if car.booking.travel_date:
+                month_key = car.booking.travel_date.strftime('%Y-%m')
+                amount = (car.daily_rate or Decimal('0')) * (car.number_of_days or 0)
+                monthly_spend[month_key] += amount
+
+        # Service fees
+        service_fee_filter = Q(
+            fee_date__gte=fy_start,
+            fee_date__lte=fy_end
+        )
+        if organization_id:
+            service_fee_filter &= Q(organization_id=organization_id)
+
+        if line_item_filter:
+            # ServiceFee has both booking and direct traveller relationships
+            service_fee_line_filter = Q()
+            if organizational_node_id:
+                service_fee_line_filter |= Q(organizational_node_id=organizational_node_id)
+                if org_node.code:
+                    service_fee_line_filter |= Q(cost_center=org_node.code)
+                service_fee_line_filter |= Q(booking__traveller__organizational_node_id=organizational_node_id)
+                service_fee_line_filter |= Q(traveller__organizational_node_id=organizational_node_id)
+                if org_node.code:
+                    service_fee_line_filter |= Q(booking__traveller__cost_center=org_node.code)
+                    service_fee_line_filter |= Q(traveller__cost_center=org_node.code)
+            elif cost_center_filter:
+                service_fee_line_filter |= Q(cost_center=cost_center_filter)
+                service_fee_line_filter |= Q(booking__traveller__cost_center=cost_center_filter)
+                service_fee_line_filter |= Q(traveller__cost_center=cost_center_filter)
+            service_fee_filter &= service_fee_line_filter
+
+        service_fees = ServiceFee.objects.filter(service_fee_filter)
+        for fee in service_fees:
+            if fee.fee_date:
+                month_key = fee.fee_date.strftime('%Y-%m')
+                monthly_spend[month_key] += fee.fee_amount or Decimal('0')
 
         # Get total budget allocated
         total_budget = sum(float(b.total_budget) for b in budgets_qs)
@@ -4120,6 +4194,10 @@ class BudgetViewSet(viewsets.ModelViewSet):
                 'error': 'Organization not found'
             }, status=404)
 
+        # Get cost_center or organizational_node filter
+        cost_center_filter = request.query_params.get('cost_center')
+        organizational_node_id = request.query_params.get('organizational_node')
+
         # Get air bookings for this organization in the fiscal year (carbon emissions from flights)
         if user.user_type == 'ADMIN':
             air_bookings_qs = AirBooking.objects.select_related('booking').all()
@@ -4141,6 +4219,26 @@ class BudgetViewSet(viewsets.ModelViewSet):
             booking__travel_date__gte=fy_start,
             booking__travel_date__lte=fy_end
         )
+
+        # Filter by cost_center or organizational_node (with backward compatibility)
+        if organizational_node_id:
+            from apps.organizations.models import OrganizationalNode
+            try:
+                org_node = OrganizationalNode.objects.get(id=organizational_node_id)
+                cost_center_q = Q(organizational_node=org_node)
+                if org_node.code:
+                    cost_center_q |= Q(cost_center=org_node.code)
+                # Backward compatibility: also check traveller's cost center
+                cost_center_q |= Q(booking__traveller__organizational_node=org_node)
+                if org_node.code:
+                    cost_center_q |= Q(booking__traveller__cost_center=org_node.code)
+                air_bookings_qs = air_bookings_qs.filter(cost_center_q)
+            except OrganizationalNode.DoesNotExist:
+                pass
+        elif cost_center_filter:
+            cost_center_q = Q(cost_center=cost_center_filter)
+            cost_center_q |= Q(booking__traveller__cost_center=cost_center_filter)
+            air_bookings_qs = air_bookings_qs.filter(cost_center_q)
 
         # Calculate monthly emissions from air segments
         monthly_emissions = defaultdict(float)
