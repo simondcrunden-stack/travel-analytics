@@ -617,7 +617,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { Chart } from 'chart.js/auto'
 import bookingService from '@/services/bookingService'
 import UniversalFilters from '@/components/common/UniversalFilters.vue'
@@ -634,6 +634,19 @@ const { filters, updateFilters, getAPIFilters } = useSharedFilters()
 
 // Create reactive computed property for API filters
 const apiFilters = computed(() => getAPIFilters())
+
+// Watch for filter changes and reload data automatically
+// This handles: navigating between dashboards, browser back/forward, URL changes
+watch(
+  apiFilters,
+  (newFilters, oldFilters) => {
+    console.log('🔄 [DashboardView] Filters changed, reloading data')
+    console.log('Old filters:', oldFilters)
+    console.log('New filters:', newFilters)
+    loadData()
+  },
+  { deep: true, immediate: true }
+)
 
 // State
 const loading = ref(true)
@@ -709,8 +722,9 @@ let trendChartInstance = null
 // Handle filter changes from UniversalFilters
 const handleFiltersChanged = async (newFilters) => {
   console.log('📊 Dashboard filters changed:', newFilters)
+  // Update filters (which will update URL and trigger watcher)
   await updateFilters(newFilters)
-  loadData()
+  // Don't call loadData() here - the watcher will handle it
 }
 
 // Load data
@@ -1031,6 +1045,7 @@ const getDestinations = (booking) => {
 
 // Lifecycle
 onMounted(() => {
-  loadData()
+  // Don't call loadData() here - the watcher with immediate: true handles initial load
+  console.log('📱 [DashboardView] Component mounted')
 })
 </script>
