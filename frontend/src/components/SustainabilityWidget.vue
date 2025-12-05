@@ -86,19 +86,22 @@
           </div>
         </div>
 
-        <!-- Emissions Breakdown Chart -->
-        <div class="bg-white rounded-lg border border-gray-200 p-6">
-          <h4 class="text-sm font-semibold text-gray-900 mb-4">Emissions Breakdown</h4>
-          <div class="h-64">
-            <canvas ref="emissionsBreakdownChart"></canvas>
+        <!-- Emissions Charts - Side by Side -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <!-- Emissions Breakdown Chart -->
+          <div class="bg-white rounded-lg border border-gray-200 p-6">
+            <h4 class="text-sm font-semibold text-gray-900 mb-4">Emissions Breakdown</h4>
+            <div class="h-64">
+              <canvas ref="emissionsBreakdownChart"></canvas>
+            </div>
           </div>
-        </div>
 
-        <!-- Monthly Trend Chart -->
-        <div v-if="sustainabilityData.monthly_trend && sustainabilityData.monthly_trend.length > 0" class="bg-white rounded-lg border border-gray-200 p-6">
-          <h4 class="text-sm font-semibold text-gray-900 mb-4">Monthly Emissions Trend</h4>
-          <div class="h-64">
-            <canvas ref="monthlyTrendChart"></canvas>
+          <!-- Monthly Trend Chart -->
+          <div v-if="sustainabilityData.monthly_trend && sustainabilityData.monthly_trend.length > 0" class="bg-white rounded-lg border border-gray-200 p-6">
+            <h4 class="text-sm font-semibold text-gray-900 mb-4">Monthly Emissions Trend</h4>
+            <div class="h-64">
+              <canvas ref="monthlyTrendChart"></canvas>
+            </div>
           </div>
         </div>
 
