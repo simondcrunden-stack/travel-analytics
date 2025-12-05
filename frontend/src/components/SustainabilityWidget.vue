@@ -228,13 +228,6 @@ const loadSustainabilityData = async () => {
     sustainabilityData.value = data
 
     console.log('✅ [SustainabilityWidget] Loaded sustainability data:', data)
-
-    // Render charts after data loads - use setTimeout to ensure DOM is ready
-    await nextTick()
-    await nextTick() // Double nextTick for Chart.js
-    setTimeout(() => {
-      renderCharts()
-    }, 100)
   } catch (error) {
     console.error('❌ [SustainabilityWidget] Error loading sustainability data:', error)
     sustainabilityData.value = null
@@ -355,6 +348,18 @@ const renderCharts = () => {
 watch(() => props.filters, () => {
   loadSustainabilityData()
 }, { immediate: true, deep: true })
+
+// Watch for data changes and render charts when data is available
+watch(sustainabilityData, async (newData) => {
+  if (newData) {
+    // Wait for DOM to update with new data (especially for v-if elements)
+    await nextTick()
+    // Additional delay to ensure canvas elements are fully rendered
+    setTimeout(() => {
+      renderCharts()
+    }, 50)
+  }
+}, { immediate: false })
 
 // Helper functions
 const formatWeight = (kg) => {
