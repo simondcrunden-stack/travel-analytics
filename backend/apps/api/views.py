@@ -1654,7 +1654,7 @@ class BookingViewSet(viewsets.ModelViewSet):
                 traveller_id = booking.traveller.id
                 traveller_emissions[traveller_id]['carbon_kg'] += carbon_kg
                 traveller_emissions[traveller_id]['trips'] += 1
-                traveller_emissions[traveller_id]['name'] = f"{booking.traveller.first_name} {booking.traveller.last_name}"
+                traveller_emissions[traveller_id]['name'] = booking.traveller.name
 
             # Route emissions (use first segment for route)
             first_segment = air_booking.segments.first()
