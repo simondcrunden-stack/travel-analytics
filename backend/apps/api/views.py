@@ -3920,15 +3920,18 @@ class BudgetViewSet(viewsets.ModelViewSet):
                         organization=org
                     ).order_by('-start_date').first()
 
-                if not current_fy:
-                    return Response({
-                        'error': 'No fiscal year found for this organization'
-                    }, status=400)
-
-                budgets_qs = budgets_qs.filter(fiscal_year=current_fy)
-
-                fy_start = current_fy.start_date
-                fy_end = current_fy.end_date
+                if current_fy:
+                    # Use fiscal year if available
+                    budgets_qs = budgets_qs.filter(fiscal_year=current_fy)
+                    fy_start = current_fy.start_date
+                    fy_end = current_fy.end_date
+                else:
+                    # No fiscal year found - use current calendar year as default
+                    from datetime import date
+                    today = date.today()
+                    fy_start = date(today.year, 1, 1)
+                    fy_end = date(today.year, 12, 31)
+                    # Don't filter budgets by fiscal year if none exists
             else:
                 return Response({
                     'error': 'No organization found'
@@ -4190,15 +4193,18 @@ class BudgetViewSet(viewsets.ModelViewSet):
                         organization=org
                     ).order_by('-start_date').first()
 
-                if not current_fy:
-                    return Response({
-                        'error': 'No fiscal year found for this organization'
-                    }, status=400)
-
-                budgets_qs = budgets_qs.filter(fiscal_year=current_fy)
-
-                fy_start = current_fy.start_date
-                fy_end = current_fy.end_date
+                if current_fy:
+                    # Use fiscal year if available
+                    budgets_qs = budgets_qs.filter(fiscal_year=current_fy)
+                    fy_start = current_fy.start_date
+                    fy_end = current_fy.end_date
+                else:
+                    # No fiscal year found - use current calendar year as default
+                    from datetime import date
+                    today = date.today()
+                    fy_start = date(today.year, 1, 1)
+                    fy_end = date(today.year, 12, 31)
+                    # Don't filter budgets by fiscal year if none exists
             else:
                 return Response({
                     'error': 'No organization found'
