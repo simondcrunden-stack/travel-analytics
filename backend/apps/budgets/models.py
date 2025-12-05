@@ -184,7 +184,7 @@ class Budget(models.Model):
         Queries each line item type (AirBooking, AccommodationBooking, CarHireBooking, ServiceFee)
         and sums amounts where the line item's organizational_node or cost_center matches the budget.
         """
-        from django.db.models import Sum, Q
+        from django.db.models import Sum, Q, F, ExpressionWrapper, DecimalField
         from apps.bookings.models import AirBooking, AccommodationBooking, CarHireBooking, ServiceFee
 
         total = Decimal('0.00')
@@ -207,25 +207,39 @@ class Budget(models.Model):
             booking__status='CONFIRMED'
         )
 
-        # Sum air bookings
+        # Sum air bookings (has total_fare field)
         air_total = AirBooking.objects.filter(
             line_item_filter, booking_filter
         ).aggregate(total=Sum('total_fare'))['total'] or Decimal('0.00')
         total += air_total
 
-        # Sum accommodation bookings
+        # Sum accommodation bookings (calculate: nightly_rate * number_of_nights)
         accommodation_total = AccommodationBooking.objects.filter(
             line_item_filter, booking_filter
-        ).aggregate(total=Sum('total_amount'))['total'] or Decimal('0.00')
+        ).aggregate(
+            total=Sum(
+                ExpressionWrapper(
+                    F('nightly_rate') * F('number_of_nights'),
+                    output_field=DecimalField()
+                )
+            )
+        )['total'] or Decimal('0.00')
         total += accommodation_total
 
-        # Sum car hire bookings
+        # Sum car hire bookings (calculate: daily_rate * number_of_days)
         car_total = CarHireBooking.objects.filter(
             line_item_filter, booking_filter
-        ).aggregate(total=Sum('total_amount'))['total'] or Decimal('0.00')
+        ).aggregate(
+            total=Sum(
+                ExpressionWrapper(
+                    F('daily_rate') * F('number_of_days'),
+                    output_field=DecimalField()
+                )
+            )
+        )['total'] or Decimal('0.00')
         total += car_total
 
-        # Sum service fees
+        # Sum service fees (has fee_amount field)
         fee_total = ServiceFee.objects.filter(
             line_item_filter,
             organization=self.organization,
@@ -243,7 +257,7 @@ class Budget(models.Model):
         Queries each line item type separately and sums amounts where the line item's
         organizational_node or cost_center matches the budget.
         """
-        from django.db.models import Sum, Q
+        from django.db.models import Sum, Q, F, ExpressionWrapper, DecimalField
         from apps.bookings.models import AirBooking, AccommodationBooking, CarHireBooking, ServiceFee
 
         # Build filter based on organizational_node or cost_center
@@ -264,20 +278,36 @@ class Budget(models.Model):
             booking__status='CONFIRMED'
         )
 
-        # Query each category
+        # Query each category - air bookings (has total_fare)
         air_spent = AirBooking.objects.filter(
             line_item_filter, booking_filter
         ).aggregate(total=Sum('total_fare'))['total'] or Decimal('0.00')
 
+        # Accommodation bookings (calculate: nightly_rate * number_of_nights)
         accommodation_spent = AccommodationBooking.objects.filter(
             line_item_filter, booking_filter
-        ).aggregate(total=Sum('total_amount'))['total'] or Decimal('0.00')
+        ).aggregate(
+            total=Sum(
+                ExpressionWrapper(
+                    F('nightly_rate') * F('number_of_nights'),
+                    output_field=DecimalField()
+                )
+            )
+        )['total'] or Decimal('0.00')
 
+        # Car hire bookings (calculate: daily_rate * number_of_days)
         car_hire_spent = CarHireBooking.objects.filter(
             line_item_filter, booking_filter
-        ).aggregate(total=Sum('total_amount'))['total'] or Decimal('0.00')
+        ).aggregate(
+            total=Sum(
+                ExpressionWrapper(
+                    F('daily_rate') * F('number_of_days'),
+                    output_field=DecimalField()
+                )
+            )
+        )['total'] or Decimal('0.00')
 
-        # Service fees use fee_date instead of booking travel_date
+        # Service fees use fee_date instead of booking travel_date (has fee_amount)
         other_spent = ServiceFee.objects.filter(
             line_item_filter,
             organization=self.organization,
