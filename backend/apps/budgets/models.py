@@ -190,14 +190,21 @@ class Budget(models.Model):
         total = Decimal('0.00')
 
         # Build filter based on organizational_node or cost_center
+        # Supports BOTH line-item level AND traveller level (backward compatibility)
         if self.organizational_node:
-            # Match by organizational_node OR cost_center (for line items not yet migrated)
+            # Match by line item's organizational_node OR cost_center
             line_item_filter = Q(organizational_node=self.organizational_node)
             if self.organizational_node.code:
                 line_item_filter |= Q(cost_center=self.organizational_node.code)
+            # ALSO match by traveller's organizational_node/cost_center (backward compatibility)
+            line_item_filter |= Q(booking__traveller__organizational_node=self.organizational_node)
+            if self.organizational_node.code:
+                line_item_filter |= Q(booking__traveller__cost_center=self.organizational_node.code)
         else:
             # Fall back to cost_center for backward compatibility
             line_item_filter = Q(cost_center=self.cost_center)
+            # Also check traveller's cost_center
+            line_item_filter |= Q(booking__traveller__cost_center=self.cost_center)
 
         # Common booking filters
         booking_filter = Q(
@@ -240,8 +247,24 @@ class Budget(models.Model):
         total += car_total
 
         # Sum service fees (has fee_amount field)
+        # ServiceFee has direct traveller relationship, so add that to filter
+        if self.organizational_node:
+            service_fee_filter = Q(organizational_node=self.organizational_node)
+            if self.organizational_node.code:
+                service_fee_filter |= Q(cost_center=self.organizational_node.code)
+            # Also check booking's traveller AND direct traveller (backward compatibility)
+            service_fee_filter |= Q(booking__traveller__organizational_node=self.organizational_node)
+            service_fee_filter |= Q(traveller__organizational_node=self.organizational_node)
+            if self.organizational_node.code:
+                service_fee_filter |= Q(booking__traveller__cost_center=self.organizational_node.code)
+                service_fee_filter |= Q(traveller__cost_center=self.organizational_node.code)
+        else:
+            service_fee_filter = Q(cost_center=self.cost_center)
+            service_fee_filter |= Q(booking__traveller__cost_center=self.cost_center)
+            service_fee_filter |= Q(traveller__cost_center=self.cost_center)
+
         fee_total = ServiceFee.objects.filter(
-            line_item_filter,
+            service_fee_filter,
             organization=self.organization,
             fee_date__gte=self.fiscal_year.start_date,
             fee_date__lte=self.fiscal_year.end_date
@@ -261,14 +284,21 @@ class Budget(models.Model):
         from apps.bookings.models import AirBooking, AccommodationBooking, CarHireBooking, ServiceFee
 
         # Build filter based on organizational_node or cost_center
+        # Supports BOTH line-item level AND traveller level (backward compatibility)
         if self.organizational_node:
-            # Match by organizational_node OR cost_center (for line items not yet migrated)
+            # Match by line item's organizational_node OR cost_center
             line_item_filter = Q(organizational_node=self.organizational_node)
             if self.organizational_node.code:
                 line_item_filter |= Q(cost_center=self.organizational_node.code)
+            # ALSO match by traveller's organizational_node/cost_center (backward compatibility)
+            line_item_filter |= Q(booking__traveller__organizational_node=self.organizational_node)
+            if self.organizational_node.code:
+                line_item_filter |= Q(booking__traveller__cost_center=self.organizational_node.code)
         else:
             # Fall back to cost_center for backward compatibility
             line_item_filter = Q(cost_center=self.cost_center)
+            # Also check traveller's cost_center
+            line_item_filter |= Q(booking__traveller__cost_center=self.cost_center)
 
         # Common booking filters
         booking_filter = Q(
@@ -308,8 +338,24 @@ class Budget(models.Model):
         )['total'] or Decimal('0.00')
 
         # Service fees use fee_date instead of booking travel_date (has fee_amount)
+        # ServiceFee has direct traveller relationship, so add that to filter
+        if self.organizational_node:
+            service_fee_filter = Q(organizational_node=self.organizational_node)
+            if self.organizational_node.code:
+                service_fee_filter |= Q(cost_center=self.organizational_node.code)
+            # Also check booking's traveller AND direct traveller (backward compatibility)
+            service_fee_filter |= Q(booking__traveller__organizational_node=self.organizational_node)
+            service_fee_filter |= Q(traveller__organizational_node=self.organizational_node)
+            if self.organizational_node.code:
+                service_fee_filter |= Q(booking__traveller__cost_center=self.organizational_node.code)
+                service_fee_filter |= Q(traveller__cost_center=self.organizational_node.code)
+        else:
+            service_fee_filter = Q(cost_center=self.cost_center)
+            service_fee_filter |= Q(booking__traveller__cost_center=self.cost_center)
+            service_fee_filter |= Q(traveller__cost_center=self.cost_center)
+
         other_spent = ServiceFee.objects.filter(
-            line_item_filter,
+            service_fee_filter,
             organization=self.organization,
             fee_date__gte=self.fiscal_year.start_date,
             fee_date__lte=self.fiscal_year.end_date
