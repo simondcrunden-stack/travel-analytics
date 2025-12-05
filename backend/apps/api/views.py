@@ -1112,6 +1112,11 @@ class BookingViewSet(viewsets.ModelViewSet):
         else:
             base_queryset = Booking.objects.filter(organization=user.organization)
 
+        # Apply organization filter if provided in query params
+        organization_id = request.query_params.get('organization')
+        if organization_id:
+            base_queryset = base_queryset.filter(organization_id=organization_id)
+
         # Apply advanced filters from request
         base_queryset = self._apply_advanced_filters(base_queryset, user)
 
@@ -1329,6 +1334,11 @@ class BookingViewSet(viewsets.ModelViewSet):
             )
         else:
             base_queryset = Booking.objects.filter(organization=user.organization)
+
+        # Apply organization filter if provided in query params
+        organization_id = request.query_params.get('organization')
+        if organization_id:
+            base_queryset = base_queryset.filter(organization_id=organization_id)
 
         # Apply advanced filters from request
         base_queryset = self._apply_advanced_filters(base_queryset, user)
@@ -1570,6 +1580,11 @@ class BookingViewSet(viewsets.ModelViewSet):
             )
         else:
             base_queryset = Booking.objects.filter(organization=user.organization)
+
+        # Apply organization filter if provided in query params
+        organization_id = request.query_params.get('organization')
+        if organization_id:
+            base_queryset = base_queryset.filter(organization_id=organization_id)
 
         # Apply advanced filters from request
         base_queryset = self._apply_advanced_filters(base_queryset, user)
