@@ -639,7 +639,12 @@ watch(() => viewFilters.value.search, () => {
 
 // Lifecycle
 onMounted(async () => {
+  // Load static fiscal years (not filter-dependent)
   await fetchFiscalYears()
-  await fetchBudgets()
+
+  // Don't fetch budgets here! Wait for UniversalFilters to emit initial filters.
+  // This prevents double-loading and ensures filters are applied correctly.
+  // The handleFiltersChanged event will trigger fetchBudgets() with correct filters.
+  console.log('📌 [BudgetView] Component mounted, waiting for filters from UniversalFilters')
 })
 </script>
