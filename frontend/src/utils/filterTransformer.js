@@ -89,6 +89,11 @@ export function transformFiltersForBackend(filters) {
     backendParams.destination_preset = filters.destinationPreset
   }
 
+  // Travel Agent - convert camelCase to snake_case
+  if (filters.travelAgent) {
+    backendParams.travel_agent = filters.travelAgent
+  }
+
   // Pass-through filters (no transformation needed)
   const passThroughFilters = ['organization', 'status', 'city', 'supplier', 'booking_type', 'product_type']
   passThroughFilters.forEach(key => {
@@ -157,6 +162,11 @@ export function transformFiltersFromBackend(backendParams) {
   // Destination preset - convert snake_case to camelCase
   if (backendParams.destination_preset) {
     frontendFilters.destinationPreset = backendParams.destination_preset
+  }
+
+  // Travel Agent - convert snake_case to camelCase
+  if (backendParams.travel_agent) {
+    frontendFilters.travelAgent = backendParams.travel_agent
   }
 
   // Pass-through filters

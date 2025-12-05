@@ -475,7 +475,14 @@ class BookingViewSet(viewsets.ModelViewSet):
         travel_consultants = self.request.query_params.get('travel_consultants', '')
         supplier = self.request.query_params.get('supplier', '')
         booking_type = self.request.query_params.get('booking_type', '')
-        
+        travel_agent = self.request.query_params.get('travel_agent', '')
+
+        # ========================================================================
+        # TRAVEL AGENT FILTER
+        # ========================================================================
+        if travel_agent:
+            queryset = queryset.filter(organization__travel_agent_id=travel_agent)
+
         # ========================================================================
         # TRAVELLERS FILTER (Multi-select)
         # ========================================================================
