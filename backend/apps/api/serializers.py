@@ -163,28 +163,28 @@ class TravellerListSerializer(serializers.ModelSerializer):
     """Lightweight for lists"""
     organization_name = serializers.CharField(source='organization.name', read_only=True)
     full_name = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = Traveller
         fields = [
             'id', 'full_name', 'email', 'employee_id',
             'organization_name', 'cost_center', 'department', 'is_active'
         ]
-    
+
     def get_full_name(self, obj):
-        return f"{obj.first_name} {obj.last_name}"
+        return obj.name
 
 
 class TravellerDetailSerializer(serializers.ModelSerializer):
     """Detailed traveller info"""
     organization = OrganizationSerializer(read_only=True)
     user = UserSerializer(read_only=True)
-    
+
     class Meta:
         model = Traveller
         fields = [
-            'id', 'organization', 'user', 'first_name', 'last_name',
-            'email', 'employee_id', 'department', 'cost_center', 
+            'id', 'organization', 'user', 'name',
+            'email', 'employee_id', 'department', 'cost_center',
             'is_active', 'created_at', 'updated_at'
         ]
 
@@ -927,7 +927,7 @@ class ServiceFeeSerializer(serializers.ModelSerializer):
 
     def get_traveller_name(self, obj):
         if obj.traveller:
-            return f"{obj.traveller.first_name} {obj.traveller.last_name}"
+            return obj.traveller.name
         return None
 
     def get_booking_reference(self, obj):

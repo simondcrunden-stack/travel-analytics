@@ -347,7 +347,7 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
 class TravellerViewSet(viewsets.ModelViewSet):
     """
     API endpoint for travellers.
-    
+
     list: Get all travellers (filtered by organization access)
     retrieve: Get specific traveller details
     create: Create new traveller
@@ -357,9 +357,9 @@ class TravellerViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['organization', 'cost_center', 'department', 'is_active']
-    search_fields = ['first_name', 'last_name', 'email', 'employee_id']
-    ordering_fields = ['last_name', 'first_name', 'created_at']
-    ordering = ['last_name', 'first_name']
+    search_fields = ['name', 'email', 'employee_id']
+    ordering_fields = ['name', 'created_at']
+    ordering = ['name']
     
     def get_queryset(self):
         user = self.request.user
