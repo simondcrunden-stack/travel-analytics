@@ -918,31 +918,48 @@ const loadUserPreferences = async () => {
     homeCountry.value = data.home_country || 'AU'
     console.log(`🏠 User home country: ${homeCountry.value}`)
 
-    // Apply saved filters ONLY if filters are not already populated from URL
+    // Apply saved filters - but ONLY fill in empty values (don't overwrite existing filters)
     if (data.default_filters && Object.keys(data.default_filters).length > 0) {
-      // Check if localFilters already have meaningful values (from URL initialization)
-      const hasExistingFilters =
-        localFilters.dateFrom ||
-        localFilters.dateTo ||
-        localFilters.organization ||
-        localFilters.travelAgent ||
-        localFilters.traveller ||
-        (localFilters.travellers && localFilters.travellers.length > 0) ||
-        (localFilters.countries && localFilters.countries.length > 0) ||
-        localFilters.status ||
-        localFilters.city ||
-        localFilters.supplier
+      console.log('📋 [UniversalFilters] Current localFilters before applying preferences:', { ...localFilters })
+      console.log('📋 [UniversalFilters] Saved preferences to apply:', data.default_filters)
 
-      if (!hasExistingFilters) {
-        // No existing filters - safe to apply saved preferences
-        Object.assign(localFilters, data.default_filters)
+      let appliedCount = 0
+      Object.keys(data.default_filters).forEach(key => {
+        const savedValue = data.default_filters[key]
+        const currentValue = localFilters[key]
+
+        // Only apply saved preference if:
+        // 1. Current value is empty/null/undefined/empty array
+        // 2. Saved value is not empty/null/undefined/empty array
+        const isCurrentEmpty =
+          currentValue === '' ||
+          currentValue === null ||
+          currentValue === undefined ||
+          (Array.isArray(currentValue) && currentValue.length === 0)
+
+        const isSavedNotEmpty =
+          savedValue !== '' &&
+          savedValue !== null &&
+          savedValue !== undefined &&
+          (!Array.isArray(savedValue) || savedValue.length > 0)
+
+        if (isCurrentEmpty && isSavedNotEmpty) {
+          localFilters[key] = savedValue
+          appliedCount++
+          console.log(`  ✓ Applied saved ${key}:`, savedValue)
+        } else if (!isCurrentEmpty) {
+          console.log(`  ⊘ Skipped ${key} - already has value:`, currentValue)
+        }
+      })
+
+      if (appliedCount > 0) {
         emitFilters()
-        showSaveButton.value = false // Don't show save button for loaded preferences
-        console.log('✅ Applied saved filter preferences:', data.default_filters)
+        console.log(`✅ Applied ${appliedCount} saved filter preference(s)`)
       } else {
-        // Filters already populated (from URL) - don't overwrite them
-        console.log('ℹ️ Filters already initialized from URL - skipping saved preferences to preserve state')
+        console.log('ℹ️ No saved preferences applied - all filters already populated from URL')
       }
+
+      showSaveButton.value = false // Don't show save button for loaded preferences
     }
   } catch (error) {
     console.error('Failed to load filter preferences:', error)
