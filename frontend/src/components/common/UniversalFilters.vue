@@ -953,7 +953,8 @@ const loadUserPreferences = async () => {
       })
 
       if (appliedCount > 0) {
-        emitFilters()
+        // Don't emit here - let onMounted handle the initial emit
+        // Emitting here causes double-load because onMounted also emits
         console.log(`✅ Applied ${appliedCount} saved filter preference(s)`)
       } else {
         console.log('ℹ️ No saved preferences applied - all filters already populated from URL')
@@ -997,10 +998,10 @@ onMounted(async () => {
   await nextTick()
   isInitializing.value = false
 
-  // Emit initial filters if any exist in URL
-  if (Object.keys(route.query).length > 0) {
-    emitFilters()
-  }
+  // Always emit initial filters (whether from URL or saved preferences)
+  // This ensures parent components get the initial filter state
+  emitFilters()
+  console.log('🎯 [UniversalFilters] Initial filters emitted after component mount')
 })
 
 // Expose methods for parent components
