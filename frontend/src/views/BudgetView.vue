@@ -478,11 +478,9 @@ const fetchBudgets = async () => {
     budgets.value = budgetsData.map(budget => ({
       id: budget.id,
       organization: budget.organization_name,
-      // Use organizational_node if available, fallback to cost_center for backward compatibility
-      costCenter: budget.organizational_node_name || budget.cost_center || 'N/A',
-      costCenterName: budget.organizational_node_name
-        ? `Node: ${budget.organizational_node_name}`
-        : budget.cost_center_name || '',
+      // Backend auto-populates cost_center from organizational_node, so use it consistently
+      costCenter: budget.cost_center || 'N/A',
+      costCenterName: budget.cost_center_name || '',
       total: parseFloat(budget.total_budget),
       spent: parseFloat(budget.budget_status.spent),
       remaining: parseFloat(budget.budget_status.remaining),
