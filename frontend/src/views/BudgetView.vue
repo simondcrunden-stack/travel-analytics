@@ -402,6 +402,7 @@ const error = ref(null)
 const budgets = ref([])
 const fiscalYears = ref([])
 const selectedFiscalYear = ref('')
+const isInitializing = ref(true)
 
 // Modal state
 const showBudgetModal = ref(false)
@@ -426,6 +427,13 @@ const handleFiltersChanged = async (filters) => {
   console.log('💰 [BudgetView] Universal filters changed:', filters)
   universalFilters.value = filters
   currentPage.value = 1
+
+  // Initialization is complete after first filter emission
+  if (isInitializing.value) {
+    console.log('📌 [BudgetView] Initialization complete, watchers now active')
+    isInitializing.value = false
+  }
+
   await fetchBudgets()
 }
 
@@ -630,10 +638,18 @@ const handleBudgetSaved = async () => {
 
 // Watchers for view-specific filters
 watch(selectedFiscalYear, () => {
+  // Don't fetch during initialization - wait for UniversalFilters to emit
+  if (isInitializing.value) {
+    console.log('📌 [BudgetView] Skipping fetchBudgets during initialization')
+    return
+  }
+  console.log('📅 [BudgetView] Fiscal year changed, fetching budgets')
   fetchBudgets()
 })
 
 watch(() => viewFilters.value.search, () => {
+  // Don't fetch during initialization
+  if (isInitializing.value) return
   fetchBudgets()
 })
 
