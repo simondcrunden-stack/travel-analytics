@@ -104,15 +104,16 @@ class AirBookingInline(admin.TabularInline):
     model = AirBooking
     extra = 0
     fields = ['trip_type', 'travel_class', 'origin_airport_iata_code',
-              'destination_airport_iata_code', 'ticket_number', 'total_fare', 'commission_amount']
+              'destination_airport_iata_code', 'organizational_node', 'cost_center',
+              'ticket_number', 'total_fare', 'commission_amount']
     show_change_link = True  # Allows clicking to see full air booking with segments
 
 class AccommodationBookingInline(admin.TabularInline):
     """Show accommodation bookings within a main Booking"""
     model = AccommodationBooking
     extra = 0
-    fields = ['hotel_name', 'city', 'country', 'check_in_date',
-              'check_out_date', 'number_of_nights', 'nightly_rate', 'commission_amount']
+    fields = ['hotel_name', 'city', 'country', 'organizational_node', 'cost_center',
+              'check_in_date', 'check_out_date', 'number_of_nights', 'nightly_rate', 'commission_amount']
 
     def get_formset(self, request, obj=None, **kwargs):
         formset = super().get_formset(request, obj, **kwargs)
@@ -166,7 +167,7 @@ class CarHireBookingInline(admin.TabularInline):
     """Show car hire bookings within a main Booking"""
     model = CarHireBooking
     extra = 0
-    fields = ['rental_company', 'vehicle_type', 'pickup_city', 'country',
+    fields = ['rental_company', 'vehicle_type', 'pickup_city', 'country', 'organizational_node', 'cost_center',
               'pickup_date', 'dropoff_date', 'number_of_days', 'daily_rate', 'commission_amount']
 
     def get_formset(self, request, obj=None, **kwargs):
@@ -227,7 +228,7 @@ class ServiceFeeInline(admin.TabularInline):
     """Show service fees within a main Booking"""
     model = ServiceFee
     extra = 0
-    fields = ['fee_type', 'fee_date', 'fee_amount', 'booking_channel']
+    fields = ['fee_type', 'organizational_node', 'cost_center', 'fee_date', 'fee_amount', 'booking_channel']
 
     def get_formset(self, request, obj=None, **kwargs):
         formset = super().get_formset(request, obj, **kwargs)
@@ -1060,6 +1061,10 @@ class AirBookingAdmin(admin.ModelAdmin):
         ('Booking Reference', {
             'fields': ('booking',)
         }),
+        ('Cost Center / Business Unit', {
+            'fields': ('organizational_node', 'cost_center', 'cost_center_name'),
+            'description': 'Select organizational node to charge this line item to. Cost center fields are auto-populated.'
+        }),
         ('Flight Details', {
             'fields': ('trip_type', 'travel_class', 'ticket_number')
         }),
@@ -1125,6 +1130,10 @@ class AccommodationBookingAdmin(admin.ModelAdmin):
         ('Booking Reference', {
             'fields': ('booking',)
         }),
+        ('Cost Center / Business Unit', {
+            'fields': ('organizational_node', 'cost_center', 'cost_center_name'),
+            'description': 'Select organizational node to charge this line item to. Cost center fields are auto-populated.'
+        }),
         ('Hotel', {
             'fields': ('hotel_name', 'hotel_chain')
         }),
@@ -1153,6 +1162,10 @@ class CarHireBookingAdmin(admin.ModelAdmin):
     fieldsets = (
         ('Booking Reference', {
             'fields': ('booking',)
+        }),
+        ('Cost Center / Business Unit', {
+            'fields': ('organizational_node', 'cost_center', 'cost_center_name'),
+            'description': 'Select organizational node to charge this line item to. Cost center fields are auto-populated.'
         }),
         ('Rental Company & Vehicle', {
             'fields': ('rental_company', 'vehicle_type', 'vehicle_category', 'vehicle_make_model')
@@ -1215,6 +1228,10 @@ class ServiceFeeAdmin(admin.ModelAdmin):
         }),
         ('Related', {
             'fields': ('booking', 'organization', 'traveller')
+        }),
+        ('Cost Center / Business Unit', {
+            'fields': ('organizational_node', 'cost_center', 'cost_center_name'),
+            'description': 'Select organizational node to charge this line item to. Cost center fields are auto-populated.'
         }),
         ('Channel', {
             'fields': ('booking_channel',)
