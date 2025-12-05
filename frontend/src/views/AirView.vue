@@ -456,10 +456,10 @@ const getTotalCarbon = (booking) => {
 
 // Lifecycle
 onMounted(async () => {
-  await Promise.all([
-    loadData(),
-    loadPreferredAirlineData()
-  ])
+  // Don't load data here! Wait for UniversalFilters to emit initial filters.
+  // This prevents double-loading and ensures filters are applied correctly.
+  // The handleFiltersChanged event will trigger the first load with correct filters.
+  console.log('📌 [AirView] Component mounted, waiting for filters from UniversalFilters')
 })
 </script>
 

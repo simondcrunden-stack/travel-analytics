@@ -445,7 +445,12 @@ watch(viewFilters, () => {
 
 // Load data on mount
 onMounted(() => {
+  // Load static fee types (not filter-dependent)
   loadFeeTypes()
-  loadStats()
+
+  // Don't load stats here! Wait for UniversalFilters to emit initial filters.
+  // This prevents double-loading and ensures filters are applied correctly.
+  // The handleFiltersChanged event will trigger loadStats() with correct filters.
+  console.log('📌 [ServiceFeesView] Component mounted, waiting for filters from UniversalFilters')
 })
 </script>

@@ -361,7 +361,10 @@ const getPickupDate = (booking) => {
 
 // Lifecycle
 onMounted(async () => {
-  await loadData()
+  // Don't load data here! Wait for UniversalFilters to emit initial filters.
+  // This prevents double-loading and ensures filters are applied correctly.
+  // The filters-changed event will trigger the first load with correct filters.
+  console.log('📌 [CarHireView] Component mounted, waiting for filters from UniversalFilters')
 })
 </script>
 
