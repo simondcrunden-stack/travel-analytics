@@ -366,7 +366,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import MdiIcon from '@/components/common/MdiIcon.vue'
 import {
@@ -448,6 +448,7 @@ const showSaveButton = ref(false)
 const isSaving = ref(false)
 const homeCountry = ref('AU')
 const authStore = useAuthStore()
+const isInitializing = ref(true) // Flag to prevent watchers during init
 
 // Initialize filters from URL query params
 const initFiltersFromURL = () => {
@@ -584,6 +585,9 @@ const countryOptions = computed(() => {
 watch(
   () => localFilters.travelAgent,
   (newAgent, oldAgent) => {
+    // Skip during initialization to preserve URL params
+    if (isInitializing.value) return
+
     if (newAgent !== oldAgent) {
       console.log('🏢 Travel agent changed from', oldAgent, 'to', newAgent)
 
@@ -603,6 +607,9 @@ watch(
 watch(
   () => localFilters.organization,
   (newOrg, oldOrg) => {
+    // Skip during initialization to preserve URL params
+    if (isInitializing.value) return
+
     if (newOrg !== oldOrg) {
       console.log('🏢 Organization changed from', oldOrg, 'to', newOrg)
 
@@ -940,14 +947,24 @@ const saveAsDefault = async () => {
 }
 
 // Lifecycle
-onMounted(() => {
-  if (props.showTraveller) loadTravellers()
+onMounted(async () => {
+  if (props.showTraveller) await loadTravellers()
   if (props.showOrganization) {
-    if (isSystemAdmin.value) loadTravelAgents()
-    loadOrganizations()
+    if (isSystemAdmin.value) await loadTravelAgents()
+    await loadOrganizations()
   }
-  loadAvailableCountries()
-  loadUserPreferences()
+  await loadAvailableCountries()
+  await loadUserPreferences()
+
+  // Finished initializing - allow watchers to run normally
+  // Use nextTick to ensure all reactive updates are processed first
+  await nextTick()
+  isInitializing.value = false
+
+  // Emit initial filters if any exist in URL
+  if (Object.keys(route.query).length > 0) {
+    emitFilters()
+  }
 })
 
 // Expose methods for parent components
