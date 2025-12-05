@@ -542,7 +542,7 @@
 
       <!-- Contract Expiry Alerts -->
       <div class="mt-6">
-        <ContractExpiryWidget :organization="activeFilters.organization" />
+        <ContractExpiryWidget :organization="filters.organization" />
       </div>
 
       <!-- Recent Bookings -->
