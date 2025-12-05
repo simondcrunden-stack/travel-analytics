@@ -635,19 +635,6 @@ const { filters, updateFilters, getAPIFilters } = useSharedFilters()
 // Create reactive computed property for API filters
 const apiFilters = computed(() => getAPIFilters())
 
-// Watch for filter changes and reload data automatically
-// This handles: navigating between dashboards, browser back/forward, URL changes
-watch(
-  apiFilters,
-  (newFilters, oldFilters) => {
-    console.log('🔄 [DashboardView] Filters changed, reloading data')
-    console.log('Old filters:', oldFilters)
-    console.log('New filters:', newFilters)
-    loadData()
-  },
-  { deep: true, immediate: true }
-)
-
 // State
 const loading = ref(true)
 const error = ref(null)
@@ -833,6 +820,20 @@ const processMonthlyData = (bookings) => {
     a.month.localeCompare(b.month)
   )
 }
+
+// Watch for filter changes and reload data automatically
+// This handles: navigating between dashboards, browser back/forward, URL changes
+// IMPORTANT: Must be defined AFTER loadData function
+watch(
+  apiFilters,
+  (newFilters, oldFilters) => {
+    console.log('🔄 [DashboardView] Filters changed, reloading data')
+    console.log('Old filters:', oldFilters)
+    console.log('New filters:', newFilters)
+    loadData()
+  },
+  { deep: true, immediate: true }
+)
 
 const renderCharts = () => {
   console.log('Rendering charts...')
