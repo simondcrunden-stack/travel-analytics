@@ -918,19 +918,30 @@ const loadUserPreferences = async () => {
     homeCountry.value = data.home_country || 'AU'
     console.log(`🏠 User home country: ${homeCountry.value}`)
 
-    // Apply saved filters ONLY if no URL params exist (don't override URL params!)
+    // Apply saved filters ONLY if filters are not already populated from URL
     if (data.default_filters && Object.keys(data.default_filters).length > 0) {
-      const hasURLParams = Object.keys(route.query).length > 0
+      // Check if localFilters already have meaningful values (from URL initialization)
+      const hasExistingFilters =
+        localFilters.dateFrom ||
+        localFilters.dateTo ||
+        localFilters.organization ||
+        localFilters.travelAgent ||
+        localFilters.traveller ||
+        (localFilters.travellers && localFilters.travellers.length > 0) ||
+        (localFilters.countries && localFilters.countries.length > 0) ||
+        localFilters.status ||
+        localFilters.city ||
+        localFilters.supplier
 
-      if (!hasURLParams) {
-        // No URL params - safe to apply saved preferences
+      if (!hasExistingFilters) {
+        // No existing filters - safe to apply saved preferences
         Object.assign(localFilters, data.default_filters)
         emitFilters()
         showSaveButton.value = false // Don't show save button for loaded preferences
         console.log('✅ Applied saved filter preferences:', data.default_filters)
       } else {
-        // URL params exist - don't overwrite them with saved preferences
-        console.log('ℹ️ URL params present - skipping saved preferences to preserve URL state')
+        // Filters already populated (from URL) - don't overwrite them
+        console.log('ℹ️ Filters already initialized from URL - skipping saved preferences to preserve state')
       }
     }
   } catch (error) {
