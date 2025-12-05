@@ -918,12 +918,20 @@ const loadUserPreferences = async () => {
     homeCountry.value = data.home_country || 'AU'
     console.log(`🏠 User home country: ${homeCountry.value}`)
 
-    // Apply saved filters if they exist
+    // Apply saved filters ONLY if no URL params exist (don't override URL params!)
     if (data.default_filters && Object.keys(data.default_filters).length > 0) {
-      Object.assign(localFilters, data.default_filters)
-      emitFilters()
-      showSaveButton.value = false // Don't show save button for loaded preferences
-      console.log('✅ Applied saved filter preferences:', data.default_filters)
+      const hasURLParams = Object.keys(route.query).length > 0
+
+      if (!hasURLParams) {
+        // No URL params - safe to apply saved preferences
+        Object.assign(localFilters, data.default_filters)
+        emitFilters()
+        showSaveButton.value = false // Don't show save button for loaded preferences
+        console.log('✅ Applied saved filter preferences:', data.default_filters)
+      } else {
+        // URL params exist - don't overwrite them with saved preferences
+        console.log('ℹ️ URL params present - skipping saved preferences to preserve URL state')
+      }
     }
   } catch (error) {
     console.error('Failed to load filter preferences:', error)
