@@ -192,12 +192,12 @@
 
       <!-- Top Routes & Destinations -->
       <div class="mt-6">
-        <TopRoutesWidget :filters="getAPIFilters()" />
+        <TopRoutesWidget :filters="apiFilters" />
       </div>
 
       <!-- Sustainability Dashboard -->
       <div class="mt-6">
-        <SustainabilityWidget :filters="getAPIFilters()" />
+        <SustainabilityWidget :filters="apiFilters" />
       </div>
 
       <!-- Compliance & Emissions Summary -->
@@ -617,7 +617,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { Chart } from 'chart.js/auto'
 import bookingService from '@/services/bookingService'
 import UniversalFilters from '@/components/common/UniversalFilters.vue'
@@ -631,6 +631,9 @@ import { useSharedFilters } from '@/composables/useSharedFilters'
 
 // Use shared filters to persist across dashboards
 const { filters, updateFilters, getAPIFilters } = useSharedFilters()
+
+// Create reactive computed property for API filters
+const apiFilters = computed(() => getAPIFilters())
 
 // State
 const loading = ref(true)
@@ -716,18 +719,17 @@ const loadData = async () => {
   error.value = null
 
   try {
-    const apiFilters = getAPIFilters()
-    console.log('🌐 [DashboardView] Loading dashboard data with filters:', apiFilters)
+    console.log('🌐 [DashboardView] Loading dashboard data with filters:', apiFilters.value)
 
     // Call new dashboard summary endpoint for aggregated metrics
-    const summaryData = await bookingService.getDashboardSummary(apiFilters)
+    const summaryData = await bookingService.getDashboardSummary(apiFilters.value)
     summary.value = summaryData
 
     console.log('✅ [DashboardView] Dashboard summary loaded:', summaryData)
 
     // Get budget summary (non-blocking - fail silently if no budgets exist)
     try {
-      const budgetData = await bookingService.getBudgetSummary(apiFilters)
+      const budgetData = await bookingService.getBudgetSummary(apiFilters.value)
       budgetSummary.value = budgetData
       console.log('✅ [DashboardView] Budget summary loaded:', budgetData)
     } catch (budgetErr) {
@@ -737,7 +739,7 @@ const loadData = async () => {
 
     // Get top rankings (non-blocking - fail silently if no data)
     try {
-      const rankingsData = await bookingService.getTopRankings({ ...apiFilters, limit: 5 })
+      const rankingsData = await bookingService.getTopRankings({ ...apiFilters.value, limit: 5 })
       rankings.value = rankingsData
       console.log('✅ [DashboardView] Rankings loaded:', rankingsData)
     } catch (rankingsErr) {
@@ -749,7 +751,7 @@ const loadData = async () => {
     mapLoading.value = true
     mapError.value = null
     try {
-      const tripMapData = await bookingService.getTripMapData(apiFilters)
+      const tripMapData = await bookingService.getTripMapData(apiFilters.value)
       mapData.value = tripMapData
       console.log('✅ [DashboardView] Trip map data loaded:', tripMapData.length, 'destinations')
     } catch (mapErr) {
@@ -761,7 +763,7 @@ const loadData = async () => {
     }
 
     // Get recent bookings for the table
-    const data = await bookingService.getBookings(apiFilters)
+    const data = await bookingService.getBookings(apiFilters.value)
     const bookings = data.results || data
 
     // Get recent bookings (last 10)
