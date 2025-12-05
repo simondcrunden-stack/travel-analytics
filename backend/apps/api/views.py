@@ -3908,14 +3908,21 @@ class BudgetViewSet(viewsets.ModelViewSet):
                 org = None
 
             if org:
+                # Try to get current fiscal year, fall back to most recent
                 current_fy = FiscalYear.objects.filter(
                     organization=org,
                     is_current=True
                 ).first()
 
                 if not current_fy:
+                    # Fall back to most recent fiscal year
+                    current_fy = FiscalYear.objects.filter(
+                        organization=org
+                    ).order_by('-start_date').first()
+
+                if not current_fy:
                     return Response({
-                        'error': 'No current fiscal year found'
+                        'error': 'No fiscal year found for this organization'
                     }, status=400)
 
                 budgets_qs = budgets_qs.filter(fiscal_year=current_fy)
@@ -4171,14 +4178,21 @@ class BudgetViewSet(viewsets.ModelViewSet):
                 org = None
 
             if org:
+                # Try to get current fiscal year, fall back to most recent
                 current_fy = FiscalYear.objects.filter(
                     organization=org,
                     is_current=True
                 ).first()
 
                 if not current_fy:
+                    # Fall back to most recent fiscal year
+                    current_fy = FiscalYear.objects.filter(
+                        organization=org
+                    ).order_by('-start_date').first()
+
+                if not current_fy:
                     return Response({
-                        'error': 'No current fiscal year found'
+                        'error': 'No fiscal year found for this organization'
                     }, status=400)
 
                 budgets_qs = budgets_qs.filter(fiscal_year=current_fy)
