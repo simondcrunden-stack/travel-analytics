@@ -178,64 +178,118 @@ class Budget(models.Model):
         super().save(*args, **kwargs)
 
     def get_total_spent(self):
-        """Calculate total spent against this budget"""
+        """
+        Calculate total spent against this budget from line items.
+
+        Queries each line item type (AirBooking, AccommodationBooking, CarHireBooking, ServiceFee)
+        and sums amounts where the line item's organizational_node or cost_center matches the budget.
+        """
         from django.db.models import Sum, Q
-        from apps.bookings.models import Booking
+        from apps.bookings.models import AirBooking, AccommodationBooking, CarHireBooking, ServiceFee
+
+        total = Decimal('0.00')
 
         # Build filter based on organizational_node or cost_center
         if self.organizational_node:
-            # Match by organizational_node OR cost_center (for travellers not yet migrated)
-            traveller_filter = Q(traveller__organizational_node=self.organizational_node)
-            # Also match travellers with cost_center matching the org node's code
+            # Match by organizational_node OR cost_center (for line items not yet migrated)
+            line_item_filter = Q(organizational_node=self.organizational_node)
             if self.organizational_node.code:
-                traveller_filter |= Q(traveller__cost_center=self.organizational_node.code)
+                line_item_filter |= Q(cost_center=self.organizational_node.code)
         else:
             # Fall back to cost_center for backward compatibility
-            traveller_filter = Q(traveller__cost_center=self.cost_center)
+            line_item_filter = Q(cost_center=self.cost_center)
 
-        bookings = Booking.objects.filter(
-            traveller_filter,
-            organization=self.organization,
-            travel_date__gte=self.fiscal_year.start_date,
-            travel_date__lte=self.fiscal_year.end_date,
-            status='CONFIRMED'
-        ).aggregate(total=Sum('total_amount'))
-
-        return bookings['total'] or Decimal('0.00')
-
-    def get_spent_by_category(self):
-        """Calculate spent amount by booking category"""
-        from django.db.models import Sum, Q
-        from apps.bookings.models import Booking
-
-        # Build filter based on organizational_node or cost_center
-        if self.organizational_node:
-            # Match by organizational_node OR cost_center (for travellers not yet migrated)
-            traveller_filter = Q(traveller__organizational_node=self.organizational_node)
-            # Also match travellers with cost_center matching the org node's code
-            if self.organizational_node.code:
-                traveller_filter |= Q(traveller__cost_center=self.organizational_node.code)
-        else:
-            # Fall back to cost_center for backward compatibility
-            traveller_filter = Q(traveller__cost_center=self.cost_center)
-
-        base_query = Booking.objects.filter(
-            traveller_filter,
-            organization=self.organization,
-            travel_date__gte=self.fiscal_year.start_date,
-            travel_date__lte=self.fiscal_year.end_date,
-            status='CONFIRMED'
+        # Common booking filters
+        booking_filter = Q(
+            booking__organization=self.organization,
+            booking__travel_date__gte=self.fiscal_year.start_date,
+            booking__travel_date__lte=self.fiscal_year.end_date,
+            booking__status='CONFIRMED'
         )
 
+        # Sum air bookings
+        air_total = AirBooking.objects.filter(
+            line_item_filter, booking_filter
+        ).aggregate(total=Sum('total_fare'))['total'] or Decimal('0.00')
+        total += air_total
+
+        # Sum accommodation bookings
+        accommodation_total = AccommodationBooking.objects.filter(
+            line_item_filter, booking_filter
+        ).aggregate(total=Sum('total_amount'))['total'] or Decimal('0.00')
+        total += accommodation_total
+
+        # Sum car hire bookings
+        car_total = CarHireBooking.objects.filter(
+            line_item_filter, booking_filter
+        ).aggregate(total=Sum('total_amount'))['total'] or Decimal('0.00')
+        total += car_total
+
+        # Sum service fees
+        fee_total = ServiceFee.objects.filter(
+            line_item_filter,
+            organization=self.organization,
+            fee_date__gte=self.fiscal_year.start_date,
+            fee_date__lte=self.fiscal_year.end_date
+        ).aggregate(total=Sum('fee_amount'))['total'] or Decimal('0.00')
+        total += fee_total
+
+        return total
+
+    def get_spent_by_category(self):
+        """
+        Calculate spent amount by booking category from line items.
+
+        Queries each line item type separately and sums amounts where the line item's
+        organizational_node or cost_center matches the budget.
+        """
+        from django.db.models import Sum, Q
+        from apps.bookings.models import AirBooking, AccommodationBooking, CarHireBooking, ServiceFee
+
+        # Build filter based on organizational_node or cost_center
+        if self.organizational_node:
+            # Match by organizational_node OR cost_center (for line items not yet migrated)
+            line_item_filter = Q(organizational_node=self.organizational_node)
+            if self.organizational_node.code:
+                line_item_filter |= Q(cost_center=self.organizational_node.code)
+        else:
+            # Fall back to cost_center for backward compatibility
+            line_item_filter = Q(cost_center=self.cost_center)
+
+        # Common booking filters
+        booking_filter = Q(
+            booking__organization=self.organization,
+            booking__travel_date__gte=self.fiscal_year.start_date,
+            booking__travel_date__lte=self.fiscal_year.end_date,
+            booking__status='CONFIRMED'
+        )
+
+        # Query each category
+        air_spent = AirBooking.objects.filter(
+            line_item_filter, booking_filter
+        ).aggregate(total=Sum('total_fare'))['total'] or Decimal('0.00')
+
+        accommodation_spent = AccommodationBooking.objects.filter(
+            line_item_filter, booking_filter
+        ).aggregate(total=Sum('total_amount'))['total'] or Decimal('0.00')
+
+        car_hire_spent = CarHireBooking.objects.filter(
+            line_item_filter, booking_filter
+        ).aggregate(total=Sum('total_amount'))['total'] or Decimal('0.00')
+
+        # Service fees use fee_date instead of booking travel_date
+        other_spent = ServiceFee.objects.filter(
+            line_item_filter,
+            organization=self.organization,
+            fee_date__gte=self.fiscal_year.start_date,
+            fee_date__lte=self.fiscal_year.end_date
+        ).aggregate(total=Sum('fee_amount'))['total'] or Decimal('0.00')
+
         return {
-            'air': base_query.filter(booking_type='AIR').aggregate(
-                total=Sum('total_amount'))['total'] or Decimal('0.00'),
-            'accommodation': base_query.filter(booking_type='HOTEL').aggregate(
-                total=Sum('total_amount'))['total'] or Decimal('0.00'),
-            'car_hire': base_query.filter(booking_type='CAR').aggregate(
-                total=Sum('total_amount'))['total'] or Decimal('0.00'),
-            'other': base_query.filter(booking_type='OTHER').aggregate(
-                total=Sum('total_amount'))['total'] or Decimal('0.00'),
+            'air': air_spent,
+            'accommodation': accommodation_spent,
+            'car_hire': car_hire_spent,
+            'other': other_spent,
         }
     
     def get_budget_status(self):

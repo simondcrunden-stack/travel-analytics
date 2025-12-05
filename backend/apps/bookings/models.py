@@ -284,7 +284,26 @@ class AirBooking(models.Model):
         related_name='air_bookings',  # Changed from 'air_details'
         help_text="Parent booking - one booking can have multiple air bookings"
     )
-    
+
+    # Cost center / Business unit (for budget tracking)
+    organizational_node = models.ForeignKey(
+        'organizations.OrganizationalNode',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        help_text="Organizational node to charge this line item to"
+    )
+    cost_center = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="DEPRECATED: Use organizational_node instead. Kept for backward compatibility."
+    )
+    cost_center_name = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="DEPRECATED: Use organizational_node instead. Kept for backward compatibility."
+    )
+
     # Flight details
     trip_type = models.CharField(max_length=20, choices=TRIP_TYPE)
     travel_class = models.CharField(max_length=30, choices=TRAVEL_CLASS)
@@ -686,6 +705,25 @@ class AccommodationBooking(models.Model):
         help_text="Parent booking - one booking can have multiple hotel stays"
     )
 
+    # Cost center / Business unit (for budget tracking)
+    organizational_node = models.ForeignKey(
+        'organizations.OrganizationalNode',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        help_text="Organizational node to charge this line item to"
+    )
+    cost_center = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="DEPRECATED: Use organizational_node instead. Kept for backward compatibility."
+    )
+    cost_center_name = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="DEPRECATED: Use organizational_node instead. Kept for backward compatibility."
+    )
+
     # Hotel reference (master data)
     hotel = models.ForeignKey(
         'reference_data.Hotel',
@@ -853,12 +891,31 @@ class CarHireBooking(models.Model):
     
     # CHANGED: ForeignKey instead of OneToOneField
     booking = models.ForeignKey(
-        Booking, 
-        on_delete=models.CASCADE, 
+        Booking,
+        on_delete=models.CASCADE,
         related_name='car_hire_bookings',  # Changed from 'car_hire_details'
         help_text="Parent booking - one booking can have multiple car rentals"
     )
-    
+
+    # Cost center / Business unit (for budget tracking)
+    organizational_node = models.ForeignKey(
+        'organizations.OrganizationalNode',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        help_text="Organizational node to charge this line item to"
+    )
+    cost_center = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="DEPRECATED: Use organizational_node instead. Kept for backward compatibility."
+    )
+    cost_center_name = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="DEPRECATED: Use organizational_node instead. Kept for backward compatibility."
+    )
+
     # Rental company
     rental_company = models.CharField(max_length=100)
     
@@ -1068,13 +1125,32 @@ class ServiceFee(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     
     # Relationships
-    booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name='service_fees', 
+    booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name='service_fees',
                                 null=True, blank=True)
-    organization = models.ForeignKey('organizations.Organization', on_delete=models.CASCADE, 
+    organization = models.ForeignKey('organizations.Organization', on_delete=models.CASCADE,
                                      related_name='service_fees')
-    traveller = models.ForeignKey(Traveller, on_delete=models.CASCADE, related_name='service_fees', 
+    traveller = models.ForeignKey(Traveller, on_delete=models.CASCADE, related_name='service_fees',
                                   null=True, blank=True)
-    
+
+    # Cost center / Business unit (for budget tracking)
+    organizational_node = models.ForeignKey(
+        'organizations.OrganizationalNode',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        help_text="Organizational node to charge this line item to"
+    )
+    cost_center = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="DEPRECATED: Use organizational_node instead. Kept for backward compatibility."
+    )
+    cost_center_name = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="DEPRECATED: Use organizational_node instead. Kept for backward compatibility."
+    )
+
     # Fee details
     fee_type = models.CharField(max_length=30, choices=FEE_TYPES)
     fee_date = models.DateField(verbose_name='Invoice Date')
