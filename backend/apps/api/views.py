@@ -2235,13 +2235,25 @@ class BookingViewSet(viewsets.ModelViewSet):
         cost_center_data = {}
         traveller_data = {}
 
-        for booking in bookings:
-            # cost_center is on Traveller model, not Booking model
-            cost_center = booking.traveller.cost_center if (booking.traveller and booking.traveller.cost_center) else 'Unassigned'
-            traveller_id = str(booking.traveller.id) if booking.traveller else 'Unknown'
-            traveller_name = str(booking.traveller) if booking.traveller else 'Unknown'
+        # Helper function to get cost center from line item or fallback to traveller
+        def get_line_item_cost_center(line_item, booking):
+            """Get cost_center from line item, fallback to traveller for backward compatibility"""
+            # Try line item's cost_center first
+            if hasattr(line_item, 'cost_center') and line_item.cost_center:
+                return line_item.cost_center
+            # Try line item's organizational_node
+            if hasattr(line_item, 'organizational_node') and line_item.organizational_node:
+                return line_item.organizational_node.code or line_item.organizational_node.name
+            # Fall back to booking's traveller cost_center (backward compatibility)
+            if booking.traveller and booking.traveller.cost_center:
+                return booking.traveller.cost_center
+            # Fall back to booking's traveller organizational_node
+            if booking.traveller and booking.traveller.organizational_node:
+                return booking.traveller.organizational_node.code or booking.traveller.organizational_node.name
+            return 'Unassigned'
 
-            # Initialize cost center aggregation
+        def ensure_cost_center_initialized(cost_center):
+            """Ensure cost center exists in aggregation dict"""
             if cost_center not in cost_center_data:
                 cost_center_data[cost_center] = {
                     'cost_center': cost_center,
@@ -2253,6 +2265,10 @@ class BookingViewSet(viewsets.ModelViewSet):
                     'lost_savings': 0,
                     'cost_of_change': 0
                 }
+
+        for booking in bookings:
+            traveller_id = str(booking.traveller.id) if booking.traveller else 'Unknown'
+            traveller_name = str(booking.traveller) if booking.traveller else 'Unknown'
 
             # Initialize traveller aggregation
             if traveller_id not in traveller_data:
@@ -2268,11 +2284,19 @@ class BookingViewSet(viewsets.ModelViewSet):
                     'cost_of_change': 0
                 }
 
-            # Calculate booking spend
+            # Track booking spend for traveller (aggregate all line items)
             booking_spend = 0
+
+            # Track which cost centers this booking affects (for trip count)
+            cost_centers_in_booking = set()
 
             # Add air spend (total fare including taxes/GST for dashboard, plus transactions)
             for air in booking.air_bookings.all():
+                # Get cost center for this line item
+                air_cost_center = get_line_item_cost_center(air, booking)
+                ensure_cost_center_initialized(air_cost_center)
+                cost_centers_in_booking.add(air_cost_center)
+
                 air_amount = float(air.total_fare or 0)
 
                 # Add any exchange tickets, refunds, or other transactions
@@ -2293,20 +2317,27 @@ class BookingViewSet(viewsets.ModelViewSet):
                     status__in=['CONFIRMED', 'PENDING']
                 )
                 change_cost = sum(float(t.total_amount_base or t.total_amount or 0) for t in change_transactions)
-                cost_center_data[cost_center]['cost_of_change'] += change_cost
+                cost_center_data[air_cost_center]['cost_of_change'] += change_cost
                 traveller_data[traveller_id]['cost_of_change'] += change_cost
 
                 # Add potential savings (lost savings)
                 potential_savings = float(air.potential_savings or 0)
-                cost_center_data[cost_center]['lost_savings'] += potential_savings
+                cost_center_data[air_cost_center]['lost_savings'] += potential_savings
                 traveller_data[traveller_id]['lost_savings'] += potential_savings
 
+                # Add to cost center and traveller aggregations
                 booking_spend += air_amount
-                cost_center_data[cost_center]['total_carbon_kg'] += float(air.total_carbon_kg or 0)
+                cost_center_data[air_cost_center]['total_spend'] += air_amount
+                cost_center_data[air_cost_center]['total_carbon_kg'] += float(air.total_carbon_kg or 0)
                 traveller_data[traveller_id]['total_carbon_kg'] += float(air.total_carbon_kg or 0)
 
             # Add accommodation spend (including modifications, cancellations, etc.)
             for accom in booking.accommodation_bookings.all():
+                # Get cost center for this line item
+                accom_cost_center = get_line_item_cost_center(accom, booking)
+                ensure_cost_center_initialized(accom_cost_center)
+                cost_centers_in_booking.add(accom_cost_center)
+
                 accom_amount = float(accom.total_amount_base or 0)
                 if accom_amount == 0 and accom.nightly_rate:
                     accom_amount = float(accom.nightly_rate) * accom.number_of_nights
@@ -2322,10 +2353,18 @@ class BookingViewSet(viewsets.ModelViewSet):
                 accom_amount += transaction_total
 
                 booking_spend += accom_amount
+                cost_center_data[accom_cost_center]['total_spend'] += accom_amount
 
             # Add car hire spend (including modifications, cancellations, etc.)
             for car in booking.car_hire_bookings.all():
+                # Get cost center for this line item
+                car_cost_center = get_line_item_cost_center(car, booking)
+                ensure_cost_center_initialized(car_cost_center)
+                cost_centers_in_booking.add(car_cost_center)
+
                 car_amount = float(car.total_amount_base or 0)
+                if car_amount == 0 and car.daily_rate:
+                    car_amount = float(car.daily_rate) * car.number_of_days
 
                 # Add any modifications or transactions
                 car_content_type = ContentType.objects.get_for_model(CarHireBooking)
@@ -2338,9 +2377,15 @@ class BookingViewSet(viewsets.ModelViewSet):
                 car_amount += transaction_total
 
                 booking_spend += car_amount
+                cost_center_data[car_cost_center]['total_spend'] += car_amount
 
             # Add service fees spend (including any transactions)
             for fee in booking.service_fees.all():
+                # Get cost center for this line item
+                fee_cost_center = get_line_item_cost_center(fee, booking)
+                ensure_cost_center_initialized(fee_cost_center)
+                cost_centers_in_booking.add(fee_cost_center)
+
                 fee_amount = float(fee.fee_amount or 0)
 
                 # Add any transactions
@@ -2354,9 +2399,15 @@ class BookingViewSet(viewsets.ModelViewSet):
                 fee_amount += transaction_total
 
                 booking_spend += fee_amount
+                cost_center_data[fee_cost_center]['total_spend'] += fee_amount
 
             # Add other products spend (insurance, cruise, etc. - including any transactions)
             for other in booking.other_products.all():
+                # Get cost center - OtherProduct doesn't have cost_center, so use traveller's
+                other_cost_center = get_line_item_cost_center(other, booking)
+                ensure_cost_center_initialized(other_cost_center)
+                cost_centers_in_booking.add(other_cost_center)
+
                 other_amount = float(other.amount_base or other.amount or 0)
 
                 # Add any transactions
@@ -2370,20 +2421,24 @@ class BookingViewSet(viewsets.ModelViewSet):
                 other_amount += transaction_total
 
                 booking_spend += other_amount
+                cost_center_data[other_cost_center]['total_spend'] += other_amount
 
-            # Update aggregations
-            cost_center_data[cost_center]['trip_count'] += 1
-            cost_center_data[cost_center]['total_spend'] += booking_spend
-            cost_center_data[cost_center]['total_bookings'] += 1
+            # Update trip count and booking count for all cost centers in this booking
+            # (A booking with line items from multiple cost centers counts as 1 trip for each)
+            for cc in cost_centers_in_booking:
+                cost_center_data[cc]['trip_count'] += 1
+                cost_center_data[cc]['total_bookings'] += 1
 
+            # Update traveller aggregations
             traveller_data[traveller_id]['trip_count'] += 1
             traveller_data[traveller_id]['total_spend'] += booking_spend
             traveller_data[traveller_id]['total_bookings'] += 1
 
-            # Check compliance
+            # Check compliance - if booking is compliant, all cost centers in it are compliant
             has_violations = booking.violations.exists()
             if not has_violations:
-                cost_center_data[cost_center]['compliant_bookings'] += 1
+                for cc in cost_centers_in_booking:
+                    cost_center_data[cc]['compliant_bookings'] += 1
                 traveller_data[traveller_id]['compliant_bookings'] += 1
 
         # Calculate compliance rates and format results
